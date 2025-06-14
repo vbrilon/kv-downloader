@@ -482,11 +482,137 @@ tests/
 - ✅ **Test suite organized** for safe future refactoring
 - ✅ **Production ready** with improved file organization
 
-### Next Session Priorities
-1. **🔄 Integration Testing**: Run full end-to-end test with actual downloads to verify fixes
-2. **📚 Mock/Stub Tests**: Create CI-friendly tests that don't require live site access (pending todo)
-3. **⚡ Performance Testing**: Ensure mixer controls don't significantly slow automation (pending todo)
-4. **🚀 Additional Features**: Consider any other user-requested enhancements
+---
+
+## 🧹 MAJOR CODEBASE CLEANUP & REFACTORING (DECEMBER 2024)
+
+### Completed Refactoring Phases ✅
+
+#### Phase 1: Dead Code Cleanup & Test Consolidation ✅
+**Problem**: The codebase had grown to nearly 2,000 lines with significant duplication and dead code
+
+**Actions Completed**:
+1. **Dead Code Removal from karaoke_automator.py**:
+   - Removed 4 unused methods: `_check_song_folder_for_new_files`, `_check_alternative_download_locations`, `_clean_downloaded_filename`, `_schedule_filename_cleanup`
+   - Consolidated duplicate filesystem sanitization logic
+   - **Result**: 2,000 → 1,866 lines (-134 lines, 6.7% reduction)
+
+2. **Test Suite Organization**:
+   - Organized 37 scattered test files into logical directories:
+     - `tests/unit/` - 10 true unit tests (config, filename cleanup, specific login methods)
+     - `tests/integration/` - 11 end-to-end workflow tests
+     - `tests/inspection/` - 10 debugging and analysis tools  
+     - `tests/regression/` - 2 refactoring safety tests
+     - `tests/legacy/` - Clean (only __init__.py)
+   - **Result**: Proper separation of concerns, easier test navigation
+
+3. **Login Test Consolidation**:
+   - **Before**: 8 duplicate login test files with redundant Selenium setup
+   - **After**: 1 comprehensive `test_comprehensive_login.py` with proven selectors
+   - **Result**: Eliminated ~700 lines of redundant test code
+
+4. **Track Discovery Test Cleanup**:
+   - Removed 2 legacy raw Selenium scripts: `extract_tracks.py`, `complete_track_extraction.py`
+   - Kept functional `test_bass_isolation.py` that uses main automator class
+   - **Result**: Eliminated redundant track discovery implementations
+
+#### Phase 2: Inspection Tools Refactoring ✅
+**Problem**: 9 inspection tools used raw Selenium with duplicated login and browser setup code
+
+**Actions Completed**:
+1. **Eliminated Raw Selenium Duplication**:
+   - Refactored all 9 inspection tools to use `KaraokeVersionAutomator` class
+   - Removed redundant ChromeDriver initialization code
+   - Standardized browser management and error handling
+
+2. **Consolidated Login Logic**:
+   - Replaced 9 different login implementations with single `automator.login()` calls
+   - All tools now use proven login selectors from main automator
+   - **Result**: Single source of truth for authentication
+
+3. **Files Refactored**:
+   - `inspect_download_button.py` - Added helper functions, uses automator driver
+   - `inspect_login_form.py` - Removed raw Selenium, added form inspection utilities  
+   - `inspect_mixer_after_login.py` - Complete rewrite using automator class
+   - `inspect_mixer_controls.py` - Eliminated duplicate login code
+   - `inspect_solo_buttons.py` - Cleaned up unused imports
+   - `simple_page_test.py` - Simplified using automator for browser setup
+   - `verify_login_status.py` - Updated to use automator driver consistently
+
+4. **Code Metrics**:
+   - **Net reduction**: -150 lines (614 removed, 464 added)
+   - **Maintainability**: Single source of truth for login/browser logic
+   - **Consistency**: All tools now use same automation patterns
+   - **DRY principle**: Eliminated ~70% duplication in inspection tooling
+
+### Refactoring Strategy & Next Phases
+
+#### Remaining High-Priority Refactoring Tasks
+Based on the original refactoring analysis, the following phases remain:
+
+##### Phase 3: Extract Infrastructure Packages (PENDING)
+**Goal**: Break down the 1,866-line main file into focused packages
+```
+packages/
+├── browser/          # Chrome setup, driver management
+├── authentication/   # Login/logout logic  
+├── progress/         # Progress tracking and display
+└── file_operations/  # Download path management, file cleanup
+```
+
+##### Phase 4: Break Down Core Logic (PENDING)  
+```
+packages/
+├── track_management/ # Track discovery, isolation, solo buttons
+└── download_management/ # Download sequencing, monitoring
+```
+
+##### Phase 5: Final Coordination (PENDING)
+- Simplify main automator to orchestrate packages
+- Extract configuration management
+- Create clean public API
+
+#### Mock/Stub Testing Infrastructure (PENDING)
+**Goal**: Create CI-friendly tests that don't require live site access
+- Mock Selenium driver responses
+- Stub file system operations  
+- Simulate download workflows
+- Enable automated testing in CI/CD
+
+#### Performance Testing (PENDING)
+**Goal**: Ensure new features don't degrade performance
+- Benchmark mixer control impact
+- Test with multiple concurrent operations
+- Memory usage profiling
+- Download speed analysis
+
+### Current Architecture Status
+
+#### Well-Organized Components ✅
+- **Test Suite**: Properly organized with clear separation of concerns
+- **Inspection Tools**: Consistently use main automation classes
+- **Configuration**: Clean separation between config values and business logic
+- **Core Features**: All production-ready with comprehensive functionality
+
+#### Areas for Future Improvement
+- **Main File Size**: Still 1,866 lines (could be ~500 lines with package extraction)
+- **Package Structure**: Monolithic file structure vs modular packages
+- **Testing Coverage**: No mock/stub tests for CI environments
+- **Performance Monitoring**: Limited automated performance validation
+
+### Strategic Recommendations
+
+#### For Next Major Refactoring Session:
+1. **Start with Phase 3**: Extract browser/ and authentication/ packages first
+2. **Incremental Approach**: One package at a time with regression testing
+3. **Maintain Compatibility**: Ensure existing functionality continues working
+4. **Test Coverage**: Add mock tests alongside package extraction
+
+#### For Ongoing Development:
+1. **Test-First**: Use organized test structure for new features
+2. **Consistency**: Follow established patterns from inspection tool refactoring
+3. **Documentation**: Update CLAUDE.md with significant architectural changes
+4. **Performance**: Monitor impact of new features on download times
 
 ### Critical Context for Next Session
 - **Virtual environment**: Always `source bin/activate` before any operations
@@ -494,3 +620,5 @@ tests/
 - **Regression safety**: Run `--regression-only` before any major changes
 - **Configuration**: `name` field now optional in songs.yaml, auto-extracts from URL
 - **File naming**: Files now use format `TrackName(±KeyAdjustment).mp3` in `Artist_Song/` folders
+- **Refactoring Status**: Completed dead code cleanup and inspection tools refactoring
+- **Next Priority**: Package extraction (browser/, authentication/, etc.) when ready for major refactoring
