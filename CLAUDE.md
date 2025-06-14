@@ -263,19 +263,31 @@ automator.clear_all_solos(song_url)
 - **File Age Filtering**: Only processes files less than 60 seconds old to avoid conflicts
 - **Duplicate Handling**: Automatic counter suffixes when filename conflicts occur
 
+### ✅ Download Completion Tracking & File Cleanup (LATEST FIX - 100% Complete)
+- **Chrome .crdownload Detection**: Monitors for Chrome's `.crdownload` extension during active downloads
+- **Progress Bar Integration**: Updates progress from 25% (.crdownload appears) → 95% (in progress) → 100% (completed)
+- **Background Completion Monitoring**: Separate thread monitors download completion for up to 5 minutes
+- **Automatic File Renaming**: Removes `_Custom_Backing_Track` from completed filenames automatically
+- **File Preservation**: Fixed file deletion bugs by removing aggressive cleanup that was deleting newly created files
+- **Single Download Path**: Simplified to only use song folders, removed dual Downloads/song folder confusion
+
 ## CRITICAL DISCOVERIES (IMPORTANT FOR FUTURE CONTEXT)
 
 ### Site Behavior (ESSENTIAL)
 1. **Download Generation Delay**: Site shows "Your download will begin in a moment..." popup while generating files
-2. **File Format**: Downloads are .aif format, not .mp3 as initially expected
+2. **File Format**: Downloads are .mp3 format (updated discovery), appear with `_Custom_Backing_Track` suffix
 3. **Actual Download Location**: Files go to system Downloads folder by default, require active path management
 4. **Download Button Response**: Clicking download doesn't immediately start download - requires waiting for file generation
+5. **Chrome Download Process**: Files appear first as `.crdownload` extension during download, removed when complete
+6. **Filename Pattern**: Downloaded files follow pattern: `Artist_Song(Track_Name_Custom_Backing_Track).mp3`
 
 ### Technical Solutions (WORKING)
 1. **Filesystem Monitoring**: `_wait_for_download_to_start()` method monitors for new files to detect actual download start
 2. **Chrome Path Control**: `execute_cdp_cmd('Page.setDownloadBehavior')` successfully redirects downloads to song folders
 3. **Progress Bar Threading**: Background thread updates progress display without blocking download operations
 4. **Debug Log Separation**: `setup_logging()` function provides clean progress bar experience with detailed file logging
+5. **Download Completion Detection**: `_schedule_download_completion_monitoring()` tracks .crdownload → completed file transition
+6. **Automatic Filename Cleanup**: `_clean_filename_after_download()` removes unwanted `_Custom_Backing_Track` suffixes
 
 ### Code Architecture (PRODUCTION-READY)
 - **Main Script**: `karaoke_automator.py` - Complete automation with progress bar system

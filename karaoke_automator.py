@@ -688,8 +688,9 @@ class KaraokeVersionTracker:
         self.song_path = song_path
         
         # Clean up existing downloads if requested (within song folder)
-        if cleanup_existing:
-            self._cleanup_existing_downloads(track_name, song_path)
+        # TEMPORARILY COMMENTED OUT - testing if this causes file deletion issues
+        # if cleanup_existing:
+        #     self._cleanup_existing_downloads(track_name, song_path)
         
         try:
             # Navigate to song page if needed
@@ -810,48 +811,25 @@ class KaraokeVersionTracker:
             
             # Wait for download to actually start (critical for proper sequencing)
             logging.info(f"⏳ Waiting for download to start for: {track_name}")
-            download_started = self._wait_for_download_to_start(track_name)
+            download_started = self._wait_for_download_to_start(track_name, track_index)
             
             if download_started:
-                # Update progress tracker to downloading
-                if self.progress_tracker and track_index:
-                    self.progress_tracker.update_track_status(track_index, 'downloading', progress=50)
+                logging.info(f"✅ Download started for: {track_name} - proceeding to next track")
                 
-                logging.info(f"✅ Download started for: {track_name}")
+                # Start background monitoring for completion and file cleanup
+                self._schedule_download_completion_monitoring(song_path, track_name, track_index)
                 
-                # Wait for download to complete and move file to correct location
-                download_completed = self._handle_download_completion(song_path, track_name)
-                
-                if download_completed:
-                    logging.info(f"✅ Download completed and organized for: {track_name}")
-                else:
-                    logging.warning(f"⚠️ Download may not have completed properly for: {track_name}")
             else:
-                logging.warning(f"⚠️ Download not detected in Downloads folder for: {track_name}")
-                logging.info(f"💡 This might be normal - downloads may go to a different location or be handled differently")
+                logging.warning(f"⚠️ Download not detected for: {track_name}")
                 
-                # Try to proceed anyway - maybe the download is working but going elsewhere
+                # Since we're only monitoring song folder, no download detected means failure
+                logging.error(f"❌ No download detected in song folder for: {track_name}")
                 if self.progress_tracker and track_index:
-                    self.progress_tracker.update_track_status(track_index, 'downloading', progress=25)
-                
-                # Give some time for any download to complete
-                logging.info(f"⏳ Waiting 10 seconds for potential download completion...")
-                time.sleep(10)
-                
-                # Try to find files anyway
-                download_completed = self._handle_download_completion(song_path, track_name)
-                
-                if not download_completed:
-                    # Check for alternative download locations
-                    self._check_alternative_download_locations(track_name)
-                    
-                    if self.progress_tracker and track_index:
-                        self.progress_tracker.update_track_status(track_index, 'failed')
-                    return False
+                    self.progress_tracker.update_track_status(track_index, 'failed')
+                return False
             
-            # Update progress tracker to completed
-            if self.progress_tracker and track_index:
-                self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
+            # Don't mark as completed immediately since downloads continue in background
+            # Progress will be updated when we check for completion later or in next iteration
             
             return True
             
@@ -924,56 +902,54 @@ class KaraokeVersionTracker:
             if not download_folder.exists():
                 return
             
-            # Common patterns for downloaded files
-            patterns_to_check = [
-                f"{track_name}*.mp3",
-                f"*{track_name}*.mp3",
-                f"custombackingtrack*.mp3",  # Common karaoke-version filename pattern
-                "*.mp3"  # Check all MP3s if track_name is generic
-            ]
-            
+            # Only clean up files that are likely duplicates of what we're about to download
+            # Use correct file extensions (.aif is primary, .mp3 as backup)
             removed_files = []
             
-            for pattern in patterns_to_check:
-                for file_path in download_folder.glob(pattern):
-                    if file_path.is_file():
-                        # Check if file is recent (less than 1 hour old) to avoid removing unrelated files
+            # Look for files that match the track name specifically
+            for file_path in download_folder.iterdir():
+                if file_path.is_file():
+                    filename = file_path.name.lower()
+                    track_lower = track_name.lower()
+                    
+                    # Check if it's an audio file that matches this track
+                    is_audio = any(filename.endswith(ext) for ext in ['.aif', '.mp3', '.wav', '.m4a'])
+                    matches_track = track_lower in filename or any(word in filename for word in track_lower.split('_'))
+                    has_backing_track_suffix = 'custom_backing_track' in filename or 'backing_track' in filename
+                    
+                    if is_audio and (matches_track or has_backing_track_suffix):
+                        # Only remove if it's older than 30 seconds (avoid removing active downloads)
                         file_age = time.time() - file_path.stat().st_mtime
-                        if file_age < 3600:  # 1 hour in seconds
+                        if file_age > 30:  # Only remove files older than 30 seconds
                             try:
                                 file_path.unlink()
                                 removed_files.append(file_path.name)
                                 logging.info(f"Removed existing file: {file_path.name}")
                             except Exception as e:
                                 logging.warning(f"Could not remove {file_path.name}: {e}")
+                        else:
+                            logging.debug(f"Skipping recent file (may be downloading): {file_path.name}")
             
             if removed_files:
                 logging.info(f"Cleaned up {len(removed_files)} existing files")
             else:
-                logging.info("No existing files to clean up")
+                logging.debug("No existing files to clean up")
                 
         except Exception as e:
             logging.warning(f"Error during download cleanup: {e}")
     
-    def _wait_for_download_to_start(self, track_name):
-        """Wait for download to actually start by monitoring both song folder and Downloads folder"""
+    def _wait_for_download_to_start(self, track_name, track_index=None):
+        """Wait for download to actually start by monitoring song folder only"""
         try:
-            # Check both song folder (primary) and Downloads folder (fallback)
+            # Only monitor the song folder since Chrome downloads directly there
             song_path = getattr(self, 'song_path', None)
-            downloads_path = Path.home() / "Downloads"
             
-            paths_to_monitor = []
-            if song_path and song_path.exists():
-                paths_to_monitor.append(song_path)
-                logging.info(f"🔍 Primary monitoring: {song_path}")
-            
-            if downloads_path.exists():
-                paths_to_monitor.append(downloads_path)
-                logging.info(f"🔍 Fallback monitoring: {downloads_path}")
-            
-            if not paths_to_monitor:
-                logging.warning("No valid paths to monitor for downloads")
+            if not song_path or not song_path.exists():
+                logging.error(f"Song folder not available for monitoring: {song_path}")
                 return False
+            
+            paths_to_monitor = [song_path]
+            logging.info(f"🔍 Monitoring song folder: {song_path}")
             
             # Get initial file lists for all paths
             initial_files_by_path = {}
@@ -1033,6 +1009,14 @@ class KaraokeVersionTracker:
                             
                             if is_karaoke_file or is_audio_or_download:
                                 logging.info(f"✅ Download started - detected relevant file in {path.name}: {filename}")
+                                
+                                # Update progress tracker if available
+                                if self.progress_tracker and track_index:
+                                    if '.crdownload' in filename.lower():
+                                        self.progress_tracker.update_track_status(track_index, 'downloading', progress=25)
+                                    else:
+                                        self.progress_tracker.update_track_status(track_index, 'downloading', progress=50)
+                                
                                 return True
                             else:
                                 logging.debug(f"🔍 New file not relevant: {filename}")
@@ -1074,6 +1058,29 @@ class KaraokeVersionTracker:
             logging.error(f"Error waiting for download to start: {e}")
             return False
 
+    def _check_song_folder_for_new_files(self, song_path, track_name):
+        """Check if new files appeared directly in the song folder (Chrome path worked)"""
+        try:
+            if not song_path.exists():
+                return False
+            
+            # Check for recent audio files in song folder
+            for file_path in song_path.iterdir():
+                if file_path.is_file():
+                    # Check if it's an audio file
+                    if any(file_path.name.lower().endswith(ext) for ext in ['.aif', '.mp3', '.wav', '.m4a']):
+                        # Check if it's recent (less than 30 seconds old)
+                        file_age = time.time() - file_path.stat().st_mtime
+                        if file_age < 30:
+                            logging.info(f"📁 Found recent file in song folder: {file_path.name} ({file_age:.1f}s old)")
+                            return True
+            
+            return False
+            
+        except Exception as e:
+            logging.debug(f"Error checking song folder: {e}")
+            return False
+
     def _check_alternative_download_locations(self, track_name):
         """Check for downloads in alternative locations"""
         logging.info(f"🔍 Checking alternative download locations for: {track_name}")
@@ -1108,77 +1115,135 @@ class KaraokeVersionTracker:
                 except:
                     continue
 
-    def _handle_download_completion(self, song_path, track_name):
-        """Handle download completion by moving files from default downloads to song folder"""
-        try:
-            downloads_path = Path.home() / "Downloads"
-            logging.info(f"Monitoring downloads folder for new files...")
-            
-            # Wait for download to complete (check for new files)
-            max_wait = 30  # 30 seconds max
-            check_interval = 2  # Check every 2 seconds
-            waited = 0
-            
-            # Get initial file list
-            initial_files = set()
-            if downloads_path.exists():
-                initial_files = {f.name for f in downloads_path.iterdir() if f.is_file()}
-            
-            # Wait for new files to appear
-            while waited < max_wait:
-                time.sleep(check_interval)
-                waited += check_interval
+    def _schedule_download_completion_monitoring(self, song_path, track_name, track_index):
+        """Start background monitoring for download completion and file cleanup"""
+        import threading
+        
+        def completion_monitor():
+            try:
+                # Monitor for up to 5 minutes for download completion
+                max_wait = 300  # 5 minutes
+                check_interval = 2  # Check every 2 seconds
+                waited = 0
                 
-                if downloads_path.exists():
-                    current_files = {f.name for f in downloads_path.iterdir() if f.is_file()}
-                    new_files = current_files - initial_files
+                logging.debug(f"Starting completion monitoring for {track_name}")
+                
+                while waited < max_wait:
+                    time.sleep(check_interval)
+                    waited += check_interval
                     
-                    # Look for karaoke-related files
-                    karaoke_files = []
-                    for filename in new_files:
-                        if any(indicator in filename.lower() for indicator in [
-                            'custom_backing_track', 'backing_track', 'karaoke', 
-                            track_name.lower().replace('_', '').replace('-', '')
-                        ]):
-                            file_path = downloads_path / filename
-                            # Check if file is recent (less than 60 seconds old)
-                            if file_path.exists():
-                                file_age = time.time() - file_path.stat().st_mtime
-                                if file_age < 60:
-                                    karaoke_files.append(file_path)
+                    # Look for .crdownload files that have completed
+                    completed_files = self._check_for_completed_downloads(song_path, track_name)
                     
-                    if karaoke_files:
-                        # Move files to song folder
-                        for source_file in karaoke_files:
-                            try:
-                                # Generate clean filename
-                                clean_name = self._clean_downloaded_filename(source_file.name, track_name)
-                                dest_file = song_path / clean_name
-                                
-                                # Avoid overwriting existing files
-                                counter = 1
-                                original_dest = dest_file
-                                while dest_file.exists():
-                                    name_part = original_dest.stem
-                                    ext_part = original_dest.suffix
-                                    dest_file = song_path / f"{name_part}_{counter}{ext_part}"
-                                    counter += 1
-                                
-                                # Move file
-                                source_file.rename(dest_file)
-                                logging.info(f"📁 Moved downloaded file: {source_file.name} → {dest_file.name}")
-                                
-                            except Exception as e:
-                                logging.warning(f"Could not move file {source_file.name}: {e}")
+                    if completed_files:
+                        logging.info(f"🎉 Download completed for {track_name}: {len(completed_files)} files")
                         
-                        return True  # Successfully found and moved files
+                        # Clean up filenames
+                        for file_path in completed_files:
+                            self._clean_filename_after_download(file_path)
+                        
+                        # Update progress tracker
+                        if self.progress_tracker and track_index:
+                            self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
+                        
+                        break
+                    
+                    # Update progress periodically for ongoing downloads
+                    if waited % 20 == 0 and self.progress_tracker and track_index:  # Every 20 seconds
+                        # Check if we still have .crdownload files (download in progress)
+                        crdownload_files = list(song_path.glob("*.crdownload"))
+                        if crdownload_files:
+                            # Calculate rough progress based on time elapsed
+                            progress = min(95, 25 + (waited / max_wait) * 70)  # 25% to 95%
+                            self.progress_tracker.update_track_status(track_index, 'downloading', progress=progress)
+                
+                # Timeout handling
+                if waited >= max_wait:
+                    logging.warning(f"⚠️ Download completion monitoring timed out for {track_name}")
+                    if self.progress_tracker and track_index:
+                        self.progress_tracker.update_track_status(track_index, 'failed')
+                        
+            except Exception as e:
+                logging.error(f"Error in completion monitoring for {track_name}: {e}")
+                if self.progress_tracker and track_index:
+                    self.progress_tracker.update_track_status(track_index, 'failed')
+        
+        # Start monitoring in background thread
+        monitor_thread = threading.Thread(target=completion_monitor, daemon=True)
+        monitor_thread.start()
+        logging.debug(f"Started background completion monitoring for {track_name}")
+    
+    def _check_for_completed_downloads(self, song_path, track_name):
+        """Check for files that have completed downloading (no more .crdownload)"""
+        try:
+            if not song_path.exists():
+                return []
             
-            logging.warning(f"No new files found for {track_name} after {max_wait} seconds")
-            return False
+            completed_files = []
+            
+            # Look for audio files that don't have .crdownload extension
+            for file_path in song_path.iterdir():
+                if file_path.is_file():
+                    filename = file_path.name.lower()
+                    
+                    # Check if it's an audio file (not .crdownload)
+                    is_audio = any(filename.endswith(ext) for ext in ['.mp3', '.aif', '.wav', '.m4a'])
+                    is_recent = (time.time() - file_path.stat().st_mtime) < 120  # Less than 2 minutes old
+                    
+                    # Check if it looks like a karaoke file
+                    is_karaoke = any(indicator in filename for indicator in [
+                        'custom_backing_track', 'backing_track', 'karaoke'
+                    ])
+                    
+                    if is_audio and is_recent and is_karaoke:
+                        # Make sure there's no corresponding .crdownload file
+                        crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
+                        if not crdownload_path.exists():
+                            completed_files.append(file_path)
+                            logging.debug(f"Found completed download: {file_path.name}")
+            
+            return completed_files
             
         except Exception as e:
-            logging.warning(f"Error handling download completion: {e}")
-            return False
+            logging.debug(f"Error checking for completed downloads: {e}")
+            return []
+    
+    def _clean_filename_after_download(self, file_path):
+        """Remove '_Custom_Backing_Track' from completed download filename"""
+        try:
+            original_name = file_path.name
+            
+            # Remove '_Custom_Backing_Track' pattern
+            new_name = original_name.replace('_Custom_Backing_Track', '')
+            
+            # Clean up any resulting double parentheses or underscores
+            new_name = new_name.replace('()', '')  # Remove empty parentheses
+            new_name = new_name.replace('__', '_')  # Fix double underscores
+            new_name = new_name.replace('_.', '.')  # Fix underscore before extension
+            
+            # Only rename if the name actually changed
+            if new_name != original_name:
+                new_path = file_path.parent / new_name
+                
+                # Avoid overwriting existing files
+                counter = 1
+                final_path = new_path
+                while final_path.exists():
+                    name_part = new_path.stem
+                    ext_part = new_path.suffix
+                    final_path = file_path.parent / f"{name_part}_{counter}{ext_part}"
+                    counter += 1
+                
+                file_path.rename(final_path)
+                logging.info(f"📝 Cleaned filename: '{original_name}' → '{final_path.name}'")
+                return final_path
+            else:
+                logging.debug(f"Filename already clean: {original_name}")
+                return file_path
+                
+        except Exception as e:
+            logging.warning(f"Could not clean filename for {file_path.name}: {e}")
+            return file_path
 
     def _clean_downloaded_filename(self, original_filename, track_name):
         """Clean up downloaded filename to be more readable"""
