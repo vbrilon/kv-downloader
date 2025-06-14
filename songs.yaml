@@ -3,18 +3,14 @@
 # Format: Each song has a URL and a directory name where tracks will be saved
 
 songs:
-  - url: "https://www.karaoke-version.com/song1.html"
-    name: "My_Song"
-    description: "Example song 1"
+#  - url: "https://www.karaoke-version.com/song1.html"
+#    name: "My_Song"
+#    description: "Example song 1"
     
-  - url: "https://www.karaoke-version.com/song2.html" 
-    name: "Another_Great_Song"
-    description: "Example song 2"
+  - url: "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
+    name: "The_Middle"
+    description: ""
     
-  - url: "https://www.karaoke-version.com/song3.html"
-    name: "Third_Song_Title"
-    description: "Example song 3"
-
 # Notes:
 # - URLs should be the direct links to individual song pages
 # - Names will be used as directory names, so avoid special characters
