@@ -6,7 +6,7 @@ Automated system for downloading isolated backing tracks from Karaoke-Version.co
 
 ### ✅ **Fully Working Features**
 - **Authentication** - Login with live credentials (`frm_login`, `frm_password`, `sbm`)
-- **Track Discovery** - Automatically finds all 11 available tracks per song
+- **Track Discovery** - Automatically finds all  available tracks per song
 - **Track Isolation** - Solo button functionality to isolate individual instruments
 - **Session Management** - Maintains login state throughout automation
 - **Modular Architecture** - Clean, testable, reusable components
