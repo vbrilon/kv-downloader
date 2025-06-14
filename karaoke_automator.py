@@ -17,6 +17,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import config
+from config_manager import ConfigurationManager
 
 # Setup logging (will be reconfigured based on debug mode)
 logging.basicConfig(
@@ -1541,16 +1542,18 @@ class KaraokeVersionTracker:
 class KaraokeVersionAutomator:
     """Main automation class that coordinates all functionality"""
     
-    def __init__(self, headless=False, show_progress=True):
+    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml"):
         """
         Initialize automator
         
         Args:
             headless (bool): Run browser in headless mode (True) or visible mode (False)
             show_progress (bool): Show progress bar during downloads (True) or use simple logging (False)
+            config_file (str): Path to songs configuration file
         """
         self.headless = headless
         self.show_progress = show_progress
+        self.config_manager = ConfigurationManager(config_file)
         self.progress = ProgressTracker() if show_progress else None
         self.setup_driver()
         self.setup_folders()
@@ -1675,7 +1678,15 @@ class KaraokeVersionAutomator:
     
     def load_songs_config(self):
         """Load songs from configuration"""
-        return config.load_songs_config()
+        return self.config_manager.load_songs_config()
+    
+    def validate_configuration(self):
+        """Validate the configuration file"""
+        return self.config_manager.validate_configuration_file()
+    
+    def get_configuration_summary(self):
+        """Get configuration summary"""
+        return self.config_manager.get_configuration_summary()
     
     def sanitize_filename(self, filename):
         """Clean filename for saving"""
