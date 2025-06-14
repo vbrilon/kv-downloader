@@ -4,7 +4,14 @@ Test Configuration Refactor
 Verify the new ConfigurationManager works correctly
 """
 
+import sys
 import json
+from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from config_manager import ConfigurationManager, load_songs_config, get_configuration_summary
 
 def test_configuration_refactor():

@@ -9,12 +9,13 @@ songs:
 #    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
     
   - url: "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
-    name: "The_Middle"
+    # name: "Custom_Folder_Name"  # Optional: specify custom folder name, or leave blank to auto-extract from URL
     description: "Jimmy Eat World - The Middle"
-    key: 0  # No pitch adjustment
+    key: -1
     
 # Notes:
 # - URLs should be the direct links to individual song pages
+# - Name is optional - if omitted, folder name will be auto-extracted from URL as "Artist_Song"
 # - Names will be used as directory names, so avoid special characters  
 # - Description is optional but helpful for organization
 # - Key is optional pitch adjustment in semitones (-12 to +12), defaults to 0

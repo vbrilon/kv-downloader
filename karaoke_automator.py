@@ -784,7 +784,7 @@ class KaraokeVersionTracker:
             logging.error(f"Error clearing solo buttons: {e}")
             return False
     
-    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None):
+    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0):
         """Download the current track mix (after soloing)
         
         Args:
@@ -792,6 +792,7 @@ class KaraokeVersionTracker:
             track_name (str): Name for the downloaded file
             cleanup_existing (bool): Remove existing files before download
             song_folder (str): Optional specific folder name for the song
+            key_adjustment (int): Key adjustment applied to the track (-12 to +12)
         """
         # Extract or create song folder name
         if not song_folder:
@@ -828,10 +829,6 @@ class KaraokeVersionTracker:
         # Store song path for backup file moving
         self.song_path = song_path
         
-        # Clean up existing downloads if requested (within song folder)
-        # TEMPORARILY COMMENTED OUT - testing if this causes file deletion issues
-        # if cleanup_existing:
-        #     self._cleanup_existing_downloads(track_name, song_path)
         
         try:
             # Navigate to song page if needed
@@ -855,10 +852,8 @@ class KaraokeVersionTracker:
                 try:
                     logging.debug(f"Trying download selector {i+1}/{len(download_selectors)}: {selector}")
                     if selector.startswith("//"):
-                        from selenium.webdriver.common.by import By
                         download_button = self.driver.find_element(By.XPATH, selector)
                     else:
-                        from selenium.webdriver.common.by import By
                         download_button = self.driver.find_element(By.CSS_SELECTOR, selector)
                     
                     if download_button and download_button.is_displayed() and download_button.is_enabled():
@@ -958,7 +953,7 @@ class KaraokeVersionTracker:
                 logging.info(f"✅ Download started for: {track_name} - proceeding to next track")
                 
                 # Start background monitoring for completion and file cleanup
-                self._schedule_download_completion_monitoring(song_path, track_name, track_index)
+                self._schedule_download_completion_monitoring(song_path, track_name, track_index, key_adjustment)
                 
             else:
                 logging.warning(f"⚠️ Download not detected for: {track_name}")
@@ -1004,11 +999,16 @@ class KaraokeVersionTracker:
             logging.warning(f"Could not extract song info from URL: {e}")
             return f"karaoke_download_{int(time.time())}"
     
-    def _sanitize_folder_name(self, folder_name):
-        """Clean folder name for filesystem compatibility"""
+    def _sanitize_filesystem_name(self, name):
+        """Remove invalid filesystem characters"""
         invalid_chars = '<>:"/\\|?*'
         for char in invalid_chars:
-            folder_name = folder_name.replace(char, '_')
+            name = name.replace(char, '_')
+        return name
+    
+    def _sanitize_folder_name(self, folder_name):
+        """Clean folder name for filesystem compatibility"""
+        folder_name = self._sanitize_filesystem_name(folder_name)
         
         # Limit length and clean up
         folder_name = folder_name[:100].strip()
@@ -1199,66 +1199,10 @@ class KaraokeVersionTracker:
             logging.error(f"Error waiting for download to start: {e}")
             return False
 
-    def _check_song_folder_for_new_files(self, song_path, track_name):
-        """Check if new files appeared directly in the song folder (Chrome path worked)"""
-        try:
-            if not song_path.exists():
-                return False
-            
-            # Check for recent audio files in song folder
-            for file_path in song_path.iterdir():
-                if file_path.is_file():
-                    # Check if it's an audio file
-                    if any(file_path.name.lower().endswith(ext) for ext in ['.aif', '.mp3', '.wav', '.m4a']):
-                        # Check if it's recent (less than 30 seconds old)
-                        file_age = time.time() - file_path.stat().st_mtime
-                        if file_age < 30:
-                            logging.info(f"📁 Found recent file in song folder: {file_path.name} ({file_age:.1f}s old)")
-                            return True
-            
-            return False
-            
-        except Exception as e:
-            logging.debug(f"Error checking song folder: {e}")
-            return False
 
-    def _check_alternative_download_locations(self, track_name):
-        """Check for downloads in alternative locations"""
-        logging.info(f"🔍 Checking alternative download locations for: {track_name}")
-        
-        alternative_paths = [
-            Path.home() / "Desktop",
-            Path.home() / "Documents", 
-            Path.home() / "Music",
-            Path("/tmp"),
-            Path("/var/folders").glob("*/*/T") if Path("/var/folders").exists() else []
-        ]
-        
-        # Flatten the glob results
-        paths_to_check = []
-        for path in alternative_paths:
-            if isinstance(path, Path):
-                paths_to_check.append(path)
-            else:  # It's a generator from glob
-                paths_to_check.extend(list(path))
-        
-        for path in paths_to_check:
-            if path.exists():
-                try:
-                    audio_files = list(path.glob("*.aif")) + list(path.glob("*.mp3")) + list(path.glob("*.wav"))
-                    recent_files = [f for f in audio_files if (time.time() - f.stat().st_mtime) < 300]  # Last 5 minutes
-                    
-                    if recent_files:
-                        logging.info(f"🎵 Found recent audio files in {path}:")
-                        for f in recent_files:
-                            age = time.time() - f.stat().st_mtime
-                            logging.info(f"  - {f.name} ({age:.0f}s ago)")
-                except:
-                    continue
 
-    def _schedule_download_completion_monitoring(self, song_path, track_name, track_index):
+    def _schedule_download_completion_monitoring(self, song_path, track_name, track_index, key_adjustment=0):
         """Start background monitoring for download completion and file cleanup"""
-        import threading
         
         def completion_monitor():
             try:
@@ -1281,7 +1225,7 @@ class KaraokeVersionTracker:
                         
                         # Clean up filenames
                         for file_path in completed_files:
-                            self._clean_filename_after_download(file_path)
+                            self._clean_filename_after_download(file_path, track_name, key_adjustment)
                         
                         # Update progress tracker
                         if self.progress_tracker and track_index:
@@ -1349,18 +1293,90 @@ class KaraokeVersionTracker:
             logging.debug(f"Error checking for completed downloads: {e}")
             return []
     
-    def _clean_filename_after_download(self, file_path):
-        """Remove '_Custom_Backing_Track' from completed download filename"""
+    def _clean_filename_after_download(self, file_path, track_name=None, key_adjustment=0):
+        """Remove 'Custom_Backing_Track' patterns and improve filename with track name and key info"""
         try:
+            import re
             original_name = file_path.name
+            new_name = original_name
             
-            # Remove '_Custom_Backing_Track' pattern
-            new_name = original_name.replace('_Custom_Backing_Track', '')
+            # Simple patterns to remove
+            cleanup_patterns = [
+                "_Custom_Backing_Track",
+                "(Custom_Backing_Track)",
+                "_Custom_Backing_Track_",
+                "(Custom Backing Track)",
+                "_custom_backing_track",
+                "Custom_Backing_Track"
+            ]
+            
+            # Remove simple patterns
+            for pattern in cleanup_patterns:
+                new_name = new_name.replace(pattern, '')
+            
+            # Regex patterns for complex cases like "(Custom_Backing_Track-1)"
+            complex_patterns = [
+                r'\(Custom_Backing_Track[+-]?\d*\)',  # (Custom_Backing_Track-1), etc.
+                r'_Custom_Backing_Track[+-]?\d*_?',   # _Custom_Backing_Track-1_, etc.
+                r'Custom_Backing_Track[+-]?\d*'       # Custom_Backing_Track-1, etc.
+            ]
+            
+            # Remove complex patterns with regex
+            for pattern in complex_patterns:
+                new_name = re.sub(pattern, "", new_name, flags=re.IGNORECASE)
+            
+            # Remove redundant song name from filename (use folder name as reference)
+            song_folder_name = file_path.parent.name
+            song_name_normalized = song_folder_name.replace(' ', '_').replace('-', '_').lower()
+            new_name_lower = new_name.lower()
+            
+            # Look for song name patterns in the filename and remove them
+            if song_name_normalized in new_name_lower:
+                # Try to find and remove the song name portion
+                variations = [
+                    song_name_normalized,                    # the_middle
+                    song_name_normalized.replace('_', ''),   # themiddle
+                    song_name_normalized.replace('_', '-'),  # the-middle
+                    song_name_normalized.replace('_', ' ')   # the middle
+                ]
+                
+                for variation in variations:
+                    variation_pattern = re.escape(variation).replace(r'\ ', r'[_\-\s]*')
+                    new_name = re.sub(variation_pattern, '', new_name, flags=re.IGNORECASE)
             
             # Clean up any resulting double parentheses or underscores
             new_name = new_name.replace('()', '')  # Remove empty parentheses
             new_name = new_name.replace('__', '_')  # Fix double underscores
             new_name = new_name.replace('_.', '.')  # Fix underscore before extension
+            new_name = new_name.strip('_-. ')      # Trim leading/trailing chars
+            
+            # Handle edge case where name becomes empty or just extension
+            if not new_name or new_name in [".mp3", "mp3"]:
+                new_name = f"{track_name}.mp3" if track_name else "track.mp3"
+            elif not new_name.endswith('.mp3'):
+                new_name = f"{new_name}.mp3"
+            
+            # Ensure track name is included if provided and not already present
+            if track_name:
+                name_without_ext = new_name.replace('.mp3', '').lower()
+                track_name_lower = track_name.lower()
+                
+                if track_name_lower not in name_without_ext:
+                    # Add track name to filename
+                    name_part = new_name.replace('.mp3', '')
+                    if name_part and name_part != track_name:
+                        new_name = f"{name_part}_{track_name}.mp3"
+                    else:
+                        new_name = f"{track_name}.mp3"
+            
+            # Add key adjustment if present and not already included
+            if key_adjustment != 0:
+                name_without_ext = new_name.replace('.mp3', '')
+                key_suffix = f"{key_adjustment:+d}"  # +1, -1, etc.
+                
+                # Check if key suffix is already present in the filename
+                if f"({key_suffix})" not in new_name:
+                    new_name = f"{name_without_ext}({key_suffix}).mp3"
             
             # Only rename if the name actually changed
             if new_name != original_name:
@@ -1386,84 +1402,16 @@ class KaraokeVersionTracker:
             logging.warning(f"Could not clean filename for {file_path.name}: {e}")
             return file_path
 
-    def _clean_downloaded_filename(self, original_filename, track_name):
-        """Clean up downloaded filename to be more readable"""
-        try:
-            # Remove common unwanted patterns
-            clean_name = original_filename
-            
-            # Patterns to remove
-            patterns_to_remove = [
-                r'_Custom_Backing_Track',
-                r'Custom_Backing_Track_?',
-                r'\(Custom_Backing_Track\)',
-                r'_custom_backing_track',
-                r'.*?\((.*?)\).*Custom_Backing_Track.*',  # Extract content from parentheses
-            ]
-            
-            import re
-            for pattern in patterns_to_remove:
-                clean_name = re.sub(pattern, '', clean_name, flags=re.IGNORECASE)
-            
-            # Clean up formatting
-            clean_name = re.sub(r'_+', '_', clean_name)  # Multiple underscores
-            clean_name = re.sub(r'-+', '-', clean_name)  # Multiple dashes
-            clean_name = clean_name.strip('_-. ')  # Leading/trailing chars
-            
-            # If name becomes too short, use track name
-            if len(clean_name) < 5 or clean_name in ['.aif', '.mp3', '.wav']:
-                clean_name = f"{track_name}.aif"
-            
-            # Ensure it has an extension
-            if not any(clean_name.endswith(ext) for ext in ['.aif', '.mp3', '.wav', '.m4a']):
-                clean_name += '.aif'  # Default to aif based on what we observed
-            
-            return clean_name
-            
-        except Exception as e:
-            logging.debug(f"Error cleaning filename: {e}")
-            # Fallback to track name
-            return f"{track_name}.aif"
 
-    def _schedule_filename_cleanup(self, song_path, track_name):
-        """Schedule cleanup of downloaded filenames to remove unwanted suffixes"""
-        import threading
-        import time
-        
-        def cleanup_worker():
-            # Wait for download to complete (check every 2 seconds for up to 30 seconds)
-            max_wait = 30
-            check_interval = 2
-            waited = 0
-            
-            while waited < max_wait:
-                time.sleep(check_interval)
-                waited += check_interval
-                
-                # Look for newly downloaded files
-                try:
-                    if self._cleanup_downloaded_filenames(song_path, track_name):
-                        logging.info("✅ Filename cleanup completed")
-                        break
-                except Exception as e:
-                    logging.debug(f"Filename cleanup attempt failed: {e}")
-            
-            if waited >= max_wait:
-                logging.debug("Filename cleanup timed out - file may still be downloading")
-        
-        # Start cleanup in background thread
-        cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
-        cleanup_thread.start()
-        logging.debug("Scheduled filename cleanup in background thread")
     
-    def _cleanup_downloaded_filenames(self, song_path, track_name):
-        """Clean up downloaded filenames by removing unwanted suffixes"""
+    def _cleanup_downloaded_filenames(self, song_path, track_name, key_adjustment=0):
+        """Clean up downloaded filenames by removing unwanted suffixes and adding key info"""
         try:
             song_folder = Path(song_path)
             if not song_folder.exists():
                 return False
             
-            # Patterns to clean up
+            # Patterns to clean up - including key adjustment variations
             cleanup_patterns = [
                 "_Custom_Backing_Track",
                 "(Custom_Backing_Track)",
@@ -1471,6 +1419,14 @@ class KaraokeVersionTracker:
                 "(Custom Backing Track)",
                 "_custom_backing_track",
                 "Custom_Backing_Track"
+            ]
+            
+            # Regex patterns for complex cases like "(Custom_Backing_Track-1)"
+            import re
+            complex_patterns = [
+                r'\(Custom_Backing_Track[+-]?\d*\)',  # (Custom_Backing_Track-1), (Custom_Backing_Track+2), etc.
+                r'_Custom_Backing_Track[+-]?\d*_?',   # _Custom_Backing_Track-1_, etc.
+                r'Custom_Backing_Track[+-]?\d*'       # Custom_Backing_Track-1, etc.
             ]
             
             files_cleaned = 0
@@ -1485,14 +1441,42 @@ class KaraokeVersionTracker:
                 original_name = file_path.name
                 new_name = original_name
                 
-                # Remove unwanted patterns
+                # Remove unwanted patterns (simple string replacements)
                 for pattern in cleanup_patterns:
                     if pattern in new_name:
                         new_name = new_name.replace(pattern, "")
                         logging.debug(f"Removed pattern '{pattern}' from filename")
                 
+                # Remove complex patterns with regex (for key adjustments)
+                for pattern in complex_patterns:
+                    matches = re.findall(pattern, new_name, re.IGNORECASE)
+                    if matches:
+                        new_name = re.sub(pattern, "", new_name, flags=re.IGNORECASE)
+                        logging.debug(f"Removed regex pattern '{pattern}' matches: {matches}")
+                
                 # Clean up any double extensions or weird formatting
                 new_name = new_name.replace(".mp3.mp3", ".mp3")  # Fix double extensions
+                
+                # Remove redundant song name from filename if it's already in the folder name
+                song_name_normalized = song_folder.name.replace(' ', '_').replace('-', '_').lower()
+                new_name_lower = new_name.lower()
+                
+                # Look for song name patterns in the filename and remove them
+                if song_name_normalized in new_name_lower:
+                    # Try to find and remove the song name portion
+                    import re
+                    # Create a pattern that matches variations of the song name
+                    song_pattern = re.escape(song_name_normalized).replace(r'\_', r'[_\-\s]*')
+                    # Also try common variations
+                    variations = [
+                        song_name_normalized.replace('_', ''),  # No separators
+                        song_name_normalized.replace('_', '-'), # Dashes instead of underscores
+                        song_name_normalized.replace('_', ' ')  # Spaces instead of underscores
+                    ]
+                    
+                    for variation in variations:
+                        variation_pattern = re.escape(variation).replace(r'\ ', r'[_\-\s]*')
+                        new_name = re.sub(variation_pattern, '', new_name, flags=re.IGNORECASE)
                 
                 # Fix multiple underscores/dashes iteratively
                 while "__" in new_name:
@@ -1506,7 +1490,27 @@ class KaraokeVersionTracker:
                 # Handle edge case where name becomes empty or just extension
                 if not new_name or new_name in [".mp3", "mp3"]:
                     # Use track name as fallback
-                    new_name = f"{track_name}_cleaned.mp3"
+                    new_name = f"{track_name}.mp3"
+                elif not new_name.endswith('.mp3'):
+                    new_name = f"{new_name}.mp3"
+                
+                # Ensure track name is included if not already present
+                name_without_ext = new_name.replace('.mp3', '').lower()
+                track_name_lower = track_name.lower()
+                
+                if track_name_lower not in name_without_ext:
+                    # Add track name to filename
+                    name_part = new_name.replace('.mp3', '')
+                    if name_part:
+                        new_name = f"{name_part}_{track_name}.mp3"
+                    else:
+                        new_name = f"{track_name}.mp3"
+                
+                # Add key adjustment if present
+                if key_adjustment != 0:
+                    name_without_ext = new_name.replace('.mp3', '')
+                    key_suffix = f"{key_adjustment:+d}"  # +1, -1, etc.
+                    new_name = f"{name_without_ext}({key_suffix}).mp3"
                 
                 # Ensure it still has .mp3 extension
                 if not new_name.endswith(".mp3"):
@@ -1690,10 +1694,7 @@ class KaraokeVersionAutomator:
     
     def sanitize_filename(self, filename):
         """Clean filename for saving"""
-        invalid_chars = '<>:"/\\|?*'
-        for char in invalid_chars:
-            filename = filename.replace(char, '_')
-        return filename
+        return self.track_handler._sanitize_filesystem_name(filename)
     
     def run_automation(self):
         """Run complete automation workflow"""
@@ -1763,7 +1764,8 @@ class KaraokeVersionAutomator:
                                 song['url'], 
                                 track_name,
                                 cleanup_existing=True,
-                                song_folder=song.get('name', 'unknown_song')
+                                song_folder=song.get('name'),  # None if not specified, triggers URL extraction
+                                key_adjustment=song_key
                             )
                             
                             if not success:

@@ -3,9 +3,15 @@
 Test Mixer Controls - Test intro count and key adjustment functionality
 """
 
+import sys
 import time
 import logging
 from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from karaoke_automator import KaraokeVersionAutomator, setup_logging
 
 def test_mixer_controls():

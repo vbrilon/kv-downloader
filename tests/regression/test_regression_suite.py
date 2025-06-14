@@ -5,10 +5,16 @@ Quick validation that core functionality still works after refactoring
 Designed to be run before/after code changes to catch regressions
 """
 
+import sys
 import time
 import logging
 import json
 from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from karaoke_automator import KaraokeVersionAutomator, setup_logging
 
 def test_regression_core_functions():
@@ -166,7 +172,7 @@ def test_configuration_validation():
         
         # Mock the config loading with test data
         import yaml
-        test_file = Path('test_config.yaml')
+        test_file = Path(__file__).parent / 'test_config.yaml'
         with open(test_file, 'w') as f:
             yaml.dump(test_config_data, f)
         
@@ -192,7 +198,7 @@ def test_configuration_validation():
             ]
         }
         
-        test_file = Path('test_invalid_config.yaml')
+        test_file = Path(__file__).parent / 'test_invalid_config.yaml'
         with open(test_file, 'w') as f:
             yaml.dump(test_invalid_config, f)
         
@@ -221,7 +227,7 @@ def save_regression_baseline(results, edge_results):
         'max_score': len(results) + len(edge_results)
     }
     
-    baseline_file = Path('regression_baseline.json')
+    baseline_file = Path(__file__).parent / 'regression_baseline.json'
     with open(baseline_file, 'w') as f:
         json.dump(baseline, f, indent=2)
     
@@ -231,7 +237,7 @@ def save_regression_baseline(results, edge_results):
 def compare_with_baseline(current_results, current_edge):
     """Compare current test results with saved baseline"""
     
-    baseline_file = Path('regression_baseline.json')
+    baseline_file = Path(__file__).parent / 'regression_baseline.json'
     if not baseline_file.exists():
         print("📋 No baseline found - this will be the first baseline")
         return True

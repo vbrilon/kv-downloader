@@ -59,11 +59,16 @@ class ConfigurationManager:
             return None
         
         # Create validated song with defaults
+        # Generate name from URL if not provided
+        song_name = song.get('name', '').strip()
+        if not song_name:
+            song_name = self._generate_name_from_url(song['url'])
+        
         validated_song = {
             'url': song['url'].strip(),
-            'name': song['name'].strip(),
+            'name': song_name,
             'description': song.get('description', '').strip(),
-            'key': self._validate_key_value(song.get('key', 0), song['name'])
+            'key': self._validate_key_value(song.get('key', 0), song_name)
         }
         
         # Additional validation
@@ -82,8 +87,7 @@ class ConfigurationManager:
         if 'url' not in song or not song['url']:
             missing_fields.append('url')
         
-        if 'name' not in song or not song['name']:
-            missing_fields.append('name')
+        # Note: 'name' is now optional - will be auto-generated if not provided
         
         if missing_fields:
             self.logger.error(f"Song entry {index + 1} missing required fields: {missing_fields}")
@@ -91,6 +95,37 @@ class ConfigurationManager:
             return False
         
         return True
+    
+    def _generate_name_from_url(self, url: str) -> str:
+        """Generate a song name from the URL when name is not provided"""
+        try:
+            # Extract the path part after custombackingtrack
+            # Example: https://www.karaoke-version.com/custombackingtrack/artist-title.html
+            if 'custombackingtrack/' in url:
+                path_part = url.split('custombackingtrack/')[-1]
+                # Remove .html extension if present
+                if path_part.endswith('.html'):
+                    path_part = path_part[:-5]
+                
+                # Replace hyphens with spaces and title case
+                name = path_part.replace('-', ' ').title()
+                
+                # Clean up any remaining invalid characters
+                invalid_chars = '<>:"/\\|?*'
+                for char in invalid_chars:
+                    name = name.replace(char, '_')
+                
+                # Limit length
+                if len(name) > 100:
+                    name = name[:97] + '...'
+                
+                return name if name else "Unknown Song"
+            else:
+                return "Unknown Song"
+                
+        except Exception as e:
+            self.logger.warning(f"Could not generate name from URL '{url}': {e}")
+            return "Unknown Song"
     
     def _validate_key_value(self, key_value: Any, song_name: str) -> int:
         """Validate and normalize key adjustment value"""
