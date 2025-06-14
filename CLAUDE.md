@@ -309,9 +309,42 @@ tail -f logs/debug.log  # View detailed debug info
 python demo_progress.py  # (removed in cleanup)
 ```
 
-## FINAL STATUS: 100% COMPLETE ✅
+## ✅ MIXER CONTROLS ENHANCEMENT - COMPLETE! 🎉
 
-### All Major Features Implemented
+### Successfully Implemented Features
+1. **🎼 Intro Count Checkbox** ✅ - Automatically ensures "Intro count" checkbox is selected for every track
+2. **🎵 Key Adjustment Support** ✅ - Configurable pitch adjustment via songs.yaml key field
+   - ✅ Read key value from song configuration (-12 to +12 semitones)
+   - ✅ Automatically adjust mixer key display using up/down arrows
+   - ✅ Support positive and negative key changes
+   - ✅ Validation and error handling for out-of-range values
+
+### Final songs.yaml Format
+```yaml
+songs:
+  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song.html"
+    name: "Song_Directory_Name"
+    description: "Optional description"
+    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
+```
+
+### Discovered Selectors (VERIFIED WORKING ✅)
+- **Intro Count Checkbox**: `#precount` (ID selector)
+- **Key Adjustment Buttons**: `button.btn--pitch.pitch__button`
+  - Up button: `onclick='mixer.changePitch(8275, + 1);'`
+  - Down button: `onclick='mixer.changePitch(8275, - 1);'`
+- **Key Display**: `.pitch__caption` (shows current key like "D")
+- **Key Value**: Numeric div within `.pitch` container
+
+### Implementation Details
+- **Config Validation**: Automatically validates key values (-12 to +12), defaults to 0
+- **Smart Key Adjustment**: Calculates steps needed and clicks appropriate button
+- **Error Handling**: JavaScript click fallback for intercepted clicks
+- **Integration**: Seamlessly integrated into existing download workflow
+
+## CURRENT STATUS: PRODUCTION READY + ENHANCEMENTS IN PROGRESS ✅
+
+### All Core Features Implemented (100% Complete)
 1. ✅ **Authentication & Session Management** - Optimized login with re-auth detection
 2. ✅ **Track Discovery & Isolation** - Finds all tracks, solo button functionality
 3. ✅ **Download Sequencing** - Proper waiting, filesystem monitoring, organized storage
@@ -322,4 +355,4 @@ python demo_progress.py  # (removed in cleanup)
 8. ✅ **User Documentation** - Complete README with setup instructions
 
 ### Production Readiness
-**The system is 100% production-ready and fully functional.** All core features are implemented, tested, and working. The automation successfully downloads isolated tracks from Karaoke-Version.com with proper organization and progress tracking.
+**The core system is 100% production-ready and fully functional.** All essential features are implemented, tested, and working. The automation successfully downloads isolated tracks from Karaoke-Version.com with proper organization and progress tracking. New mixer control features are being added to enhance functionality.

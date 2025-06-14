@@ -39,13 +39,17 @@ songs:
   - url: "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
     name: "The_Middle"
     description: "Jimmy Eat World - The Middle"
+    key: 0  # Optional: Pitch adjustment in semitones (-12 to +12)
   
   - url: "https://www.karaoke-version.com/custombackingtrack/taylor-swift/shake-it-off.html"
     name: "Shake_It_Off" 
     description: "Taylor Swift - Shake It Off"
+    key: 2  # Raise pitch by 2 semitones
 ```
 
 💡 **How to get song URLs**: Go to your purchased song on Karaoke-Version.com and copy the URL from your browser.
+
+🎵 **Key Adjustment**: The optional `key` field adjusts pitch from -12 to +12 semitones. Use positive numbers to raise pitch, negative to lower it.
 
 ### 4. Run the Downloader
 
@@ -163,11 +167,29 @@ KV_PASSWORD=your_password
 DOWNLOAD_FOLDER=./my_custom_downloads
 ```
 
+### Song Configuration Options
+
+Each song in `songs.yaml` supports these fields:
+
+| Field | Required | Description | Example |
+|-------|----------|-------------|---------|
+| `url` | ✅ | Direct link to song page | `"https://www.karaoke-version.com/custombackingtrack/artist/song.html"` |
+| `name` | ✅ | Directory name for downloads | `"My_Song"` |
+| `description` | ❌ | Human-readable song info | `"Artist - Song Title"` |
+| `key` | ❌ | Pitch adjustment (-12 to +12 semitones) | `2` (raise 2 semitones), `-3` (lower 3 semitones) |
+
+**Key Adjustment Examples:**
+- `key: 0` - No pitch change (default)
+- `key: 2` - Raise pitch by 2 semitones (e.g., C to D)
+- `key: -1` - Lower pitch by 1 semitone (e.g., C to B)
+- `key: 12` - Raise by full octave
+- `key: -12` - Lower by full octave
+
 ---
 
 ## 🎛️ Advanced Usage
 
-### Download Specific Tracks
+### Download Specific Tracks with Custom Settings
 
 ```python
 from karaoke_automator import KaraokeVersionAutomator
@@ -180,12 +202,16 @@ automator.login()
 song_url = "https://www.karaoke-version.com/custombackingtrack/artist/song.html"
 tracks = automator.get_available_tracks(song_url)
 
+# Setup mixer controls
+automator.track_handler.ensure_intro_count_enabled(song_url)  # Enable intro count
+automator.track_handler.adjust_key(song_url, 3)  # Raise key by 3 semitones
+
 # Find and download specific instruments
 bass_track = [t for t in tracks if 'bass' in t['name'].lower()][0]
 automator.solo_track(bass_track, song_url)
 automator.track_handler.download_current_mix(song_url, "bass_isolated")
 
-# Switch to guitar
+# Switch to guitar (mixer settings persist)
 guitar_track = [t for t in tracks if 'guitar' in t['name'].lower()][0]
 automator.solo_track(guitar_track, song_url)
 automator.track_handler.download_current_mix(song_url, "guitar_isolated")

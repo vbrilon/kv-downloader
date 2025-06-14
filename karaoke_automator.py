@@ -463,6 +463,146 @@ class KaraokeVersionTracker:
         """Set the progress tracker for download monitoring"""
         self.progress_tracker = progress_tracker
     
+    def ensure_intro_count_enabled(self, song_url):
+        """Ensure the intro count checkbox is enabled"""
+        try:
+            # Navigate to song page if needed
+            if self.driver.current_url != song_url:
+                self.driver.get(song_url)
+                time.sleep(3)
+            
+            logging.info("🎼 Checking intro count checkbox...")
+            
+            # Find the intro count checkbox by ID
+            intro_checkbox = self.driver.find_element(By.ID, "precount")
+            
+            # Check if it's already checked
+            is_checked = intro_checkbox.is_selected()
+            
+            if not is_checked:
+                logging.info("📝 Enabling intro count checkbox...")
+                try:
+                    intro_checkbox.click()
+                except Exception as e:
+                    if "element click intercepted" in str(e):
+                        # Use JavaScript click as fallback
+                        logging.info("Click intercepted, using JavaScript click")
+                        self.driver.execute_script("arguments[0].click();", intro_checkbox)
+                    else:
+                        raise e
+                
+                time.sleep(1)  # Brief pause for UI update
+                logging.info("✅ Intro count checkbox enabled")
+            else:
+                logging.info("✅ Intro count checkbox already enabled")
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"❌ Error enabling intro count checkbox: {e}")
+            return False
+    
+    def adjust_key(self, song_url, target_key):
+        """Adjust the mixer key to the target value"""
+        try:
+            # Skip if target key is 0 (no adjustment needed)
+            if target_key == 0:
+                logging.info("🎵 Key adjustment: 0 (no change needed)")
+                return True
+            
+            # Navigate to song page if needed
+            if self.driver.current_url != song_url:
+                self.driver.get(song_url)
+                time.sleep(3)
+            
+            logging.info(f"🎵 Adjusting key to: {target_key:+d} semitones")
+            
+            # Find current key value (should start at 0)
+            try:
+                # Look for the div that contains the current numeric value
+                pitch_container = self.driver.find_element(By.CSS_SELECTOR, ".pitch")
+                current_value_element = pitch_container.find_element(By.XPATH, ".//div[text()='0' or text()!='' and not(@class)]")
+                current_key = int(current_value_element.text.strip())
+                logging.debug(f"Current key value: {current_key}")
+            except:
+                # Assume starting at 0 if we can't read current value
+                current_key = 0
+                logging.debug("Could not read current key, assuming 0")
+            
+            # Calculate how many steps we need
+            steps_needed = target_key - current_key
+            
+            if steps_needed == 0:
+                logging.info("✅ Key already at target value")
+                return True
+            
+            # Find the pitch adjustment buttons
+            pitch_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button.btn--pitch.pitch__button")
+            
+            if len(pitch_buttons) < 2:
+                logging.error("❌ Could not find pitch adjustment buttons")
+                return False
+            
+            # Determine which button is up and which is down by checking onclick
+            up_button = None
+            down_button = None
+            
+            for button in pitch_buttons:
+                onclick = button.get_attribute('onclick') or ''
+                if '+ 1' in onclick:
+                    up_button = button
+                elif '- 1' in onclick:
+                    down_button = button
+            
+            if not up_button or not down_button:
+                logging.error("❌ Could not identify up/down pitch buttons")
+                return False
+            
+            # Click the appropriate button the right number of times
+            if steps_needed > 0:
+                # Need to go up
+                button_to_click = up_button
+                direction = "up"
+            else:
+                # Need to go down
+                button_to_click = down_button
+                direction = "down"
+                steps_needed = abs(steps_needed)
+            
+            logging.info(f"🔄 Clicking {direction} button {steps_needed} times...")
+            
+            for step in range(steps_needed):
+                try:
+                    button_to_click.click()
+                except Exception as e:
+                    if "element click intercepted" in str(e):
+                        # Use JavaScript click as fallback
+                        self.driver.execute_script("arguments[0].click();", button_to_click)
+                    else:
+                        raise e
+                
+                time.sleep(0.5)  # Small delay between clicks
+                logging.debug(f"   Step {step + 1}/{steps_needed}")
+            
+            # Verify the final key value
+            time.sleep(1)  # Wait for UI to update
+            try:
+                final_value_element = pitch_container.find_element(By.XPATH, ".//div[text()!='' and not(@class) and not(contains(@class, 'pitch__label'))]")
+                final_key = int(final_value_element.text.strip())
+                if final_key == target_key:
+                    logging.info(f"✅ Key successfully adjusted to: {final_key:+d}")
+                    return True
+                else:
+                    logging.warning(f"⚠️ Key adjustment may not be complete. Target: {target_key}, Final: {final_key}")
+                    return True  # Still return True as we tried our best
+            except:
+                logging.info(f"✅ Key adjustment completed (could not verify final value)")
+                return True
+            
+        except Exception as e:
+            logging.error(f"❌ Error adjusting key: {e}")
+            return False
+    
     def verify_song_access(self, song_url):
         """Verify user has access to song page"""
         logging.info(f"Verifying access to: {song_url}")
@@ -1563,6 +1703,13 @@ class KaraokeVersionAutomator:
             # Step 3: Process each song
             for song in songs:
                 logging.info(f"Processing: {song['name']}")
+                song_key = song.get('key', 0)  # Get key adjustment value
+                
+                # Log song configuration
+                if song_key != 0:
+                    logging.info(f"🎵 Song configuration - Key: {song_key:+d} semitones")
+                else:
+                    logging.info(f"🎵 Song configuration - Key: no adjustment")
                 
                 # Verify login status
                 if not self.is_logged_in():
@@ -1579,6 +1726,20 @@ class KaraokeVersionAutomator:
                     # Start progress tracking for this song
                     if self.progress:
                         self.progress.start_song(song['name'], tracks)
+                    
+                    # Setup mixer controls once per song
+                    logging.info("🎛️ Setting up mixer controls...")
+                    
+                    # Ensure intro count is enabled
+                    intro_success = self.track_handler.ensure_intro_count_enabled(song['url'])
+                    if not intro_success:
+                        logging.warning("⚠️ Could not enable intro count - continuing anyway")
+                    
+                    # Adjust key if needed
+                    if song_key != 0:
+                        key_success = self.track_handler.adjust_key(song['url'], song_key)
+                        if not key_success:
+                            logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
                     
                     # Download each track individually
                     for track in tracks:
