@@ -1,88 +1,85 @@
 #!/usr/bin/env python3
 """
-Simple test script to inspect the Chappell Roan page structure
-without logging in first.
+Simple test script to inspect page structure
+Uses the main automation class for consistent browser setup
 """
 
 import time
 import logging
-from selenium import webdriver
+import sys
+from pathlib import Path
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+
+# Add parent directory to path
+sys.path.append(str(Path(__file__).parent.parent))
+from karaoke_automator import KaraokeVersionAutomator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def inspect_page_simple():
     """Simple page inspection without login"""
-    chrome_options = Options()
-    # Don't run headless so we can see what's happening
-    
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    automator = KaraokeVersionAutomator()
     
     try:
         test_url = "https://www.karaoke-version.com/custombackingtrack/chappell-roan/pink-pony-club.html"
         logging.info(f"Navigating to: {test_url}")
         
-        driver.get(test_url)
+        automator.driver.get(test_url)
         time.sleep(5)  # Let the page load completely
         
-        logging.info(f"Page title: {driver.title}")
-        logging.info(f"Current URL: {driver.current_url}")
+        logging.info(f"Page title: {automator.driver.title}")
+        logging.info(f"Current URL: {automator.driver.current_url}")
         
-        # Check if we need to login or if content is visible
-        page_source = driver.page_source
+        # Look for track elements
+        track_elements = automator.driver.find_elements(By.CSS_SELECTOR, ".track")
+        logging.info(f"Found {len(track_elements)} track elements")
         
-        if "login" in page_source.lower() or "sign in" in page_source.lower():
-            logging.info("Page appears to require login")
+        if track_elements:
+            for i, track in enumerate(track_elements[:5]):  # Just show first 5
+                try:
+                    track_name = track.find_element(By.CSS_SELECTOR, ".track__caption").text
+                    data_index = track.get_attribute("data-index")
+                    logging.info(f"Track {i+1}: '{track_name}' (index: {data_index})")
+                except Exception as e:
+                    logging.info(f"Track {i+1}: Could not extract name - {e}")
         
-        # Look for any text that mentions tracks or instruments
-        track_keywords = ['vocal', 'guitar', 'bass', 'drum', 'piano', 'track', 'instrument', 'backing']
+        # Check if we can see any obvious protection/login requirements
+        page_text = automator.driver.page_source.lower()
+        protection_keywords = ["login", "sign in", "subscribe", "premium", "member"]
         
-        logging.info("\nSearching for track-related content...")
-        for keyword in track_keywords:
-            if keyword.lower() in page_source.lower():
-                logging.info(f"Found keyword '{keyword}' on page")
+        found_protection = []
+        for keyword in protection_keywords:
+            if keyword in page_text:
+                found_protection.append(keyword)
         
-        # Look for specific elements that might be tracks
-        selectors_to_check = [
-            "button",
-            "input[type='checkbox']",
-            "label",
-            ".track",
-            ".instrument",
-            "[data-track]",
-            "[class*='track']",
-            "[class*='instrument']"
-        ]
+        if found_protection:
+            logging.warning(f"Page may have access restrictions. Found keywords: {found_protection}")
+        else:
+            logging.info("No obvious access restrictions detected")
         
-        for selector in selectors_to_check:
-            try:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    logging.info(f"\nFound {len(elements)} elements with selector: {selector}")
-                    for i, element in enumerate(elements[:5]):  # Limit to first 5
-                        text = element.text.strip()
-                        if text and any(keyword in text.lower() for keyword in track_keywords):
-                            logging.info(f"  {i}: '{text}' (class: {element.get_attribute('class')})")
-            except Exception as e:
-                logging.debug(f"Error with selector {selector}: {e}")
+        # Look for any audio elements
+        audio_elements = automator.driver.find_elements(By.TAG_NAME, "audio")
+        logging.info(f"Found {len(audio_elements)} audio elements")
         
-        # Print some of the page content for manual inspection
-        logging.info(f"\nFirst 500 characters of page:")
-        logging.info(page_source[:500])
+        # Look for mixer-related elements
+        mixer_keywords = ["mixer", "track", "volume", "mute", "solo"]
+        for keyword in mixer_keywords:
+            elements = automator.driver.find_elements(By.XPATH, f"//*[contains(@class, '{keyword}') or contains(@id, '{keyword}')]")
+            if elements:
+                logging.info(f"Found {len(elements)} elements with '{keyword}' in class or id")
         
-        # Keep browser open for manual inspection
-        logging.info("\nBrowser will stay open for 30 seconds for manual inspection...")
+        # Keep browser open for a while
+        logging.info("Browser will stay open for 30 seconds for manual inspection...")
         time.sleep(30)
         
     except Exception as e:
         logging.error(f"Error during inspection: {e}")
     finally:
-        driver.quit()
+        try:
+            automator.driver.quit()
+        except:
+            pass
 
 if __name__ == "__main__":
     inspect_page_simple()

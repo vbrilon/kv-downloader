@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """
 Verify current login status and test access to protected content
+Uses the main automation class for consistent login behavior
 """
 
 import time
 import logging
 import sys
 from pathlib import Path
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
-import config
+from karaoke_automator import KaraokeVersionAutomator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,21 +22,19 @@ def verify_login_and_access():
     print("🔍 VERIFYING LOGIN STATUS AND ACCESS")
     print("="*60)
     
-    # Setup Chrome driver
-    chrome_options = Options()
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    # Initialize automator
+    automator = KaraokeVersionAutomator()
     
     try:
         # Step 1: Check homepage login status
         print("\n1️⃣ Checking homepage login status...")
-        driver.get("https://www.karaoke-version.com")
+        automator.driver.get("https://www.karaoke-version.com")
         time.sleep(3)
         
-        print(f"Page title: {driver.title}")
+        print(f"Page title: {automator.driver.title}")
         
         # Look specifically for "Hello" greeting
-        hello_elements = driver.find_elements(By.XPATH, "//*[starts-with(normalize-space(text()), 'Hello')]")
+        hello_elements = automator.driver.find_elements(By.XPATH, "//*[starts-with(normalize-space(text()), 'Hello')]")
         
         if hello_elements:
             for elem in hello_elements:
@@ -56,7 +51,7 @@ def verify_login_and_access():
             logged_in = False
         
         # Alternative check: look for "Log In" links
-        login_links = driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
+        login_links = automator.driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
         if login_links:
             print(f"❌ Found {len(login_links)} 'Log in' links - appears NOT logged in")
             logged_in = False
@@ -69,10 +64,10 @@ def verify_login_and_access():
         test_song_url = "https://www.karaoke-version.com/custombackingtrack/chappell-roan/pink-pony-club.html"
         print(f"Navigating to: {test_song_url}")
         
-        driver.get(test_song_url)
+        automator.driver.get(test_song_url)
         time.sleep(5)
         
-        current_url = driver.current_url
+        current_url = automator.driver.current_url
         print(f"Current URL: {current_url}")
         
         # Check if we were redirected to login
@@ -85,7 +80,7 @@ def verify_login_and_access():
         
         # Step 3: Check for track elements (indicates proper access)
         print(f"\n3️⃣ Checking for track elements...")
-        track_elements = driver.find_elements(By.CSS_SELECTOR, ".track")
+        track_elements = automator.driver.find_elements(By.CSS_SELECTOR, ".track")
         
         if track_elements:
             print(f"✅ Found {len(track_elements)} track elements - have access to content")
@@ -110,7 +105,7 @@ def verify_login_and_access():
         
         # Step 4: Look for any login prompts on the page
         print(f"\n4️⃣ Checking for login prompts...")
-        page_source = driver.page_source.lower()
+        page_source = automator.driver.page_source.lower()
         
         login_keywords = ["please log in", "sign in to access", "login required", "please sign in"]
         login_prompts_found = []
@@ -153,7 +148,7 @@ def verify_login_and_access():
         print(f"❌ Error during verification: {e}")
         return False
     finally:
-        driver.quit()
+        automator.driver.quit()
 
 if __name__ == "__main__":
     success = verify_login_and_access()

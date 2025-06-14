@@ -7,11 +7,7 @@ This will help us discover the selectors needed for track isolation via solo fun
 import time
 import sys
 from pathlib import Path
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))

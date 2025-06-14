@@ -43,114 +43,8 @@ def inspect_download_button():
         
         print("3️⃣ Searching for download buttons...")
         
-        # Look for download-related buttons
-        download_patterns = [
-            # Direct download text (case insensitive)
-            "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",
-            "//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",
-            "//input[contains(translate(@value, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",
-            
-            # Simple case sensitive
-            "//button[contains(text(), 'Download')]",
-            "//a[contains(text(), 'Download')]",
-            "//button[contains(text(), 'DOWNLOAD')]",
-            
-            # Create/Generate (common for custom tracks)
-            "//button[contains(text(), 'Create')]",
-            "//a[contains(text(), 'Create')]",
-            "//button[contains(text(), 'Generate')]",
-            "//button[contains(text(), 'CREATE')]",
-            
-            # Export related
-            "//button[contains(text(), 'Export')]",
-            "//a[contains(text(), 'Export')]",
-            
-            # Get/Obtain
-            "//button[contains(text(), 'Get')]",
-            "//a[contains(text(), 'Get')]",
-            
-            # All buttons and links (broad search)
-            "//button",
-            "//a[@href]",
-            "//input[@type='submit']",
-            "//input[@type='button']",
-            
-            # CSS selectors
-            "button[class*='download']",
-            "a[class*='download']",
-            ".download-btn",
-            ".download-button",
-            ".btn-download",
-            
-            ".create-btn",
-            ".create-button", 
-            ".btn-create",
-            
-            ".export-btn",
-            ".export-button",
-            
-            # ID selectors
-            "#download",
-            "#create",
-            "#export",
-            "[id*='download']",
-            "[id*='create']",
-            "[id*='export']"
-        ]
-        
-        found_buttons = []
-        
-        for pattern in download_patterns:
-            try:
-                if pattern.startswith("//"):
-                    from selenium.webdriver.common.by import By
-                    elements = automator.driver.find_elements(By.XPATH, pattern)
-                else:
-                    from selenium.webdriver.common.by import By
-                    elements = automator.driver.find_elements(By.CSS_SELECTOR, pattern)
-                
-                if elements:
-                    print(f"\n✅ Found {len(elements)} elements with pattern: '{pattern}'")
-                    
-                    for i, elem in enumerate(elements):
-                        try:
-                            tag = elem.tag_name
-                            text = elem.text.strip()
-                            classes = elem.get_attribute('class') or ''
-                            elem_id = elem.get_attribute('id') or ''
-                            href = elem.get_attribute('href') or ''
-                            onclick = elem.get_attribute('onclick') or ''
-                            visible = elem.is_displayed()
-                            enabled = elem.is_enabled()
-                            
-                            button_info = {
-                                'pattern': pattern,
-                                'tag': tag,
-                                'text': text,
-                                'class': classes,
-                                'id': elem_id,
-                                'href': href,
-                                'onclick': onclick,
-                                'visible': visible,
-                                'enabled': enabled,
-                                'element': elem
-                            }
-                            
-                            found_buttons.append(button_info)
-                            
-                            print(f"  {i+1}. <{tag}> text='{text}' class='{classes[:30]}'")
-                            print(f"     visible={visible} enabled={enabled}")
-                            if href:
-                                print(f"     href='{href[:50]}'")
-                            if onclick:
-                                print(f"     onclick='{onclick[:50]}...'")
-                            print()
-                            
-                        except Exception as e:
-                            print(f"     Error inspecting element: {e}")
-                            
-            except Exception as e:
-                continue
+        # Look for download-related buttons using automator's driver
+        found_buttons = _discover_download_buttons(automator.driver)
         
         print(f"\n4️⃣ Summary: Found {len(found_buttons)} potential download buttons")
         
@@ -194,13 +88,7 @@ def inspect_download_button():
         
         # Search page source for download-related content
         print("5️⃣ Analyzing page source...")
-        page_source = automator.driver.page_source.lower()
-        
-        download_keywords = ['download', 'create', 'generate', 'export', 'get mp3', 'get file']
-        for keyword in download_keywords:
-            count = page_source.count(keyword)
-            if count > 0:
-                print(f"  '{keyword}': {count} occurrences")
+        _analyze_page_source(automator.driver)
         
         # Manual inspection
         print("\n6️⃣ Manual inspection time...")
@@ -219,6 +107,128 @@ def inspect_download_button():
             automator.driver.quit()
         except:
             pass
+
+def _discover_download_buttons(driver):
+    """Helper function to discover download buttons using the provided driver"""
+    from selenium.webdriver.common.by import By
+    
+    download_patterns = [
+        # Direct download text (case insensitive)
+        "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",
+        "//a[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",
+        "//input[contains(translate(@value, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'download')]",
+        
+        # Simple case sensitive
+        "//button[contains(text(), 'Download')]",
+        "//a[contains(text(), 'Download')]",
+        "//button[contains(text(), 'DOWNLOAD')]",
+        
+        # Create/Generate (common for custom tracks)
+        "//button[contains(text(), 'Create')]",
+        "//a[contains(text(), 'Create')]",
+        "//button[contains(text(), 'Generate')]",
+        "//button[contains(text(), 'CREATE')]",
+        
+        # Export related
+        "//button[contains(text(), 'Export')]",
+        "//a[contains(text(), 'Export')]",
+        
+        # Get/Obtain
+        "//button[contains(text(), 'Get')]",
+        "//a[contains(text(), 'Get')]",
+        
+        # All buttons and links (broad search)
+        "//button",
+        "//a[@href]",
+        "//input[@type='submit']",
+        "//input[@type='button']",
+        
+        # CSS selectors
+        "button[class*='download']",
+        "a[class*='download']",
+        ".download-btn",
+        ".download-button",
+        ".btn-download",
+        
+        ".create-btn",
+        ".create-button", 
+        ".btn-create",
+        
+        ".export-btn",
+        ".export-button",
+        
+        # ID selectors
+        "#download",
+        "#create",
+        "#export",
+        "[id*='download']",
+        "[id*='create']",
+        "[id*='export']"
+    ]
+    
+    found_buttons = []
+    
+    for pattern in download_patterns:
+        try:
+            if pattern.startswith("//"):
+                elements = driver.find_elements(By.XPATH, pattern)
+            else:
+                elements = driver.find_elements(By.CSS_SELECTOR, pattern)
+            
+            if elements:
+                print(f"\n✅ Found {len(elements)} elements with pattern: '{pattern}'")
+                
+                for i, elem in enumerate(elements):
+                    try:
+                        tag = elem.tag_name
+                        text = elem.text.strip()
+                        classes = elem.get_attribute('class') or ''
+                        elem_id = elem.get_attribute('id') or ''
+                        href = elem.get_attribute('href') or ''
+                        onclick = elem.get_attribute('onclick') or ''
+                        visible = elem.is_displayed()
+                        enabled = elem.is_enabled()
+                        
+                        button_info = {
+                            'pattern': pattern,
+                            'tag': tag,
+                            'text': text,
+                            'class': classes,
+                            'id': elem_id,
+                            'href': href,
+                            'onclick': onclick,
+                            'visible': visible,
+                            'enabled': enabled,
+                            'element': elem
+                        }
+                        
+                        found_buttons.append(button_info)
+                        
+                        print(f"  {i+1}. <{tag}> text='{text}' class='{classes[:30]}'")
+                        print(f"     visible={visible} enabled={enabled}")
+                        if href:
+                            print(f"     href='{href[:50]}'")
+                        if onclick:
+                            print(f"     onclick='{onclick[:50]}...'")
+                        print()
+                        
+                    except Exception as e:
+                        print(f"     Error inspecting element: {e}")
+                        
+        except Exception as e:
+            continue
+    
+    return found_buttons
+
+def _analyze_page_source(driver):
+    """Helper function to analyze page source for download keywords"""
+    page_source = driver.page_source.lower()
+    
+    download_keywords = ['download', 'create', 'generate', 'export', 'get mp3', 'get file']
+    for keyword in download_keywords:
+        count = page_source.count(keyword)
+        if count > 0:
+            print(f"  '{keyword}': {count} occurrences")
 
 if __name__ == "__main__":
     inspect_download_button()

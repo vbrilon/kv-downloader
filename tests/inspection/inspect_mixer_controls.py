@@ -5,49 +5,33 @@ This tool will help discover the selectors needed for track selection and downlo
 """
 
 import time
-import os
 import sys
 from pathlib import Path
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 
-# Add parent directory to path to import config
+# Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
-import config
+from karaoke_automator import KaraokeVersionAutomator
 
 def inspect_mixer_controls():
     """Inspect mixer controls and download elements"""
     print("🔍 Starting mixer controls inspection...")
     
-    # Setup Chrome driver
-    chrome_options = Options()
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    wait = WebDriverWait(driver, 10)
-    
     try:
-        # Navigate to homepage and login
-        print("📱 Navigating to homepage...")
-        driver.get("https://www.karaoke-version.com")
-        time.sleep(3)
+        # Initialize automator and login
+        print("🔐 Initializing automator and logging in...")
+        automator = KaraokeVersionAutomator()
         
-        # Login
-        print("🔐 Attempting login...")
-        login_successful = attempt_login(driver, wait)
-        
-        if not login_successful:
+        if not automator.login():
             print("❌ Login failed - cannot inspect protected content")
             return
+            
+        print("✅ Login successful!")
             
         # Navigate to test song
         test_song_url = "https://www.karaoke-version.com/custombackingtrack/chappell-roan/pink-pony-club.html"
         print(f"🎵 Navigating to test song: {test_song_url}")
-        driver.get(test_song_url)
+        automator.driver.get(test_song_url)
         time.sleep(5)
         
         print("\n" + "="*80)
@@ -55,28 +39,28 @@ def inspect_mixer_controls():
         print("="*80)
         
         # Look for mixer/player controls
-        inspect_mixer_area(driver)
+        inspect_mixer_area(automator.driver)
         
         print("\n" + "="*80)
         print("DOWNLOAD CONTROLS INSPECTION")
         print("="*80)
         
         # Look for download buttons
-        inspect_download_controls(driver)
+        inspect_download_controls(automator.driver)
         
         print("\n" + "="*80)
         print("TRACK CONTROL ELEMENTS INSPECTION")
         print("="*80)
         
         # Inspect individual track controls
-        inspect_track_controls(driver)
+        inspect_track_controls(automator.driver)
         
         print("\n" + "="*80)
         print("PAGE SOURCE ANALYSIS")
         print("="*80)
         
         # Search for relevant keywords in page source
-        analyze_page_source(driver)
+        analyze_page_source(automator.driver)
         
         # Keep browser open for manual inspection
         print("\n🔍 Browser will stay open for 30 seconds for manual inspection...")
@@ -86,80 +70,12 @@ def inspect_mixer_controls():
     except Exception as e:
         print(f"❌ Error during inspection: {e}")
     finally:
-        driver.quit()
+        try:
+            automator.driver.quit()
+        except:
+            pass
         print("✅ Inspection completed")
 
-def attempt_login(driver, wait):
-    """Attempt to login with credentials"""
-    try:
-        # Look for login link
-        login_selectors = [
-            "//a[contains(text(), 'Log In')]",
-            "//a[contains(text(), 'Login')]",
-            "//a[contains(text(), 'Sign In')]"
-        ]
-        
-        for selector in login_selectors:
-            try:
-                element = driver.find_element(By.XPATH, selector)
-                if element and element.is_displayed():
-                    print(f"🔗 Clicking login link: '{element.text}'")
-                    element.click()
-                    time.sleep(3)
-                    break
-            except:
-                continue
-        
-        # Find username field
-        username_field = None
-        username_selectors = [
-            (By.NAME, "email"),
-            (By.NAME, "username"),
-            (By.ID, "email"),
-            (By.CSS_SELECTOR, "input[type='email']")
-        ]
-        
-        for selector_type, selector_value in username_selectors:
-            try:
-                username_field = wait.until(
-                    EC.presence_of_element_located((selector_type, selector_value))
-                )
-                if username_field and username_field.is_displayed():
-                    break
-            except:
-                continue
-                
-        if not username_field:
-            print("❌ Could not find username field")
-            return False
-        
-        # Find password field
-        password_field = driver.find_element(By.NAME, "password")
-        
-        # Fill credentials
-        username_field.clear()
-        username_field.send_keys(config.USERNAME)
-        password_field.clear()
-        password_field.send_keys(config.PASSWORD)
-        
-        # Submit
-        submit_button = driver.find_element(By.XPATH, "//input[@type='submit'] | //button[@type='submit']")
-        submit_button.click()
-        
-        time.sleep(5)
-        
-        # Check if logged in
-        hello_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Hello')]")
-        if hello_elements:
-            print("✅ Login successful!")
-            return True
-        else:
-            print("❌ Login may have failed")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Login error: {e}")
-        return False
 
 def inspect_mixer_area(driver):
     """Look for mixer/player area elements"""
