@@ -28,10 +28,6 @@ Automated system for downloading isolated backing tracks from Karaoke-Version.co
 git clone <repository-url>
 cd kv
 
-# Create and activate virtual environment
-python -m venv venv
-source bin/activate  # On macOS/Linux
-
 # Install dependencies
 pip install -r requirements.txt
 ```
