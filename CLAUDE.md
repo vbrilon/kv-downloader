@@ -614,6 +614,41 @@ packages/
 3. **Documentation**: Update CLAUDE.md with significant architectural changes
 4. **Performance**: Monitor impact of new features on download times
 
+---
+
+## 📋 TODO LIST & TASK TRACKING
+
+### 🔥 High Priority - Bug Fixes
+- [ ] **Fix click track filename**: Remove key adjustment suffix and fix spacing in `"(-1)_Intro count      Click.mp3"` → should be `"Intro count Click.mp3"`
+- [ ] **Fix missing instrument names**: Files show `"Jimmy_Eat_World_The_Middle(Custom_Backing_Track-1).mp3"` instead of `"Bass(-1).mp3"` with proper instrument names
+
+### 🔧 High Priority - Major Refactoring  
+- [ ] **Phase 1: Extract Infrastructure** - Create browser/, progress/, authentication/ packages
+- [ ] **Phase 2: Break Down Core Logic** - Create file_operations/, track_management/ packages  
+- [ ] **Phase 3: Download Management** - Create download_management/ package
+
+### 🧪 Medium Priority - Testing & Quality
+- [ ] **Create mock/stub tests** that don't require live site access for CI/automated testing
+- [ ] **Phase 4: Final Coordination** - Simplify main automator and cleanup
+
+### ⚡ Low Priority - Performance
+- [ ] **Add performance test** to ensure mixer controls don't significantly slow down automation
+
+### ✅ Completed Tasks
+- [x] **Dead code cleanup** - Removed unused methods and consolidated duplicate code in karaoke_automator.py
+- [x] **Test suite organization** - Organized 37 test files into logical directories (unit, integration, inspection, regression, legacy)
+- [x] **Login test consolidation** - Consolidated 8 duplicate login tests into 1 comprehensive test
+- [x] **Inspection tools refactoring** - Refactored 9 inspection tools to use main automation classes instead of raw Selenium
+- [x] **Track test cleanup** - Consolidated duplicate track discovery and bass isolation tests
+- [x] **Test organization** - Moved misplaced integration tests out of unit/ directory
+- [x] **Legacy cleanup** - Removed 3 legacy files and extracted useful patterns
+- [x] **Directory naming bug** - Fixed duplicate song name in download directory
+- [x] **Track filename bug** - Fixed track filename to include instrument name and key adjustment without 'Custom_Backing_Track'
+- [x] **End-to-end testing** - Created comprehensive test that validates complete workflow
+- [x] **Integration testing** - Added integration test for mixer controls + download workflow combination
+- [x] **Edge case testing** - Created test for edge cases: invalid key values, missing songs.yaml, network failures
+- [x] **Regression testing** - Added regression test suite for safe refactoring
+
 ### Critical Context for Next Session
 - **Virtual environment**: Always `source bin/activate` before any operations
 - **Test structure**: Use `python tests/run_tests.py` for organized test execution
@@ -621,4 +656,4 @@ packages/
 - **Configuration**: `name` field now optional in songs.yaml, auto-extracts from URL
 - **File naming**: Files now use format `TrackName(±KeyAdjustment).mp3` in `Artist_Song/` folders
 - **Refactoring Status**: Completed dead code cleanup and inspection tools refactoring
-- **Next Priority**: Package extraction (browser/, authentication/, etc.) when ready for major refactoring
+- **Next Priority**: Fix the two new filename bugs, then package extraction when ready for major refactoring
