@@ -171,32 +171,9 @@ DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 - **Robust error handling** and session management
 - **Smart download sequencing** with proper waiting
 
-### Performance
-- Login: ~4-14 seconds (optimized on repeat use)
-- Track discovery: Instant
-- Download speed: Depends on internet connection
-- Supports 10-15 tracks per song typically
-
 ---
+## 📄 Disclaimer
 
-## 📄 Legal Notice
+This was created for **personal use only** 
 
-**Personal use only** with songs you have legally purchased from Karaoke-Version.com.
-
-- ✅ Use with your purchased songs
-- ✅ Backup your legally owned content
-- ❌ Do not share downloaded tracks
-- ❌ Do not use commercially
-- ❌ Respect Karaoke-Version.com's Terms of Service
-
----
-
-## 🎉 Enjoy Your Music!
-
-Use your isolated tracks for:
-- **Practice** with backing tracks
-- **Learning** specific instrument parts
-- **Remixing** with individual elements
-- **Karaoke** with professional backing tracks
-
-Have fun making music! 🎵
+I believe this to comply with  Karaoke-Version.com's Terms of Service.
