@@ -164,31 +164,6 @@ class StatsReporter:
                     error_msg = track.get('error_message', 'Unknown error')
                     report_lines.append(f"      • {track['name']}: {error_msg}")
         
-        # Performance Insights
-        report_lines.append("\n⚡ PERFORMANCE INSIGHTS")
-        report_lines.append("-" * 40)
-        
-        if self.songs_data:
-            # Find fastest and slowest tracks
-            all_completed_tracks = []
-            for song in self.songs_data:
-                all_completed_tracks.extend([t for t in song['tracks'] if t['status'] == 'completed'])
-            
-            if all_completed_tracks:
-                fastest_track = min(all_completed_tracks, key=lambda t: t['download_time'])
-                slowest_track = max(all_completed_tracks, key=lambda t: t['download_time'])
-                
-                report_lines.append(f"🚀 Fastest Download: {fastest_track['name']} ({fastest_track['download_time']:.1f}s)")
-                report_lines.append(f"🐌 Slowest Download: {slowest_track['name']} ({slowest_track['download_time']:.1f}s)")
-            
-            # Calculate efficiency metrics
-            overhead_time = session_duration - self.total_download_time
-            efficiency = (self.total_download_time / session_duration * 100) if session_duration > 0 else 0
-            
-            report_lines.append(f"📊 Download Time: {self._format_duration(self.total_download_time)}")
-            report_lines.append(f"⚙️  Overhead Time: {self._format_duration(overhead_time)}")
-            report_lines.append(f"📈 Efficiency: {efficiency:.1f}% (download time / total time)")
-        
         # Error Summary
         if self.errors_encountered:
             report_lines.append("\n🚨 ERROR SUMMARY")
@@ -209,15 +184,6 @@ class StatsReporter:
         # Final Summary
         report_lines.append("\n🎯 FINAL SUMMARY")
         report_lines.append("-" * 40)
-        
-        if success_rate >= 90:
-            report_lines.append("🎉 EXCELLENT! Automation performed exceptionally well.")
-        elif success_rate >= 75:
-            report_lines.append("👍 GOOD! Automation performed well with minor issues.")
-        elif success_rate >= 50:
-            report_lines.append("⚠️  MODERATE! Automation had significant issues but completed some tracks.")
-        else:
-            report_lines.append("❌ POOR! Automation encountered major problems.")
         
         report_lines.append(f"📊 {self.total_tracks_completed}/{self.total_tracks_attempted} tracks successfully downloaded")
         report_lines.append(f"⏱️  Total session completed in {self._format_duration(session_duration)}")
