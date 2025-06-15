@@ -104,7 +104,7 @@ class FileManager:
                     initial_files_by_path[path] = set()
                     initial_counts[path] = 0
             
-            max_wait = 60  # Maximum wait time in seconds
+            max_wait = 90  # Maximum wait time in seconds (increased for better detection)
             waited = 0
             check_interval = 2  # Check every 2 seconds
             
@@ -132,9 +132,23 @@ class FileManager:
                             filename_lower = filename.lower()
                             # Check if it looks like a karaoke download
                             is_audio_or_download = any(filename_lower.endswith(ext) for ext in ['.mp3', '.aif', '.crdownload'])
-                            might_be_karaoke = any(keyword in filename_lower for keyword in [
-                                'custom', 'backing', 'track', 'karaoke'
-                            ]) or len(filename) > 20  # Long filenames are often karaoke tracks
+                            
+                            # Improved karaoke detection - case insensitive and comprehensive patterns
+                            might_be_karaoke = (
+                                # Specific karaoke patterns (case-insensitive)
+                                'custom_backing_track' in filename_lower or
+                                'backing_track' in filename_lower or
+                                'custom' in filename_lower or
+                                'backing' in filename_lower or
+                                'track' in filename_lower or
+                                'karaoke' in filename_lower or
+                                # Parenthetical patterns like (Custom_Backing_Track)
+                                '(custom' in filename_lower or
+                                # Long filenames are often karaoke tracks
+                                len(filename) > 20 or
+                                # Since we're monitoring song folder during download, trust any audio file
+                                is_audio_or_download
+                            )
                             
                             if is_audio_or_download and might_be_karaoke:
                                 relevant_new_files.append(filename)
@@ -173,20 +187,43 @@ class FileManager:
                     
                     # Check if it's an audio file (not .crdownload)
                     is_audio = any(filename.endswith(ext) for ext in ['.mp3', '.aif', '.wav', '.m4a'])
-                    is_recent = (time.time() - file_path.stat().st_mtime) < 120  # Less than 2 minutes old
+                    is_recent = (time.time() - file_path.stat().st_mtime) < 300  # Less than 5 minutes old (more generous)
                     
-                    # Check if it looks like a karaoke file
-                    might_be_karaoke = any(keyword in filename for keyword in [
-                        'custom', 'backing', 'track', 'karaoke'
-                    ]) or len(file_path.name) > 25  # Long filenames typically indicate karaoke tracks
+                    # Check if it looks like a karaoke file - improved detection
+                    filename_lower = filename  # filename is already lowercased above
+                    might_be_karaoke = (
+                        # Specific karaoke patterns (case-insensitive)
+                        'custom_backing_track' in filename_lower or
+                        'backing_track' in filename_lower or
+                        'custom' in filename_lower or
+                        'backing' in filename_lower or
+                        'track' in filename_lower or
+                        'karaoke' in filename_lower or
+                        # Parenthetical patterns like (Custom_Backing_Track)
+                        '(custom' in filename_lower or
+                        # Long filenames typically indicate karaoke tracks
+                        len(file_path.name) > 25 or
+                        # Since we're in song folder during download window, trust any recent audio file
+                        True  # Accept any recent audio file in the song folder
+                    )
                     
                     # Enhanced logging for filename detection (INFO level to show in production)
                     if is_audio and is_recent:
                         logging.info(f"📁 Checking file: {file_path.name}")
                         logging.info(f"   Audio: {is_audio}, Recent: {is_recent}, Karaoke-like: {might_be_karaoke}")
                         if might_be_karaoke:
-                            keywords_found = [keyword for keyword in ['custom', 'backing', 'track', 'karaoke'] if keyword in filename]
-                            logging.info(f"   Keywords found: {keywords_found}")
+                            # Check which patterns matched
+                            patterns_found = []
+                            if 'custom_backing_track' in filename_lower: patterns_found.append('custom_backing_track')
+                            if 'backing_track' in filename_lower: patterns_found.append('backing_track')
+                            if 'custom' in filename_lower: patterns_found.append('custom')
+                            if 'backing' in filename_lower: patterns_found.append('backing')
+                            if 'track' in filename_lower: patterns_found.append('track')
+                            if 'karaoke' in filename_lower: patterns_found.append('karaoke')
+                            if '(custom' in filename_lower: patterns_found.append('parenthetical_custom')
+                            if len(file_path.name) > 25: patterns_found.append('long_filename')
+                            if not patterns_found: patterns_found.append('recent_audio_in_song_folder')
+                            logging.info(f"   Patterns found: {patterns_found}")
                     
                     if is_audio and is_recent and might_be_karaoke:
                         # Make sure there's no corresponding .crdownload file

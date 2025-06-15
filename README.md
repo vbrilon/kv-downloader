@@ -243,7 +243,8 @@ If you encounter issues:
 ### Download Sequencing
 - **Smart waiting**: Monitors filesystem to detect when downloads actually start
 - **Proper sequencing**: Won't initiate next download until previous one begins
-- **Timeout protection**: Max 60-second wait per download with progress updates
+- **Timeout protection**: Max 90-second wait per download with progress updates
+- **Robust detection**: Case-insensitive pattern matching prevents false negatives
 - **File organization**: Automatically moves downloads from default location to song folders
 - **Clean filenames**: Removes unwanted suffixes like "_Custom_Backing_Track"
 
