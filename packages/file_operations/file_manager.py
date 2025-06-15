@@ -303,10 +303,24 @@ class FileManager:
                 # Clean track name for filename
                 clean_track_name = track_name.replace('_', ' ').strip()
                 
-                # Check if track name is already in the filename
+                # Check if some form of track name is already in the filename
                 name_without_ext = new_name.rsplit('.', 1)[0]
-                if clean_track_name.lower() not in name_without_ext.lower():
-                    # Add track name in parentheses before the file extension
+                filename_lower = name_without_ext.lower()
+                
+                # Check for various forms of the track name being present
+                track_already_present = False
+                
+                # Check if the full track name is already there
+                if clean_track_name.lower() in filename_lower:
+                    track_already_present = True
+                
+                # Check for key words from the track name (for cases like "Click" vs "Intro count Click")
+                track_words = [word.strip() for word in clean_track_name.lower().split() if len(word.strip()) > 2]
+                if track_words and any(word in filename_lower for word in track_words):
+                    track_already_present = True
+                
+                # If no track identifier present, add the clean track name
+                if not track_already_present:
                     name_parts = new_name.rsplit('.', 1)
                     if len(name_parts) == 2:
                         new_name = f"{name_parts[0]}({clean_track_name}).{name_parts[1]}"
