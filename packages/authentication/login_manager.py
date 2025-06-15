@@ -292,17 +292,33 @@ class LoginManager:
                 'window_size': self.driver.get_window_size()
             }
             
-            # Try to get localStorage data
+            # Try to get localStorage data (actual key-value pairs only)
             try:
-                local_storage = self.driver.execute_script("return window.localStorage;")
+                local_storage_script = """
+                var storage = {};
+                for (var i = 0; i < localStorage.length; i++) {
+                    var key = localStorage.key(i);
+                    storage[key] = localStorage.getItem(key);
+                }
+                return storage;
+                """
+                local_storage = self.driver.execute_script(local_storage_script)
                 session_data['localStorage'] = local_storage
             except Exception as e:
                 logging.debug(f"Could not save localStorage: {e}")
                 session_data['localStorage'] = {}
             
-            # Try to get sessionStorage data
+            # Try to get sessionStorage data (actual key-value pairs only)
             try:
-                session_storage = self.driver.execute_script("return window.sessionStorage;")
+                session_storage_script = """
+                var storage = {};
+                for (var i = 0; i < sessionStorage.length; i++) {
+                    var key = sessionStorage.key(i);
+                    storage[key] = sessionStorage.getItem(key);
+                }
+                return storage;
+                """
+                session_storage = self.driver.execute_script(session_storage_script)
                 session_data['sessionStorage'] = session_storage
             except Exception as e:
                 logging.debug(f"Could not save sessionStorage: {e}")
@@ -350,38 +366,92 @@ class LoginManager:
             cookies = session_data.get('cookies', [])
             for cookie in cookies:
                 try:
-                    # Remove problematic attributes that can cause issues
+                    # Keep all cookie attributes, but handle expiry specially
                     cookie_copy = cookie.copy()
-                    # Remove attributes that might cause issues when adding
-                    for attr in ['expiry', 'httpOnly', 'sameSite']:
-                        cookie_copy.pop(attr, None)
+                    
+                    # Handle expiry - convert to int if present
+                    if 'expiry' in cookie_copy:
+                        try:
+                            cookie_copy['expiry'] = int(cookie_copy['expiry'])
+                        except:
+                            del cookie_copy['expiry']
                     
                     self.driver.add_cookie(cookie_copy)
+                    logging.debug(f"Restored cookie: {cookie.get('name', 'unknown')}")
                 except Exception as e:
                     logging.debug(f"Could not restore cookie {cookie.get('name', 'unknown')}: {e}")
+                    # Try with minimal attributes as fallback
+                    try:
+                        minimal_cookie = {
+                            'name': cookie.get('name'),
+                            'value': cookie.get('value'),
+                            'domain': cookie.get('domain'),
+                            'path': cookie.get('path', '/'),
+                            'secure': cookie.get('secure', False)
+                        }
+                        self.driver.add_cookie(minimal_cookie)
+                        logging.debug(f"Restored cookie with minimal attributes: {cookie.get('name', 'unknown')}")
+                    except Exception as e2:
+                        logging.debug(f"Failed to restore cookie even with minimal attributes: {e2}")
             
             # Restore localStorage
             local_storage = session_data.get('localStorage', {})
-            for key, value in local_storage.items():
-                try:
-                    self.driver.execute_script(f"window.localStorage.setItem('{key}', '{value}');")
-                except Exception as e:
-                    logging.debug(f"Could not restore localStorage item {key}: {e}")
+            if local_storage and isinstance(local_storage, dict):
+                for key, value in local_storage.items():
+                    try:
+                        # Use JSON.stringify to safely encode the value
+                        self.driver.execute_script(
+                            "window.localStorage.setItem(arguments[0], arguments[1]);", 
+                            key, str(value)
+                        )
+                        logging.debug(f"Restored localStorage: {key}")
+                    except Exception as e:
+                        logging.debug(f"Could not restore localStorage item {key}: {e}")
             
             # Restore sessionStorage
             session_storage = session_data.get('sessionStorage', {})
-            for key, value in session_storage.items():
-                try:
-                    self.driver.execute_script(f"window.sessionStorage.setItem('{key}', '{value}');")
-                except Exception as e:
-                    logging.debug(f"Could not restore sessionStorage item {key}: {e}")
+            if session_storage and isinstance(session_storage, dict):
+                for key, value in session_storage.items():
+                    try:
+                        # Use arguments to safely pass values to avoid injection issues
+                        self.driver.execute_script(
+                            "window.sessionStorage.setItem(arguments[0], arguments[1]);", 
+                            key, str(value)
+                        )
+                        logging.debug(f"Restored sessionStorage: {key}")
+                    except Exception as e:
+                        logging.debug(f"Could not restore sessionStorage item {key}: {e}")
             
             # Refresh page to apply restored session
             self.driver.refresh()
             time.sleep(3)
             
-            logging.info("✅ Session data restored")
-            return True
+            # Try accessing a protected area to trigger session validation
+            try:
+                # Navigate to account page which should validate session
+                self.driver.get("https://www.karaoke-version.com/myaccount.html")
+                time.sleep(3)
+                
+                # Check if we were redirected to login page
+                current_url = self.driver.current_url
+                if "login" in current_url.lower() or "signin" in current_url.lower():
+                    logging.debug("Redirected to login page, session invalid")
+                    return False
+                    
+            except Exception as e:
+                logging.debug(f"Error accessing account page: {e}")
+            
+            # Go back to home page and verify login status
+            self.driver.get("https://www.karaoke-version.com")
+            time.sleep(3)
+            
+            # Verify the session restoration worked by checking login status
+            if self.is_logged_in():
+                logging.info("✅ Session data restored and login verified")
+                return True
+            else:
+                logging.warning("⚠️ Session data restored but login verification failed")
+                return False
             
         except Exception as e:
             logging.warning(f"⚠️ Could not load session data: {e}")

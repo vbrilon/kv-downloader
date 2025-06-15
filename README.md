@@ -123,13 +123,14 @@ Use `--debug` flag for troubleshooting:
 - Saves detailed logs to `logs/debug.log`
 - Displays element inspection info
 
-### Session Persistence
+### Session Persistence ✅
 
-The script automatically saves your login session after the first successful login. This means:
+The script automatically saves your login session after the first successful login. This feature is fully working and provides significant time savings:
 
 - **First run**: Performs normal login (~4-14 seconds)
-- **Subsequent runs**: Restores saved session (~2-3 seconds)
+- **Subsequent runs**: Restores saved session (~2-3 seconds) 
 - **Session expiry**: Automatically falls back to fresh login after 24 hours
+- **Smart validation**: Verifies restored sessions are still valid before proceeding
 
 **Session Management Commands**:
 ```bash
