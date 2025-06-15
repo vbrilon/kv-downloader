@@ -259,6 +259,13 @@ python karaoke_automator.py --clear-session
 - **Security**: 24-hour expiry, automatic cleanup of old sessions
 - **Compatibility**: Works with both headless and debug modes
 
+### 🔧 RECENT SESSION BUG FIX (2025-06-15)
+**Bug**: `--force-login --debug` wasn't properly logging out users before fresh login  
+**Root Cause**: In `packages/authentication/login_manager.py:519`, the `force_relogin` parameter wasn't being passed through to the underlying `login()` method  
+**Fix**: Changed `return self.login(username, password, force_relogin=False)` to `return self.login(username, password, force_relogin=force_relogin)`  
+**Impact**: `--force-login` now correctly logs out existing sessions before performing fresh authentication  
+**File**: `packages/authentication/login_manager.py:519`
+
 ## Architecture Overview
 
 ### Package Structure

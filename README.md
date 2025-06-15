@@ -171,6 +171,10 @@ DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 - **macOS**: `brew install chromedriver`
 - **macOS**: If quarantine error: `xattr -d com.apple.quarantine /opt/homebrew/bin/chromedriver`
 
+**"Force login not working"**
+- Update to latest version (fixed bug where `--force-login --debug` didn't properly log out)
+- Use `--clear-session` to manually clear saved session data if needed
+
 ### Getting Help
 
 1. Always activate virtual environment: `source bin/activate`

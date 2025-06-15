@@ -516,4 +516,4 @@ class LoginManager:
         
         # Fall back to regular login process
         logging.info("🔐 Proceeding with fresh login...")
-        return self.login(username, password, force_relogin=False)  # Don't double force
+        return self.login(username, password, force_relogin=force_relogin)
