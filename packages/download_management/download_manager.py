@@ -4,6 +4,10 @@ import time
 import logging
 import threading
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    WebDriverException
+)
 
 
 class DownloadManager:
@@ -148,7 +152,8 @@ class DownloadManager:
                         download_links = [link for link in all_links if 'download' in link.get_attribute('class').lower() or 'download' in link.text.lower()]
                         for link in download_links[:5]:  # Show first 5 matches
                             logging.debug(f"  - {link.tag_name} class='{link.get_attribute('class')}' text='{link.text[:30]}'")
-                    except:
+                    except (Exception, AttributeError, WebDriverException) as e:
+                        logging.debug(f"Could not analyze download links: {e}")
                         pass
                     return False
             
@@ -211,7 +216,8 @@ class DownloadManager:
                     logging.warning(f"Could not inspect new window: {e}")
                     try:
                         self.driver.switch_to.window(self.driver.window_handles[0])
-                    except:
+                    except (Exception, WebDriverException) as e:
+                        logging.debug(f"Could not switch back to original window: {e}")
                         pass
             
             # Update progress tracker to indicate we're waiting for download to start
@@ -429,7 +435,8 @@ class DownloadManager:
                     if elements and any(elem.is_displayed() for elem in elements):
                         logging.debug(f"Found purchase indicator: {indicator}")
                         return True
-                except:
+                except (Exception, NoSuchElementException) as e:
+                    logging.debug(f"Purchase indicator check failed: {e}")
                     continue
             
             # Also check for absence of premium content indicators

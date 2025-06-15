@@ -7,6 +7,14 @@ import pickle
 from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import (
+    TimeoutException, 
+    NoSuchElementException, 
+    ElementNotInteractableException,
+    ElementClickInterceptedException,
+    WebDriverException,
+    StaleElementReferenceException
+)
 
 try:
     from packages.configuration import USERNAME, PASSWORD
@@ -86,7 +94,8 @@ class LoginManager:
                         time.sleep(3)
                         logging.info("Logout completed")
                         return True
-                except:
+                except (Exception, AttributeError, ElementClickInterceptedException) as e:
+                    logging.debug(f"Logout selector failed: {e}")
                     continue
             
             # Alternative: Clear cookies to force logout
@@ -104,7 +113,8 @@ class LoginManager:
                 self.driver.refresh()
                 time.sleep(3)
                 return True
-            except:
+            except (Exception, WebDriverException) as e:
+                logging.debug(f"Cookie fallback failed: {e}")
                 return False
     
     def click_login_link(self):
@@ -125,7 +135,8 @@ class LoginManager:
                         element.click()
                         time.sleep(3)
                         return True
-                except:
+                except (Exception, NoSuchElementException, ElementNotInteractableException) as e:
+                    logging.debug(f"Login selector failed: {e}")
                     continue
             
             logging.warning("No login link found")
@@ -156,7 +167,8 @@ class LoginManager:
                     if username_field and username_field.is_displayed():
                         logging.info(f"Found username field: {selector_type} = '{selector_value}'")
                         break
-                except:
+                except (TimeoutException, NoSuchElementException, ElementNotInteractableException) as e:
+                    logging.debug(f"Username selector failed: {e}")
                     continue
             
             if not username_field:
@@ -177,7 +189,8 @@ class LoginManager:
                     if password_field and password_field.is_displayed():
                         logging.info(f"Found password field: {selector_type} = '{selector_value}'")
                         break
-                except:
+                except (NoSuchElementException, ElementNotInteractableException) as e:
+                    logging.debug(f"Password selector failed: {e}")
                     continue
             
             if not password_field:
@@ -205,7 +218,8 @@ class LoginManager:
                     if submit_button and submit_button.is_displayed():
                         logging.info(f"Found submit button: {selector_type} = '{selector_value}'")
                         break
-                except:
+                except (NoSuchElementException, ElementNotInteractableException) as e:
+                    logging.debug(f"Submit selector failed: {e}")
                     continue
             
             if not submit_button:
@@ -373,7 +387,8 @@ class LoginManager:
                     if 'expiry' in cookie_copy:
                         try:
                             cookie_copy['expiry'] = int(cookie_copy['expiry'])
-                        except:
+                        except (ValueError, TypeError) as e:
+                            logging.debug(f"Could not convert expiry to int: {e}")
                             del cookie_copy['expiry']
                     
                     self.driver.add_cookie(cookie_copy)

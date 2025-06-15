@@ -3,6 +3,10 @@
 import time
 import logging
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    ElementClickInterceptedException
+)
 
 
 class TrackManager:
@@ -225,7 +229,8 @@ class TrackManager:
                         button.click()
                         active_solos += 1
                         time.sleep(0.5)
-                except:
+                except (Exception, AttributeError, ElementClickInterceptedException) as e:
+                    logging.debug(f"Could not click solo button: {e}")
                     continue
             
             if active_solos > 0:
@@ -300,10 +305,10 @@ class TrackManager:
                 current_value_element = pitch_container.find_element(By.XPATH, ".//div[text()='0' or text()!='' and not(@class)]")
                 current_key = int(current_value_element.text.strip())
                 logging.debug(f"Current key value: {current_key}")
-            except:
+            except (Exception, NoSuchElementException, ValueError) as e:
                 # Assume starting at 0 if we can't read current value
                 current_key = 0
-                logging.debug("Could not read current key, assuming 0")
+                logging.debug(f"Could not read current key, assuming 0: {e}")
             
             # Calculate how many steps we need
             steps_needed = target_key - current_key
@@ -371,8 +376,8 @@ class TrackManager:
                 else:
                     logging.warning(f"⚠️ Key adjustment may not be complete. Target: {target_key}, Final: {final_key}")
                     return True  # Still return True as we tried our best
-            except:
-                logging.info(f"✅ Key adjustment completed (could not verify final value)")
+            except (Exception, NoSuchElementException, ValueError) as e:
+                logging.info(f"✅ Key adjustment completed (could not verify final value): {e}")
                 return True
             
         except Exception as e:
