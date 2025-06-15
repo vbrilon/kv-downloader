@@ -45,7 +45,7 @@ songs:
   
   - url: "https://www.karaoke-version.com/custombackingtrack/taylor-swift/shake-it-off.html"
     name: "Shake_It_Off"  # Optional: override auto-extracted folder name
-    key: 2  # Raise pitch by 2 semitones
+    key: "+2"  # Raise pitch by 2 semitones (supports multiple formats)
 ```
 
 💡 **Get URLs**: Copy the URL from your purchased song page on Karaoke-Version.com.
@@ -87,7 +87,29 @@ downloads/
 | `url` | ✅ | Song page URL | `"https://www.karaoke-version.com/custombackingtrack/artist/song.html"` |
 | `name` | ❌ | Custom folder name (auto-extracted if omitted) | `"My_Song"` |
 | `description` | ❌ | Song description | `"Artist - Song Title"` |
-| `key` | ❌ | Pitch adjustment (-12 to +12 semitones) | `2`, `-3` |
+| `key` | ❌ | Pitch adjustment (-12 to +12 semitones) | `2`, `"+3"`, `"-2"` |
+
+### Key Adjustment Formats
+
+The `key` field supports multiple input formats for flexibility:
+
+```yaml
+# Integer format (most common)
+key: 2      # Raise 2 semitones
+key: -3     # Lower 3 semitones  
+key: 0      # No change
+
+# String format with explicit sign
+key: "+2"   # Raise 2 semitones
+key: "-3"   # Lower 3 semitones
+key: "+0"   # No change
+
+# String format without sign (treated as positive)
+key: "2"    # Raise 2 semitones
+key: "5"    # Raise 5 semitones
+```
+
+**Range**: -12 to +12 semitones (1 octave). Values outside this range default to 0.
 
 ### Debug Mode
 

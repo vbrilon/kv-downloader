@@ -45,6 +45,7 @@ songs:
     name: "Song_Directory_Name"  # Optional: auto-extracts from URL if omitted
     description: "Optional description"
     key: -1  # Optional: Pitch adjustment in semitones (-12 to +12)
+    # Supports multiple formats: 2, "+3", "-2", "5"
 ```
 
 ## Usage Instructions
@@ -212,7 +213,17 @@ songs:
     name: "Song_Directory_Name"  # Optional: auto-extracts from URL if omitted
     description: "Optional description"
     key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
+    
+  # Enhanced key format support:
+  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song2.html"
+    key: "+3"   # String with explicit positive sign
+  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song3.html"
+    key: "-2"   # String with negative sign
+  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song4.html"
+    key: "5"    # String without sign (treated as positive)
 ```
+
+**Key Format Support**: Accepts integers (`2`, `-3`), strings with explicit signs (`"+2"`, `"-3"`), and strings without signs (`"2"`, `"5"`).
 
 ## Architecture Overview
 

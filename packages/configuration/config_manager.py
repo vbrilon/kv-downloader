@@ -128,14 +128,38 @@ class ConfigurationManager:
             return "Unknown Song"
     
     def _validate_key_value(self, key_value: Any, song_name: str) -> int:
-        """Validate and normalize key adjustment value"""
+        """Validate and normalize key adjustment value
+        
+        Accepts multiple formats:
+        - Integer: 2, -3, 0
+        - String with explicit sign: "+2", "-3", "+0"
+        - String without sign: "2", "3" (treated as positive)
+        """
         
         # Default to 0 if not specified
         if key_value is None:
             return 0
         
         try:
-            key_int = int(key_value)
+            # Handle string inputs (with or without explicit + sign)
+            if isinstance(key_value, str):
+                key_value = key_value.strip()
+                
+                # Empty string defaults to 0
+                if not key_value:
+                    return 0
+                
+                # Handle explicit positive sign "+2" -> 2
+                if key_value.startswith('+'):
+                    key_value = key_value[1:]  # Remove the + sign
+                
+                # Convert to integer
+                key_int = int(key_value)
+            else:
+                # Handle numeric inputs - only accept integers, reject floats
+                if isinstance(key_value, float):
+                    raise ValueError(f"Float values not supported: {key_value}")
+                key_int = int(key_value)
             
             # Validate range
             if key_int < -12 or key_int > 12:
@@ -146,9 +170,9 @@ class ConfigurationManager:
             
             return key_int
             
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
             self.logger.warning(
-                f"Song '{song_name}': Invalid key value '{key_value}', setting to 0"
+                f"Song '{song_name}': Invalid key value '{key_value}', setting to 0. Error: {e}"
             )
             return 0
     

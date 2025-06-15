@@ -1,20 +1,31 @@
 # Song Configuration File
 # Define the songs to download with their URLs and output directory names
-# Format: Each song has a URL and a directory name where tracks will be saved
 
 songs:
-#  - url: "https://www.karaoke-version.com/song1.html"
-#    name: "My_Song"
-#    description: "Example song 1"
+#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song.html"
+#    name: "My_Song"  # Optional: auto-extracted from URL if omitted
+#    description: "Artist - Song Title"  # Optional: for documentation
 #    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
     
   - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
-#  - url: "https://www.karaoke-version.com/custombackingtrack/deep-purple/black-night.html"
 
-# Notes:
-# - URLs should be the direct links to individual song pages
-# - Name is optional - if omitted, folder name will be auto-extracted from URL as "Artist_Song"
-# - Names will be used as directory names, so avoid special characters  
-# - Description is optional but helpful for organization
-# - Key is optional pitch adjustment in semitones (-12 to +12), defaults to 0
+# Example configurations with different key formats:
+#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song1.html"
+#    key: 2      # Integer format (positive)
+#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song2.html"  
+#    key: "+3"   # String with explicit positive sign
+#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song3.html"
+#    key: "-2"   # String with negative sign
+#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song4.html"
+#    key: "5"    # String without sign (treated as positive)
+
+# Configuration Notes:
+# - URLs should be direct links to individual song pages on Karaoke-Version.com
+# - Name is optional - auto-extracted from URL as "Artist - Song" if omitted
+# - Description is optional and used for documentation only
+# - Key supports multiple formats:
+#   * Integer: 2, -3, 0
+#   * String with sign: "+2", "-3", "+0"  
+#   * String without sign: "2", "5" (treated as positive)
+#   * Range: -12 to +12 semitones (values outside range default to 0)
 # - Add as many songs as needed following the same format
