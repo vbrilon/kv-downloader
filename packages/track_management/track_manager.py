@@ -144,19 +144,45 @@ class TrackManager:
                     self.driver.execute_script("arguments[0].click();", solo_button)
                 else:
                     raise e
-            time.sleep(1)  # Brief pause for UI to update
+            time.sleep(2)  # Longer pause for UI to update
             
-            # Verify solo button is active (if possible)
+            # Verify solo button is active (critical for ensuring isolation worked)
             try:
                 button_classes = solo_button.get_attribute('class') or ''
-                if 'active' in button_classes.lower() or 'selected' in button_classes.lower():
+                logging.debug(f"Solo button classes after click: '{button_classes}'")
+                
+                if 'is-active' in button_classes.lower() or 'active' in button_classes.lower() or 'selected' in button_classes.lower():
                     logging.info(f"✅ Solo button appears active for {track_name}")
+                    return True
                 else:
-                    logging.info(f"Solo button clicked for {track_name} (status unknown)")
-            except:
-                logging.info(f"Solo button clicked for {track_name}")
-            
-            return True
+                    logging.warning(f"⚠️ Solo button clicked but not active for {track_name}")
+                    logging.warning(f"   Button classes: '{button_classes}'")
+                    
+                    # Try clicking again after a longer delay
+                    logging.info(f"🔄 Retrying solo click for {track_name}")
+                    time.sleep(2)
+                    try:
+                        self.driver.execute_script("arguments[0].click();", solo_button)
+                        time.sleep(2)
+                        
+                        # Check again
+                        button_classes_retry = solo_button.get_attribute('class') or ''
+                        if 'is-active' in button_classes_retry.lower() or 'active' in button_classes_retry.lower():
+                            logging.info(f"✅ Solo button active after retry for {track_name}")
+                            return True
+                        else:
+                            logging.error(f"❌ Solo failed for {track_name} - button still not active after retry")
+                            logging.error(f"   This track may not support soloing or may have site-specific issues")
+                            return False
+                    except Exception as retry_e:
+                        logging.error(f"Error during solo retry for {track_name}: {retry_e}")
+                        return False
+                        
+            except Exception as e:
+                logging.warning(f"Could not verify solo status for {track_name}: {e}")
+                # Default to True for backward compatibility, but with warning
+                logging.warning("Assuming solo worked, but download may contain full mix")
+                return True
             
         except Exception as e:
             logging.error(f"Error soloing track {track_name}: {e}")
