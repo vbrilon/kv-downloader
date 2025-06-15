@@ -12,8 +12,8 @@ Automatically downloads individual instrument tracks (bass, guitar, vocals, drum
 
 ```bash
 # Clone or download this project
-git clone <repository-url>
-cd kv
+git clone https://github.com/vbrilon/kv-downloader
+cd kv-downloader
 
 # Activate virtual environment (REQUIRED)
 source bin/activate
