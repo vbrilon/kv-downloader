@@ -13,15 +13,19 @@ from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
-from karaoke_automator import KaraokeVersionLogin, KaraokeVersionTracker, KaraokeVersionAutomator
+from packages.authentication import LoginManager
+from packages.track_management import TrackManager
+from packages.download_management import DownloadManager
+from packages.file_operations import FileManager
+from karaoke_automator import KaraokeVersionAutomator
 
-class TestKaraokeVersionLogin(unittest.TestCase):
+class TestLoginManager(unittest.TestCase):
     """Unit tests for login functionality"""
     
     def setUp(self):
         self.mock_driver = Mock()
         self.mock_wait = Mock()
-        self.login_handler = KaraokeVersionLogin(self.mock_driver, self.mock_wait)
+        self.login_handler = LoginManager(self.mock_driver, self.mock_wait)
     
     def test_is_logged_in_success(self):
         """Test successful login detection"""
@@ -61,24 +65,24 @@ class TestKaraokeVersionLogin(unittest.TestCase):
             ("", "song_"),  # Empty name handling
         ]
         
-        tracker = KaraokeVersionTracker(Mock(), Mock())
+        download_manager = DownloadManager(Mock(), Mock())
         for input_name, expected in test_cases:
             with self.subTest(input_name=input_name):
                 # Mock time.time for consistent empty name handling
                 with patch('time.time', return_value=12345):
-                    result = tracker._sanitize_folder_name(input_name)
+                    result = download_manager.sanitize_folder_name(input_name)
                     if expected.endswith("_"):
                         self.assertTrue(result.startswith("song_"))
                     else:
                         self.assertEqual(result, expected)
 
-class TestKaraokeVersionTracker(unittest.TestCase):
+class TestTrackManager(unittest.TestCase):
     """Unit tests for track discovery and manipulation"""
     
     def setUp(self):
         self.mock_driver = Mock()
         self.mock_wait = Mock()
-        self.tracker = KaraokeVersionTracker(self.mock_driver, self.mock_wait)
+        self.tracker = TrackManager(self.mock_driver, self.mock_wait)
     
     def test_extract_song_folder_name(self):
         """Test song folder name extraction from URLs"""
@@ -95,10 +99,11 @@ class TestKaraokeVersionTracker(unittest.TestCase):
             }
         ]
         
+        download_manager = DownloadManager(Mock(), Mock())
         for test_case in test_cases:
             with self.subTest(url=test_case['url']):
-                with patch.object(self.tracker, '_sanitize_folder_name', side_effect=lambda x: x):
-                    result = self.tracker._extract_song_folder_name(test_case['url'])
+                with patch.object(download_manager, 'sanitize_folder_name', side_effect=lambda x: x):
+                    result = download_manager.extract_song_folder_name(test_case['url'])
                     
                     self.assertIn(test_case['expected_artist'], result)
                     self.assertIn(test_case['expected_song'], result)
@@ -108,17 +113,19 @@ class TestKaraokeVersionTracker(unittest.TestCase):
         """Test fallback for invalid URLs"""
         invalid_url = "https://invalid-url.com/bad/path"
         
+        download_manager = DownloadManager(Mock(), Mock())
         with patch('time.time', return_value=12345):
-            result = self.tracker._extract_song_folder_name(invalid_url)
+            result = download_manager.extract_song_folder_name(invalid_url)
             self.assertEqual(result, "karaoke_download_12345")
     
     def test_setup_song_folder(self):
         """Test song folder creation"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch('config.DOWNLOAD_FOLDER', temp_dir):
+            file_manager = FileManager()
+            with patch('packages.configuration.config.DOWNLOAD_FOLDER', temp_dir):
                 song_folder_name = "Test Artist - Test Song"
                 
-                result = self.tracker._setup_song_folder(song_folder_name)
+                result = file_manager.setup_song_folder(song_folder_name)
                 
                 expected_path = Path(temp_dir) / song_folder_name
                 self.assertEqual(result, expected_path)
@@ -147,7 +154,8 @@ class TestKaraokeVersionTracker(unittest.TestCase):
                     file_path = temp_path / filename
                     os.utime(file_path, (999, 999))  # 1 second old
                 
-                self.tracker._cleanup_existing_downloads("track_test", temp_path)
+                file_manager = FileManager()
+                file_manager.cleanup_existing_downloads("track_test", temp_path)
             
             # Check results
             remaining_files = list(temp_path.glob("*.mp3"))
@@ -166,7 +174,8 @@ class TestKaraokeVersionTracker(unittest.TestCase):
                 # Set file time to old (should be preserved)
                 os.utime(old_file, (1000, 1000))  # 9000 seconds old (2.5 hours)
                 
-                self.tracker._cleanup_existing_downloads("test", temp_path)
+                file_manager = FileManager()
+                file_manager.cleanup_existing_downloads("test", temp_path)
             
             # Old file should still exist
             self.assertTrue(old_file.exists())
@@ -176,35 +185,29 @@ class TestKaraokeVersionAutomator(unittest.TestCase):
     
     def test_init_headless_mode(self):
         """Test automator initialization with headless mode"""
-        with patch.object(KaraokeVersionAutomator, 'setup_driver'), \
-             patch.object(KaraokeVersionAutomator, 'setup_folders'):
-            
-            # Test headless mode
-            automator = KaraokeVersionAutomator(headless=True)
-            self.assertTrue(automator.headless)
-            
-            # Test visible mode
-            automator = KaraokeVersionAutomator(headless=False)
-            self.assertFalse(automator.headless)
+        # Test headless mode
+        automator = KaraokeVersionAutomator(headless=True)
+        self.assertTrue(automator.headless)
+        
+        # Test visible mode
+        automator = KaraokeVersionAutomator(headless=False)
+        self.assertFalse(automator.headless)
     
     def test_sanitize_filename(self):
         """Test filename sanitization"""
-        with patch.object(KaraokeVersionAutomator, 'setup_driver'), \
-             patch.object(KaraokeVersionAutomator, 'setup_folders'):
-            
-            automator = KaraokeVersionAutomator()
-            
-            test_cases = [
-                ("normal_file.mp3", "normal_file.mp3"),
-                ("file<>:name.mp3", "file___name.mp3"),
-                ('file"with*chars.mp3', "file_with_chars.mp3"),
-                ("file|with\\slash.mp3", "file_with_slash.mp3")
-            ]
-            
-            for input_name, expected in test_cases:
-                with self.subTest(input_name=input_name):
-                    result = automator.sanitize_filename(input_name)
-                    self.assertEqual(result, expected)
+        download_manager = DownloadManager(Mock(), Mock())
+        
+        test_cases = [
+            ("normal_file.mp3", "normal_file.mp3"),
+            ("file<>:name.mp3", "file___name.mp3"),
+            ('file"with*chars.mp3', "file_with_chars.mp3"),
+            ("file|with\\slash.mp3", "file_with_slash.mp3")
+        ]
+        
+        for input_name, expected in test_cases:
+            with self.subTest(input_name=input_name):
+                result = download_manager.sanitize_filesystem_name(input_name)
+                self.assertEqual(result, expected)
 
 class TestConfigurationManagement(unittest.TestCase):
     """Unit tests for configuration management"""
@@ -227,13 +230,13 @@ songs:
             temp_file.flush()
             
             try:
-                import config
-                with patch.object(config, 'SONGS_CONFIG_FILE', temp_file.name):
-                    songs = config.load_songs_config()
-                    
-                    self.assertEqual(len(songs), 2)
-                    self.assertEqual(songs[0]['url'], "https://example.com/song1")
-                    self.assertEqual(songs[1]['name'], "Song2")
+                from packages.configuration import ConfigurationManager
+                config_manager = ConfigurationManager(temp_file.name)
+                songs = config_manager.load_songs_config()
+                
+                self.assertEqual(len(songs), 2)
+                self.assertEqual(songs[0]['url'], "https://example.com/song1")
+                self.assertEqual(songs[1]['name'], "Song2")
             finally:
                 os.unlink(temp_file.name)
 
@@ -243,7 +246,7 @@ class TestErrorHandling(unittest.TestCase):
     def setUp(self):
         self.mock_driver = Mock()
         self.mock_wait = Mock()
-        self.tracker = KaraokeVersionTracker(self.mock_driver, self.mock_wait)
+        self.tracker = TrackManager(self.mock_driver, self.mock_wait)
     
     def test_verify_song_access_failure(self):
         """Test handling of inaccessible song pages"""
@@ -282,7 +285,7 @@ class TestDownloadFunctionality(unittest.TestCase):
     def setUp(self):
         self.mock_driver = Mock()
         self.mock_wait = Mock()
-        self.tracker = KaraokeVersionTracker(self.mock_driver, self.mock_wait)
+        self.tracker = TrackManager(self.mock_driver, self.mock_wait)
     
     def test_download_button_discovery(self):
         """Test download button discovery and interaction"""
@@ -297,12 +300,20 @@ class TestDownloadFunctionality(unittest.TestCase):
         mock_download_button.get_attribute.return_value = "mixer.getMix();return false;"
         
         self.mock_driver.find_element.return_value = mock_download_button
+        self.mock_driver.window_handles = ['window1']  # Mock window handles
+        self.mock_driver.current_url = song_url
         
-        with patch.object(self.tracker, '_extract_song_folder_name', return_value="Test Song"), \
-             patch.object(self.tracker, '_setup_song_folder', return_value=Path("/tmp/test")), \
-             patch.object(self.tracker, '_cleanup_existing_downloads'):
+        download_manager = DownloadManager(self.mock_driver, Mock())
+        # Set up mock file manager
+        mock_file_manager = Mock()
+        mock_file_manager.setup_song_folder.return_value = Path("/tmp/test")
+        mock_file_manager.wait_for_download_to_start.return_value = True
+        download_manager.set_file_manager(mock_file_manager)
+        
+        with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
+             patch.object(download_manager, 'start_completion_monitoring'):
             
-            result = self.tracker.download_current_mix(song_url, track_name)
+            result = download_manager.download_current_mix(song_url, track_name)
             
             self.assertTrue(result)
             mock_download_button.click.assert_called_once()
@@ -321,12 +332,20 @@ class TestDownloadFunctionality(unittest.TestCase):
         mock_download_button.click.side_effect = Exception("element click intercepted")
         
         self.mock_driver.find_element.return_value = mock_download_button
+        self.mock_driver.window_handles = ['window1']  # Mock window handles
+        self.mock_driver.current_url = song_url
         
-        with patch.object(self.tracker, '_extract_song_folder_name', return_value="Test Song"), \
-             patch.object(self.tracker, '_setup_song_folder', return_value=Path("/tmp/test")), \
-             patch.object(self.tracker, '_cleanup_existing_downloads'):
+        download_manager = DownloadManager(self.mock_driver, Mock())
+        # Set up mock file manager
+        mock_file_manager = Mock()
+        mock_file_manager.setup_song_folder.return_value = Path("/tmp/test")
+        mock_file_manager.wait_for_download_to_start.return_value = True
+        download_manager.set_file_manager(mock_file_manager)
+        
+        with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
+             patch.object(download_manager, 'start_completion_monitoring'):
             
-            result = self.tracker.download_current_mix(song_url, track_name)
+            result = download_manager.download_current_mix(song_url, track_name)
             
             self.assertTrue(result)
             # Should have tried regular click, then JavaScript click
@@ -340,8 +359,8 @@ if __name__ == '__main__':
     
     # Add all test classes
     test_classes = [
-        TestKaraokeVersionLogin,
-        TestKaraokeVersionTracker, 
+        TestLoginManager,
+        TestTrackManager, 
         TestKaraokeVersionAutomator,
         TestConfigurationManagement,
         TestErrorHandling,

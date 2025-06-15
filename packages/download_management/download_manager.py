@@ -79,21 +79,16 @@ class DownloadManager:
                 
         return song_folder, song_name, track_index
 
-    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
-        """Download the current track mix (after soloing)
+    def _setup_file_management(self, song_folder, cleanup_existing):
+        """Setup file management and configure Chrome download path
         
         Args:
-            song_url (str): URL of the song page
-            track_name (str): Name for the downloaded file
-            cleanup_existing (bool): Remove existing files before download
-            song_folder (str): Optional specific folder name for the song
-            key_adjustment (int): Key adjustment applied to the track (-12 to +12)
-            track_index (int): Optional track index for progress tracking
+            song_folder (str): Name of the song folder
+            cleanup_existing (bool): Whether to clear existing files
+            
+        Returns:
+            Path: Configured song path
         """
-        # Setup download context and progress tracking
-        song_folder, song_name, track_index = self._setup_download_context(
-            song_url, track_name, song_folder, track_index)
-        
         # Create song-specific folder and update download path
         song_path = self.file_manager.setup_song_folder(song_folder, clear_existing=cleanup_existing)
         
@@ -114,6 +109,26 @@ class DownloadManager:
         
         # Store song path for backup file moving
         self.song_path = song_path
+        
+        return song_path
+
+    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
+        """Download the current track mix (after soloing)
+        
+        Args:
+            song_url (str): URL of the song page
+            track_name (str): Name for the downloaded file
+            cleanup_existing (bool): Remove existing files before download
+            song_folder (str): Optional specific folder name for the song
+            key_adjustment (int): Key adjustment applied to the track (-12 to +12)
+            track_index (int): Optional track index for progress tracking
+        """
+        # Setup download context and progress tracking
+        song_folder, song_name, track_index = self._setup_download_context(
+            song_url, track_name, song_folder, track_index)
+        
+        # Setup file management and download paths
+        song_path = self._setup_file_management(song_folder, cleanup_existing)
         
         try:
             # Navigate to song page if needed
