@@ -163,6 +163,80 @@ class DownloadManager:
         
         return download_button
 
+    def _execute_download_click(self, download_button):
+        """Execute the download button click and handle any popups or windows
+        
+        Args:
+            download_button: The WebElement representing the download button
+            
+        Returns:
+            bool: True if download click was successful, False otherwise
+        """
+        # Get button details for logging
+        button_text = download_button.text.strip()
+        button_onclick = download_button.get_attribute('onclick') or ''
+        
+        logging.info(f"Download button text: '{button_text}'")
+        if button_onclick:
+            logging.info(f"Download onclick: {button_onclick[:50]}...")
+        
+        # Scroll to download button and click
+        logging.info("Clicking download button...")
+        try:
+            # Scroll element into view first
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", download_button)
+            time.sleep(1)
+            
+            # Try regular click first
+            download_button.click()
+            logging.info("✅ Download button clicked successfully")
+        except Exception as e:
+            if "element click intercepted" in str(e):
+                # Use JavaScript click as fallback
+                logging.info("Click intercepted, using JavaScript click")
+                self.driver.execute_script("arguments[0].click();", download_button)
+                logging.info("✅ Download button clicked via JavaScript")
+            else:
+                raise e
+        
+        # Give a moment for any immediate response
+        time.sleep(2)
+        
+        # Check if any popup or new window appeared
+        original_window_count = len(self.driver.window_handles)
+        logging.debug(f"Windows before download: {original_window_count}")
+        
+        # Wait a moment and check again
+        time.sleep(3)
+        current_window_count = len(self.driver.window_handles)
+        logging.debug(f"Windows after download: {current_window_count}")
+        
+        if current_window_count > original_window_count:
+            logging.info(f"🪟 New window/popup detected ({current_window_count} vs {original_window_count})")
+            # Switch to new window to see what it contains
+            try:
+                new_window = self.driver.window_handles[-1]
+                self.driver.switch_to.window(new_window)
+                logging.info(f"📄 New window title: {self.driver.title}")
+                logging.info(f"📄 New window URL: {self.driver.current_url}")
+                
+                # Look for download-related text
+                page_text = self.driver.page_source.lower()
+                if any(phrase in page_text for phrase in ['download', 'generating', 'preparing', 'your file']):
+                    logging.info("🎵 Download generation page detected!")
+                
+                # Switch back to original window
+                self.driver.switch_to.window(self.driver.window_handles[0])
+            except Exception as e:
+                logging.warning(f"Could not inspect new window: {e}")
+                try:
+                    self.driver.switch_to.window(self.driver.window_handles[0])
+                except (Exception, WebDriverException) as e:
+                    logging.debug(f"Could not switch back to original window: {e}")
+                    pass
+        
+        return True
+
     def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
         """Download the current track mix (after soloing)
         
@@ -204,68 +278,8 @@ class DownloadManager:
                     logging.error("Could not find download button - unknown error")
                     return False
             
-            # Get button details for logging
-            button_text = download_button.text.strip()
-            button_onclick = download_button.get_attribute('onclick') or ''
-            
-            logging.info(f"Download button text: '{button_text}'")
-            if button_onclick:
-                logging.info(f"Download onclick: {button_onclick[:50]}...")
-            
-            # Scroll to download button and click
-            logging.info("Clicking download button...")
-            try:
-                # Scroll element into view first
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", download_button)
-                time.sleep(1)
-                
-                # Try regular click first
-                download_button.click()
-                logging.info("✅ Download button clicked successfully")
-            except Exception as e:
-                if "element click intercepted" in str(e):
-                    # Use JavaScript click as fallback
-                    logging.info("Click intercepted, using JavaScript click")
-                    self.driver.execute_script("arguments[0].click();", download_button)
-                    logging.info("✅ Download button clicked via JavaScript")
-                else:
-                    raise e
-            
-            # Give a moment for any immediate response
-            time.sleep(2)
-            
-            # Check if any popup or new window appeared
-            original_window_count = len(self.driver.window_handles)
-            logging.debug(f"Windows before download: {original_window_count}")
-            
-            # Wait a moment and check again
-            time.sleep(3)
-            current_window_count = len(self.driver.window_handles)
-            logging.debug(f"Windows after download: {current_window_count}")
-            
-            if current_window_count > original_window_count:
-                logging.info(f"🪟 New window/popup detected ({current_window_count} vs {original_window_count})")
-                # Switch to new window to see what it contains
-                try:
-                    new_window = self.driver.window_handles[-1]
-                    self.driver.switch_to.window(new_window)
-                    logging.info(f"📄 New window title: {self.driver.title}")
-                    logging.info(f"📄 New window URL: {self.driver.current_url}")
-                    
-                    # Look for download-related text
-                    page_text = self.driver.page_source.lower()
-                    if any(phrase in page_text for phrase in ['download', 'generating', 'preparing', 'your file']):
-                        logging.info("🎵 Download generation page detected!")
-                    
-                    # Switch back to original window
-                    self.driver.switch_to.window(self.driver.window_handles[0])
-                except Exception as e:
-                    logging.warning(f"Could not inspect new window: {e}")
-                    try:
-                        self.driver.switch_to.window(self.driver.window_handles[0])
-                    except (Exception, WebDriverException) as e:
-                        logging.debug(f"Could not switch back to original window: {e}")
-                        pass
+            # Execute download click and handle any popups
+            self._execute_download_click(download_button)
             
             # Update progress tracker to indicate we're waiting for download to start
             if self.progress_tracker and track_index:
