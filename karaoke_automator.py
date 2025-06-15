@@ -538,7 +538,7 @@ class KaraokeVersionTracker:
                 logging.info(f"✅ Download started for: {track_name} - proceeding to next track")
                 
                 # Start background monitoring for completion and file cleanup
-                self._schedule_download_completion_monitoring(song_path, track_name, track_index, key_adjustment)
+                self._start_completion_monitoring(song_path, track_name, track_index)
                 
             else:
                 logging.warning(f"⚠️ Download not detected for: {track_name}")
@@ -602,7 +602,66 @@ class KaraokeVersionTracker:
         
         return folder_name
     
-    
+    def _start_completion_monitoring(self, song_path, track_name, track_index):
+        """Start background monitoring for download completion and file cleanup"""
+        
+        def completion_monitor():
+            try:
+                # Monitor for up to 5 minutes for download completion
+                max_wait = 300  # 5 minutes
+                check_interval = 2  # Check every 2 seconds
+                waited = 0
+                
+                logging.info(f"🔍 Starting completion monitoring for {track_name}")
+                
+                while waited < max_wait:
+                    time.sleep(check_interval)
+                    waited += check_interval
+                    
+                    # Look for completed downloads
+                    logging.info(f"🔍 Checking for completed downloads in {song_path}")
+                    completed_files = self.file_manager.check_for_completed_downloads(song_path, track_name)
+                    
+                    if not completed_files:
+                        logging.info(f"   No completed files found yet (waited {waited}s)")
+                    
+                    if completed_files:
+                        logging.info(f"🎉 Download completed for {track_name}: {len(completed_files)} files")
+                        
+                        # Clean up filenames by removing '_Custom_Backing_Track'
+                        for file_path in completed_files:
+                            self.file_manager.clean_downloaded_filename(file_path)
+                        
+                        # Update progress tracker
+                        if self.progress_tracker and track_index:
+                            self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
+                        
+                        break
+                    
+                    # Update progress periodically for ongoing downloads
+                    if waited % 20 == 0 and self.progress_tracker and track_index:  # Every 20 seconds
+                        # Check if we still have .crdownload files (download in progress)
+                        crdownload_files = list(song_path.glob("*.crdownload"))
+                        if crdownload_files:
+                            # Calculate rough progress based on time elapsed
+                            progress = min(95, 25 + (waited / max_wait) * 70)  # 25% to 95%
+                            self.progress_tracker.update_track_status(track_index, 'downloading', progress=progress)
+                
+                # Timeout handling
+                if waited >= max_wait:
+                    logging.warning(f"⚠️ Download completion monitoring timed out for {track_name}")
+                    if self.progress_tracker and track_index:
+                        self.progress_tracker.update_track_status(track_index, 'failed')
+                        
+            except Exception as e:
+                logging.error(f"Error in completion monitoring for {track_name}: {e}")
+                if self.progress_tracker and track_index:
+                    self.progress_tracker.update_track_status(track_index, 'failed')
+        
+        # Start monitoring in background thread
+        monitor_thread = threading.Thread(target=completion_monitor, daemon=True)
+        monitor_thread.start()
+        logging.info(f"🎆 Started background completion monitoring for {track_name}")
 
 
 class KaraokeVersionAutomator:

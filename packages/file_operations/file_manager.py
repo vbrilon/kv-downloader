@@ -181,12 +181,20 @@ class FileManager:
                         'custom', 'backing', 'track', 'karaoke'
                     ]) or len(file_path.name) > 25  # Long filenames typically indicate karaoke tracks
                     
+                    # Enhanced logging for filename detection (INFO level to show in production)
+                    if is_audio and is_recent:
+                        logging.info(f"📁 Checking file: {file_path.name}")
+                        logging.info(f"   Audio: {is_audio}, Recent: {is_recent}, Karaoke-like: {might_be_karaoke}")
+                        if might_be_karaoke:
+                            keywords_found = [keyword for keyword in ['custom', 'backing', 'track', 'karaoke'] if keyword in filename]
+                            logging.info(f"   Keywords found: {keywords_found}")
+                    
                     if is_audio and is_recent and might_be_karaoke:
                         # Make sure there's no corresponding .crdownload file
                         crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
                         if not crdownload_path.exists():
                             completed_files.append(file_path)
-                            logging.debug(f"Found completed download: {file_path.name}")
+                            logging.info(f"✅ Found completed download: {file_path.name}")
             
             return completed_files
             

@@ -46,7 +46,8 @@ class ProgressTracker:
         """Update status of a specific track"""
         with self.lock:
             for track in self.tracks:
-                if track['index'] == str(track_index):
+                # Handle both string and integer track indexes
+                if str(track['index']) == str(track_index):
                     track['status'] = status
                     if progress is not None:
                         track['progress'] = min(100, max(0, progress))
