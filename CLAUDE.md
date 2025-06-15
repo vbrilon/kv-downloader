@@ -663,6 +663,10 @@ packages/
 
 ## 📋 TODO LIST & TASK TRACKING
 
+### 🔥 High Priority - Bug Fixes & UX Improvements
+- [ ] **Improve download completion detection** - Fix false negatives where files download successfully but are marked as failed
+- [ ] **Add comprehensive final stats report** - Track pass/fail/time spent for each track across all songs after automation completes (UI refreshes when going to second song and user loses data for first song)
+
 ### 🔧 Medium Priority - Bug Fixes & Enhancements
 - [ ] **Ensure songs.yaml key field parsing handles both "2" and "+2" formats for key adjustment** - Make key parsing more flexible and user-friendly
 
