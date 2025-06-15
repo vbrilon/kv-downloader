@@ -176,4 +176,4 @@ DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 
 This was created for **personal use only** 
 
-I believe this to comply with  Karaoke-Version.com's Terms of Service.
+This complies with Karaoke-Version.com's Terms of Service to the best of my knowledge.
