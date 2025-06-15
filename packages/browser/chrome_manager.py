@@ -74,6 +74,18 @@ class ChromeManager:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
+        # Use persistent user data directory for session persistence
+        user_data_dir = os.path.abspath("chrome_profile")
+        chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+        
+        # Allow reusing the same profile without conflicts
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor") 
+        chrome_options.add_argument("--no-first-run")
+        chrome_options.add_argument("--no-default-browser-check")
+        
+        logging.debug(f"Chrome user data directory: {user_data_dir}")
+        
         # Initial download preferences (will be updated per song)
         prefs = {
             "download.default_directory": os.path.abspath(DOWNLOAD_FOLDER),

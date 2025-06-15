@@ -429,7 +429,7 @@ class LoginManager:
             # Try accessing a protected area to trigger session validation
             try:
                 # Navigate to account page which should validate session
-                self.driver.get("https://www.karaoke-version.com/myaccount.html")
+                self.driver.get("https://www.karaoke-version.com/my/index.html")
                 time.sleep(3)
                 
                 # Check if we were redirected to login page
@@ -487,7 +487,7 @@ class LoginManager:
             return False
     
     def login_with_session_persistence(self, username=None, password=None, force_relogin=False):
-        """Enhanced login with session persistence - tries to restore session first"""
+        """Enhanced login with session persistence - checks Chrome's native session first"""
         username = username or USERNAME
         password = password or PASSWORD
         
@@ -495,29 +495,24 @@ class LoginManager:
             logging.error("Username and password are required for login")
             return False
         
-        # If not forcing relogin, try to restore saved session first
+        # If not forcing relogin, check Chrome's native session first
         if not force_relogin:
-            logging.info("🔍 Checking for saved session...")
+            logging.info("🔍 Checking Chrome's native session...")
             
-            if self.is_session_valid():
-                logging.info("📁 Found valid saved session, attempting to restore...")
-                
-                if self.load_session():
-                    # Verify the restored session is still logged in
-                    if self.is_logged_in():
-                        logging.info("🎉 Successfully restored login session!")
-                        logging.info("⚡ Login skipped - using saved session")
-                        return True
-                    else:
-                        logging.info("⚠️ Restored session is no longer valid")
-                        self.clear_session()
-                else:
-                    logging.info("⚠️ Could not restore session data")
+            # Navigate to homepage and check if already logged in via Chrome's persistent cookies
+            self.driver.get("https://www.karaoke-version.com")
+            time.sleep(3)
+            
+            if self.is_logged_in():
+                logging.info("🎉 Already logged in via Chrome's persistent session!")
+                logging.info("⚡ Login skipped - using Chrome's native session persistence")
+                # Still save session data for our tracking
+                self.save_session()
+                return True
             else:
-                logging.info("💡 No valid saved session found")
+                logging.info("💡 Chrome's native session not logged in")
         else:
-            logging.info("🔄 Force relogin requested, clearing saved session")
-            self.clear_session()
+            logging.info("🔄 Force relogin requested")
         
         # Fall back to regular login process
         logging.info("🔐 Proceeding with fresh login...")
