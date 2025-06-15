@@ -103,6 +103,22 @@
   - **Files**: Similar config loading tests in multiple files
   - **Solution**: Create shared test utilities for configuration testing
 
+### **Session Management Cleanup**
+- [ ] **medium-12**: Move session_data.pkl to a dedicated directory
+  - **Issue**: `session_data.pkl` file polluting the main project directory
+  - **Solution**: Move to `.cache/`, `data/`, or similar subdirectory
+  - **Benefits**: Cleaner project root, better organization
+  - **Impact**: Update session persistence code to use new location
+
+- [ ] **medium-13**: Validate session persistence architecture - pkl vs chrome_profile
+  - **Investigation**: Determine if both `session_data.pkl` and `chrome_profile/` data are needed
+  - **Questions**: 
+    - Does Chrome profile persistence overlap with session_data.pkl functionality?
+    - Can we consolidate to use only one mechanism?
+    - What are the performance/reliability tradeoffs?
+  - **Action**: Test session restoration with each mechanism independently
+  - **Goal**: Simplify session management and reduce redundancy
+
 ---
 
 ## ✨ **Low Priority Items (Enhancements)**
@@ -193,18 +209,19 @@
 
 ## 📊 **Progress Tracking**
 
-**Total Items**: 24  
+**Total Items**: 26  
 **Critical**: 6 items  
-**Medium**: 11 items  
+**Medium**: 13 items  
 **Low**: 7 items  
 
-**Completion Status**: 5/24 (20.8%) ✅ **+1 MAJOR COMPLETION 2025-06-15**
+**Completion Status**: 5/26 (19.2%) ✅ **+1 MAJOR COMPLETION 2025-06-15**
 
 ### **Recent Progress (2025-06-15):**
 - ✅ **MAJOR**: Completed critical-5 (download_current_mix refactoring) - 60% method size reduction
 - ✅ **FIXED**: Integration test attribute errors (track_handler → track_manager)
 - ✅ **FIXED**: Integration test input() call issues for CI compatibility
 - 🔍 **IDENTIFIED**: 3 new test infrastructure issues requiring fixes
+- ➕ **ADDED**: 2 new session management cleanup items (pkl file location, architecture validation)
 
 ---
 
