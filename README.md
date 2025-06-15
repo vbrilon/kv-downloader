@@ -41,12 +41,11 @@ Edit the `songs.yaml` file to specify which songs to download:
 songs:
   - url: "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
     # name: "The_Middle"  # Optional: auto-extracts "Jimmy Eat World - The Middle" from URL
-    description: "Jimmy Eat World - The Middle"
+    description: "Jimmy Eat World - The Middle" # Optional: For future metadata purposes, not used now
     key: 0  # Optional: Pitch adjustment in semitones (-12 to +12)
   
   - url: "https://www.karaoke-version.com/custombackingtrack/taylor-swift/shake-it-off.html"
     name: "Shake_It_Off"  # Optional: override auto-extracted name
-    description: "Taylor Swift - Shake It Off"
     key: 2  # Raise pitch by 2 semitones
 ```
 
