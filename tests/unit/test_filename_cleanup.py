@@ -12,7 +12,7 @@ import unittest
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
-from karaoke_automator import KaraokeVersionTracker
+from packages.file_operations import FileManager
 
 class TestFilenameCleanup(unittest.TestCase):
     """Test filename cleanup functionality"""
@@ -20,7 +20,7 @@ class TestFilenameCleanup(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.temp_path = Path(self.temp_dir)
-        self.tracker = KaraokeVersionTracker(None, None)  # Mock driver/wait
+        self.file_manager = FileManager()
     
     def tearDown(self):
         # Clean up temp directory
@@ -37,35 +37,35 @@ class TestFilenameCleanup(unittest.TestCase):
         """Test removal of '_Custom_Backing_Track' suffix"""
         test_cases = [
             ("Jimmy_Eat_World_The_Middle(Bass_Custom_Backing_Track).mp3", 
-             "Jimmy_Eat_World_The_Middle(Bass).mp3"),
+             "Jimmy_Eat_World_The_Middle(Bass).mp3", "Bass"),
             ("Taylor_Swift_Shake_It_Off_Vocals_Custom_Backing_Track.mp3",
-             "Taylor_Swift_Shake_It_Off_Vocals.mp3"),
+             "Taylor_Swift_Shake_It_Off_Vocals.mp3", "Vocals"),
             ("Song_Name_Guitar_Custom_Backing_Track_.mp3",
-             "Song_Name_Guitar.mp3"),
+             "Song_Name_Guitar.mp3", "Guitar"),
             ("Artist_Song(Custom_Backing_Track).mp3",
-             "Artist_Song.mp3"),
+             "Artist_Song.mp3", None),
             ("Normal_File.mp3",
-             "Normal_File.mp3")  # Should not change
+             "Normal_File.mp3", None)  # Should not change
         ]
         
-        for original, expected in test_cases:
+        for original, expected, track_name in test_cases:
             with self.subTest(original=original):
                 # Create test file
-                self.create_test_file(original)
+                original_file = self.create_test_file(original)
                 
-                # Run cleanup
-                result = self.tracker._cleanup_downloaded_filenames(self.temp_path, "test")
+                # Run cleanup using new FileManager method
+                result_path = self.file_manager.clean_downloaded_filename(original_file, track_name)
                 
                 # Check if file was renamed correctly
                 expected_path = self.temp_path / expected
-                original_path = self.temp_path / original
                 
                 if original != expected:
-                    self.assertTrue(expected_path.exists(), f"Expected file {expected} was not created")
-                    self.assertFalse(original_path.exists(), f"Original file {original} still exists")
-                    self.assertTrue(result, "Cleanup should return True when files are renamed")
+                    self.assertEqual(result_path.name, expected, f"Expected filename {expected}, got {result_path.name}")
+                    self.assertTrue(result_path.exists(), f"Expected file {expected} was not created")
+                    self.assertFalse(original_file.exists(), f"Original file {original} still exists")
                 else:
-                    self.assertTrue(original_path.exists(), f"File {original} should remain unchanged")
+                    self.assertEqual(result_path.name, expected, f"File {original} should remain unchanged")
+                    self.assertTrue(result_path.exists(), f"File {original} should exist")
     
     def test_multiple_pattern_cleanup(self):
         """Test cleanup of files with multiple unwanted patterns"""

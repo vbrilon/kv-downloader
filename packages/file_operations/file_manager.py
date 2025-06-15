@@ -279,7 +279,7 @@ class FileManager:
             return []
     
     def clean_downloaded_filename(self, file_path, track_name=None):
-        """Remove '_Custom_Backing_Track' from downloaded filename and add track name if missing"""
+        """Remove '_Custom_Backing_Track' from downloaded filename and ensure single track identifier"""
         try:
             original_name = file_path.name
             new_name = original_name
@@ -287,53 +287,53 @@ class FileManager:
             # Remove various forms of Custom_Backing_Track using regex for more robust matching
             import re
             
-            # Comprehensive patterns to match various Custom_Backing_Track forms
+            # STEP 1: Remove all Custom_Backing_Track patterns
             # ORDER MATTERS: Most specific patterns first!
             patterns_to_remove = [
-                r'\([^)]*_Custom_Backing_Track\)',  # (Click_Custom_Backing_Track), (Drum_Custom_Backing_Track), etc.
-                r'_Custom_Backing_Track[^)]*\)',    # _Custom_Backing_Track)
-                r'\(Custom_Backing_Track\)',        # (Custom_Backing_Track)
-                r'_Custom_Backing_Track',           # _Custom_Backing_Track
-                r'Custom_Backing_Track',            # Custom_Backing_Track
-                r'\(Custom\)',                      # (Custom)
-                r'_Custom'                          # _Custom
+                r'\([^)]*_Custom_Backing_Track[^)]*\)',  # (Click_Custom_Backing_Track), (Drum_Kit_Custom_Backing_Track-1), etc.
+                r'\(Custom_Backing_Track[^)]*\)',        # (Custom_Backing_Track), (Custom_Backing_Track-1), etc.
+                r'_Custom_Backing_Track[^)]*\)',         # _Custom_Backing_Track), _Custom_Backing_Track-1)
+                r'_Custom_Backing_Track',                # _Custom_Backing_Track
+                r'Custom_Backing_Track',                 # Custom_Backing_Track
+                r'\(Custom\)',                           # (Custom)
+                r'_Custom'                               # _Custom
             ]
             
-            # Try each pattern until we find a match
+            # Apply all Custom_Backing_Track removal patterns
             for pattern in patterns_to_remove:
                 if re.search(pattern, new_name):
                     new_name = re.sub(pattern, '', new_name)
                     logging.debug(f"Removed pattern '{pattern}' from filename")
-                    break
             
-            # If we have a track name and it's not already in the filename, add it
+            # STEP 2: Remove ALL existing track identifiers (parenthetical content)
+            # This prevents accumulation of multiple track names like (Drum_Kit)(Bass)(Guitar)
+            # Pattern explanation: \([^)]*\) matches any content within parentheses
+            track_identifier_pattern = r'\([^)]*\)'
+            
+            # Find all existing track identifiers for logging
+            existing_identifiers = re.findall(track_identifier_pattern, new_name)
+            if existing_identifiers:
+                logging.debug(f"Removing existing track identifiers: {existing_identifiers}")
+                # Remove all parenthetical content (existing track identifiers)
+                new_name = re.sub(track_identifier_pattern, '', new_name)
+            
+            # STEP 3: Add the new track name (if provided)
             if track_name:
                 # Clean track name for filename
                 clean_track_name = track_name.replace('_', ' ').strip()
                 
-                # Check if some form of track name is already in the filename
-                name_without_ext = new_name.rsplit('.', 1)[0]
-                filename_lower = name_without_ext.lower()
+                # Add the clean track name as the single track identifier
+                name_parts = new_name.rsplit('.', 1)
+                if len(name_parts) == 2:
+                    new_name = f"{name_parts[0]}({clean_track_name}).{name_parts[1]}"
+                else:
+                    new_name = f"{new_name}({clean_track_name})"
                 
-                # Check for various forms of the track name being present
-                track_already_present = False
-                
-                # Check if the full track name is already there
-                if clean_track_name.lower() in filename_lower:
-                    track_already_present = True
-                
-                # Check for key words from the track name (for cases like "Click" vs "Intro count Click")
-                track_words = [word.strip() for word in clean_track_name.lower().split() if len(word.strip()) > 2]
-                if track_words and any(word in filename_lower for word in track_words):
-                    track_already_present = True
-                
-                # If no track identifier present, add the clean track name
-                if not track_already_present:
-                    name_parts = new_name.rsplit('.', 1)
-                    if len(name_parts) == 2:
-                        new_name = f"{name_parts[0]}({clean_track_name}).{name_parts[1]}"
-                    else:
-                        new_name = f"{new_name}({clean_track_name})"
+                logging.debug(f"Added track identifier: ({clean_track_name})")
+            
+            # Clean up any double spaces or extra characters from the processing
+            new_name = re.sub(r'\s+', ' ', new_name)  # Replace multiple spaces with single space
+            new_name = new_name.replace(' .', '.')    # Fix spacing before file extension
             
             # Only rename if the name actually changed
             if new_name != original_name:
