@@ -54,10 +54,6 @@ class DownloadManager:
         # Extract song name from folder for stats
         song_name = song_folder
         
-        # Record track start in stats
-        if self.stats_reporter:
-            self.stats_reporter.record_track_start(song_name, track_name, track_index or 0)
-        
         # Update progress tracker
         if self.progress_tracker:
             # Use provided track_index if available, otherwise try to find by name

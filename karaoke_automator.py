@@ -176,6 +176,13 @@ class KaraokeVersionAutomator:
                     for track in tracks:
                         track_name = self.sanitize_filename(track['name'])
                         
+                        # Start timing for this track
+                        if self.progress:
+                            self.progress.update_track_status(track['index'], 'isolating')
+                        
+                        # Record track start in stats
+                        self.stats.record_track_start(song['name'], track_name, track['index'])
+                        
                         # Solo this track
                         if self.solo_track(track, song['url']):
                             # Download the soloed track (folder already cleared once per song)
@@ -194,6 +201,9 @@ class KaraokeVersionAutomator:
                             logging.error(f"Failed to solo track {track_name}")
                             if self.progress:
                                 self.progress.update_track_status(track['index'], 'failed')
+                            # Record failure in stats
+                            self.stats.record_track_completion(song['name'], track_name, success=False, 
+                                                             error_message="Failed to solo track")
                         
                         # Brief pause between tracks
                         time.sleep(2)

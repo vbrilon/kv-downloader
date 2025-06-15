@@ -55,7 +55,7 @@ class ProgressTracker:
                         track['downloaded'] = downloaded
                     if file_size is not None:
                         track['file_size'] = file_size
-                    if status == 'downloading' and track['start_time'] is None:
+                    if status in ['isolating', 'downloading'] and track['start_time'] is None:
                         track['start_time'] = time.time()
                     elif status in ['completed', 'failed'] and track['end_time'] is None:
                         track['end_time'] = time.time()
