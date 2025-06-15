@@ -20,6 +20,7 @@ from packages.progress import ProgressTracker
 from packages.file_operations import FileManager
 from packages.track_management import TrackManager
 from packages.download_management import DownloadManager
+from packages.utils import setup_logging
 
 # Setup logging (will be reconfigured based on debug mode)
 logging.basicConfig(
@@ -27,76 +28,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-
-
-class KaraokeVersionTracker:
-    """Handles track discovery and manipulation"""
-    
-    def __init__(self, driver, wait):
-        self.driver = driver
-        self.wait = wait
-        self.progress_tracker = None
-        self.file_manager = FileManager()
-        self.track_manager = TrackManager(driver, wait)
-        self.download_manager = DownloadManager(driver, wait)
-    
-    def set_progress_tracker(self, progress_tracker):
-        """Set the progress tracker for download monitoring"""
-        self.progress_tracker = progress_tracker
-        self.track_manager.set_progress_tracker(progress_tracker)
-        self.download_manager.set_progress_tracker(progress_tracker)
-        self.download_manager.set_file_manager(self.file_manager)
-    
-    def set_chrome_manager(self, chrome_manager):
-        """Set the chrome manager for download path management"""
-        self.chrome_manager = chrome_manager
-        self.download_manager.set_chrome_manager(chrome_manager)
-    
-    # Track Management Methods - Delegate to TrackManager
-    def ensure_intro_count_enabled(self, song_url):
-        """Ensure the intro count checkbox is enabled"""
-        return self.track_manager.ensure_intro_count_enabled(song_url)
-    
-    def adjust_key(self, song_url, target_key):
-        """Adjust the mixer key to the target value"""
-        return self.track_manager.adjust_key(song_url, target_key)
-    
-    def verify_song_access(self, song_url):
-        """Verify user has access to song page"""
-        return self.track_manager.verify_song_access(song_url)
-    
-    def discover_tracks(self, song_url):
-        """Discover all available tracks for a song"""
-        return self.track_manager.discover_tracks(song_url)
-    
-    def solo_track(self, track_info, song_url):
-        """Solo a specific track (mutes all others)"""
-        return self.track_manager.solo_track(track_info, song_url)
-    
-    def clear_all_solos(self, song_url):
-        """Clear all solo buttons (un-mute all tracks)"""
-        return self.track_manager.clear_all_solos(song_url)
-    
-    # Download Management Methods - Delegate to DownloadManager
-    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0):
-        """Download the current track mix (after soloing)"""
-        return self.download_manager.download_current_mix(song_url, track_name, cleanup_existing, song_folder, key_adjustment)
-    
-    def _extract_song_folder_name(self, song_url):
-        """Extract song information from URL to create folder name"""
-        return self.download_manager.extract_song_folder_name(song_url)
-    
-    def _sanitize_filesystem_name(self, name):
-        """Remove invalid filesystem characters"""
-        return self.download_manager.sanitize_filesystem_name(name)
-    
-    def _sanitize_folder_name(self, folder_name):
-        """Clean folder name for filesystem compatibility"""
-        return self.download_manager.sanitize_folder_name(folder_name)
-    
-    def _start_completion_monitoring(self, song_path, track_name, track_index):
-        """Start background monitoring for download completion and file cleanup"""
-        return self.download_manager.start_completion_monitoring(song_path, track_name, track_index)
 
 
 class KaraokeVersionAutomator:
@@ -125,13 +56,18 @@ class KaraokeVersionAutomator:
         self.driver = self.chrome_manager.driver
         self.wait = self.chrome_manager.wait
         
+        # Initialize all managers directly
         self.login_handler = LoginManager(self.driver, self.wait)
-        self.track_handler = KaraokeVersionTracker(self.driver, self.wait)
+        self.file_manager = FileManager()
+        self.track_manager = TrackManager(self.driver, self.wait)
+        self.download_manager = DownloadManager(self.driver, self.wait)
         
-        # Pass chrome manager and progress tracker to track handler
-        self.track_handler.set_chrome_manager(self.chrome_manager)
+        # Connect managers
         if self.progress:
-            self.track_handler.set_progress_tracker(self.progress)
+            self.track_manager.set_progress_tracker(self.progress)
+            self.download_manager.set_progress_tracker(self.progress)
+        self.download_manager.set_file_manager(self.file_manager)
+        self.download_manager.set_chrome_manager(self.chrome_manager)
     
     
     def login(self):
@@ -144,15 +80,15 @@ class KaraokeVersionAutomator:
     
     def get_available_tracks(self, song_url):
         """Get tracks using centralized track handler"""
-        return self.track_handler.discover_tracks(song_url)
+        return self.track_manager.discover_tracks(song_url)
     
     def solo_track(self, track_info, song_url):
         """Solo a specific track using centralized track handler"""
-        return self.track_handler.solo_track(track_info, song_url)
+        return self.track_manager.solo_track(track_info, song_url)
     
     def clear_all_solos(self, song_url):
         """Clear all solo buttons using centralized track handler"""
-        return self.track_handler.clear_all_solos(song_url)
+        return self.track_manager.clear_all_solos(song_url)
     
     def load_songs_config(self):
         """Load songs from configuration"""
@@ -168,7 +104,7 @@ class KaraokeVersionAutomator:
     
     def sanitize_filename(self, filename):
         """Clean filename for saving"""
-        return self.track_handler._sanitize_filesystem_name(filename)
+        return self.download_manager.sanitize_filesystem_name(filename)
     
     def run_automation(self):
         """Run complete automation workflow"""
@@ -217,13 +153,13 @@ class KaraokeVersionAutomator:
                     logging.info("🎛️ Setting up mixer controls...")
                     
                     # Ensure intro count is enabled
-                    intro_success = self.track_handler.ensure_intro_count_enabled(song['url'])
+                    intro_success = self.track_manager.ensure_intro_count_enabled(song['url'])
                     if not intro_success:
                         logging.warning("⚠️ Could not enable intro count - continuing anyway")
                     
                     # Adjust key if needed
                     if song_key != 0:
-                        key_success = self.track_handler.adjust_key(song['url'], song_key)
+                        key_success = self.track_manager.adjust_key(song['url'], song_key)
                         if not key_success:
                             logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
                     
@@ -234,7 +170,7 @@ class KaraokeVersionAutomator:
                         # Solo this track
                         if self.solo_track(track, song['url']):
                             # Download the soloed track
-                            success = self.track_handler.download_current_mix(
+                            success = self.download_manager.download_current_mix(
                                 song['url'], 
                                 track_name,
                                 cleanup_existing=True,
@@ -271,55 +207,6 @@ class KaraokeVersionAutomator:
         finally:
             self.driver.quit()
 
-
-def setup_logging(debug_mode):
-    """Setup logging configuration based on debug mode"""
-    # Clear existing handlers
-    logging.getLogger().handlers.clear()
-    
-    # Ensure logs directory exists
-    Path("logs").mkdir(exist_ok=True)
-    
-    # Create formatters
-    detailed_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    simple_formatter = logging.Formatter('%(levelname)s: %(message)s')
-    
-    if debug_mode:
-        # Debug mode: detailed logs to file, minimal to console
-        logging.getLogger().setLevel(logging.DEBUG)
-        
-        # File handler for all debug output
-        file_handler = logging.FileHandler('logs/debug.log', mode='w')  # Overwrite each run
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(detailed_formatter)
-        logging.getLogger().addHandler(file_handler)
-        
-        # Console handler for important messages only (so progress bar works)
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.WARNING)  # Only warnings and errors to console
-        console_handler.setFormatter(simple_formatter)
-        logging.getLogger().addHandler(console_handler)
-        
-        logging.info("🐛 Debug mode enabled - detailed logs in logs/debug.log")
-        logging.info("👁️ Browser will be visible, progress bar on console")
-        
-    else:
-        # Production mode: normal logging to both file and console
-        logging.getLogger().setLevel(logging.INFO)
-        
-        # File handler
-        file_handler = logging.FileHandler('logs/automation.log')
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(detailed_formatter)
-        logging.getLogger().addHandler(file_handler)
-        
-        # Console handler  
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(simple_formatter)
-        logging.getLogger().addHandler(console_handler)
-        
-        logging.info("🚀 Running in production mode - headless browser")
 
 if __name__ == "__main__":
     import argparse
