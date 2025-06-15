@@ -15,8 +15,7 @@ Downloads individual instrument tracks (bass, guitar, vocals, drums, etc.) from 
 git clone https://github.com/vbrilon/kv-downloader
 cd kv-downloader
 
-# Activate virtual environment (REQUIRED)
-source bin/activate
+# Recommend that you set up and activate a virtual environment to run in
 
 # Install dependencies
 pip install -r requirements.txt
