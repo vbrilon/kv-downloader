@@ -301,9 +301,9 @@ class DownloadManager:
                     if completed_files:
                         logging.info(f"🎉 Download completed for {track_name}: {len(completed_files)} files")
                         
-                        # Clean up filenames by removing '_Custom_Backing_Track'
+                        # Clean up filenames by removing '_Custom_Backing_Track' and adding track name
                         for file_path in completed_files:
-                            self.file_manager.clean_downloaded_filename(file_path)
+                            self.file_manager.clean_downloaded_filename(file_path, track_name)
                         
                         # Update progress tracker
                         if self.progress_tracker and track_index:

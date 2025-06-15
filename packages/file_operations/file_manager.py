@@ -278,14 +278,43 @@ class FileManager:
             logging.debug(f"Error checking for completed downloads: {e}")
             return []
     
-    def clean_downloaded_filename(self, file_path):
-        """Remove '_Custom_Backing_Track' from downloaded filename"""
+    def clean_downloaded_filename(self, file_path, track_name=None):
+        """Remove '_Custom_Backing_Track' from downloaded filename and add track name if missing"""
         try:
             original_name = file_path.name
+            new_name = original_name
             
-            # Simple replacement: remove '_Custom_Backing_Track'
-            if '_Custom_Backing_Track' in original_name:
-                new_name = original_name.replace('_Custom_Backing_Track', '')
+            # Remove various forms of Custom_Backing_Track
+            patterns_to_remove = [
+                '_Custom_Backing_Track',
+                '(Custom_Backing_Track)',
+                'Custom_Backing_Track',
+                '(Custom)',
+                '_Custom'
+            ]
+            
+            for pattern in patterns_to_remove:
+                if pattern in new_name:
+                    new_name = new_name.replace(pattern, '')
+                    break
+            
+            # If we have a track name and it's not already in the filename, add it
+            if track_name:
+                # Clean track name for filename
+                clean_track_name = track_name.replace('_', ' ').strip()
+                
+                # Check if track name is already in the filename
+                name_without_ext = new_name.rsplit('.', 1)[0]
+                if clean_track_name.lower() not in name_without_ext.lower():
+                    # Add track name in parentheses before the file extension
+                    name_parts = new_name.rsplit('.', 1)
+                    if len(name_parts) == 2:
+                        new_name = f"{name_parts[0]}({clean_track_name}).{name_parts[1]}"
+                    else:
+                        new_name = f"{new_name}({clean_track_name})"
+            
+            # Only rename if the name actually changed
+            if new_name != original_name:
                 new_path = file_path.parent / new_name
                 
                 # Avoid overwriting existing files
