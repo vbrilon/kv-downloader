@@ -16,6 +16,7 @@ class DownloadManager:
         self.progress_tracker = None
         self.file_manager = None
         self.chrome_manager = None
+        self.stats_reporter = None
     
     def set_progress_tracker(self, progress_tracker):
         """Set the progress tracker for status updates"""
@@ -28,6 +29,10 @@ class DownloadManager:
     def set_chrome_manager(self, chrome_manager):
         """Set the chrome manager for download path management"""
         self.chrome_manager = chrome_manager
+    
+    def set_stats_reporter(self, stats_reporter):
+        """Set the stats reporter for comprehensive tracking"""
+        self.stats_reporter = stats_reporter
     
     def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
         """Download the current track mix (after soloing)
@@ -45,6 +50,13 @@ class DownloadManager:
             song_folder = self.extract_song_folder_name(song_url)
         
         logging.info(f"Downloading current mix: {track_name} to folder: {song_folder}")
+        
+        # Extract song name from folder for stats
+        song_name = song_folder
+        
+        # Record track start in stats
+        if self.stats_reporter:
+            self.stats_reporter.record_track_start(song_name, track_name, track_index or 0)
         
         # Update progress tracker
         if self.progress_tracker:
@@ -227,6 +239,11 @@ class DownloadManager:
                 logging.error(f"❌ No download detected in song folder for: {track_name}")
                 if self.progress_tracker and track_index:
                     self.progress_tracker.update_track_status(track_index, 'failed')
+                
+                # Record failure in stats
+                if self.stats_reporter:
+                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                               error_message="Download not detected")
                 return False
             
             # Don't mark as completed immediately since downloads continue in background
@@ -238,6 +255,12 @@ class DownloadManager:
             # Update progress tracker to failed
             if self.progress_tracker and track_index:
                 self.progress_tracker.update_track_status(track_index, 'failed')
+            
+            # Record failure in stats
+            if self.stats_reporter:
+                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                           error_message=str(e))
+            
             logging.error(f"Error downloading mix: {e}")
             return False
     
@@ -287,6 +310,8 @@ class DownloadManager:
         
         def completion_monitor():
             try:
+                # Get song name from song_path for stats
+                song_name = song_path.name
                 # Monitor for up to 5 minutes for download completion
                 max_wait = 300  # 5 minutes
                 check_interval = 2  # Check every 2 seconds
@@ -308,13 +333,43 @@ class DownloadManager:
                     if completed_files:
                         logging.info(f"🎉 Download completed for {track_name}: {len(completed_files)} files")
                         
-                        # Clean up filenames by removing '_Custom_Backing_Track' and adding track name
+                        # Filter to only files that need cleaning (contain Custom_Backing_Track and match current track)
+                        files_needing_cleanup = []
                         for file_path in completed_files:
+                            filename = file_path.name
+                            # Only clean files that:
+                            # 1. Contain Custom_Backing_Track (indicating they need cleaning)
+                            # 2. Are very recent (downloaded in last 30 seconds) to avoid cleaning old files
+                            has_custom_suffix = 'Custom_Backing_Track' in filename
+                            is_very_recent = (time.time() - file_path.stat().st_mtime) < 30  # Only files from last 30 seconds
+                            
+                            if has_custom_suffix and is_very_recent:
+                                files_needing_cleanup.append(file_path)
+                                logging.info(f"📝 File needs cleanup: {filename}")
+                            else:
+                                logging.debug(f"📝 Skipping cleanup for {filename} (has_custom_suffix={has_custom_suffix}, is_very_recent={is_very_recent})")
+                        
+                        # Calculate file size for stats (all completed files, not just ones needing cleanup)
+                        total_file_size = sum(f.stat().st_size for f in completed_files)
+                        
+                        # Clean up filenames only for files that actually need it
+                        for file_path in files_needing_cleanup:
                             self.file_manager.clean_downloaded_filename(file_path, track_name)
+                        
+                        # If we cleaned any files, log success; otherwise log that files were already clean
+                        if files_needing_cleanup:
+                            logging.info(f"✅ Cleaned {len(files_needing_cleanup)} files for {track_name}")
+                        else:
+                            logging.info(f"✅ All files already clean for {track_name}")
                         
                         # Update progress tracker
                         if self.progress_tracker and track_index:
                             self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
+                        
+                        # Record success in stats
+                        if self.stats_reporter:
+                            self.stats_reporter.record_track_completion(song_name, track_name, success=True, 
+                                                                       file_size=total_file_size)
                         
                         break
                     
@@ -332,11 +387,21 @@ class DownloadManager:
                     logging.warning(f"⚠️ Download completion monitoring timed out for {track_name}")
                     if self.progress_tracker and track_index:
                         self.progress_tracker.update_track_status(track_index, 'failed')
+                    
+                    # Record timeout failure in stats
+                    if self.stats_reporter:
+                        self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                                   error_message="Download completion timeout")
                         
             except Exception as e:
                 logging.error(f"Error in completion monitoring for {track_name}: {e}")
                 if self.progress_tracker and track_index:
                     self.progress_tracker.update_track_status(track_index, 'failed')
+                
+                # Record monitoring error in stats
+                if self.stats_reporter:
+                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                               error_message=f"Monitoring error: {str(e)}")
         
         # Start monitoring in background thread
         monitor_thread = threading.Thread(target=completion_monitor, daemon=True)

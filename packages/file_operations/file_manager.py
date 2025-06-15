@@ -121,7 +121,7 @@ class FileManager:
             logging.warning(f"Error during download cleanup: {e}")
     
     def wait_for_download_to_start(self, track_name, song_path, track_index=None):
-        """Wait for download to actually start by monitoring song folder only"""
+        """Wait for download to actually start by monitoring song folder for new files AND file modifications"""
         try:
             if not song_path or not song_path.exists():
                 logging.error(f"Song folder not available for monitoring: {song_path}")
@@ -130,23 +130,32 @@ class FileManager:
             paths_to_monitor = [song_path]
             logging.info(f"🔍 Monitoring song folder: {song_path}")
             
-            # Get initial file lists for all paths
-            initial_files_by_path = {}
-            initial_counts = {}
+            # Get initial file snapshots with names, sizes, and modification times
+            initial_file_snapshots = {}
             
             for path in paths_to_monitor:
+                path_snapshots = {}
                 if path.exists():
                     initial_files = list(path.glob("*.mp3")) + list(path.glob("*.aif")) + list(path.glob("*.crdownload"))
-                    initial_files_by_path[path] = set(f.name for f in initial_files)
-                    initial_counts[path] = len(initial_files)
-                    logging.debug(f"Initial files in {path}: {initial_counts[path]}")
-                else:
-                    initial_files_by_path[path] = set()
-                    initial_counts[path] = 0
+                    for file_path in initial_files:
+                        try:
+                            stat = file_path.stat()
+                            path_snapshots[file_path.name] = {
+                                'size': stat.st_size,
+                                'mtime': stat.st_mtime,
+                                'path': file_path
+                            }
+                        except (OSError, FileNotFoundError):
+                            # File might have been deleted/moved during enumeration
+                            continue
+                    
+                    logging.debug(f"Initial files in {path}: {len(path_snapshots)} (names: {list(path_snapshots.keys())})")
+                
+                initial_file_snapshots[path] = path_snapshots
             
-            max_wait = 90  # Maximum wait time in seconds (increased for better detection)
+            max_wait = 30  # Reduced from 90s since we now detect overwrites quickly
             waited = 0
-            check_interval = 2  # Check every 2 seconds
+            check_interval = 1  # Check every 1 second for faster detection
             
             logging.info(f"⏳ Waiting for download to start for: {track_name}")
             
@@ -154,22 +163,49 @@ class FileManager:
                 time.sleep(check_interval)
                 waited += check_interval
                 
-                # Check all monitored paths for new files
+                # Check all monitored paths for new files AND modified files
                 for path in paths_to_monitor:
                     if not path.exists():
                         continue
                     
                     current_files = list(path.glob("*.mp3")) + list(path.glob("*.aif")) + list(path.glob("*.crdownload"))
-                    current_file_names = set(f.name for f in current_files)
+                    initial_snapshots = initial_file_snapshots[path]
                     
-                    # Look for new files
-                    new_files = current_file_names - initial_files_by_path[path]
+                    new_or_modified_files = []
                     
-                    if new_files:
-                        # Filter new files to those that look like karaoke downloads
-                        relevant_new_files = []
-                        for filename in new_files:
+                    for file_path in current_files:
+                        try:
+                            filename = file_path.name
+                            stat = file_path.stat()
+                            current_size = stat.st_size
+                            current_mtime = stat.st_mtime
+                            
+                            # Check if this is a new file
+                            if filename not in initial_snapshots:
+                                new_or_modified_files.append(('new', filename, file_path))
+                                logging.debug(f"New file detected: {filename}")
+                            else:
+                                # Check if existing file was modified
+                                initial_snapshot = initial_snapshots[filename]
+                                
+                                # Consider file modified if size changed OR modification time is newer
+                                size_changed = current_size != initial_snapshot['size']
+                                time_changed = current_mtime > initial_snapshot['mtime']
+                                
+                                if size_changed or time_changed:
+                                    new_or_modified_files.append(('modified', filename, file_path))
+                                    logging.debug(f"Modified file detected: {filename} (size: {initial_snapshot['size']} → {current_size}, mtime: {initial_snapshot['mtime']:.1f} → {current_mtime:.1f})")
+                        
+                        except (OSError, FileNotFoundError):
+                            # File might have been deleted/moved during check
+                            continue
+                    
+                    if new_or_modified_files:
+                        # Filter to those that look like karaoke downloads
+                        relevant_files = []
+                        for change_type, filename, file_path in new_or_modified_files:
                             filename_lower = filename.lower()
+                            
                             # Check if it looks like a karaoke download
                             is_audio_or_download = any(filename_lower.endswith(ext) for ext in ['.mp3', '.aif', '.crdownload'])
                             
@@ -191,17 +227,18 @@ class FileManager:
                             )
                             
                             if is_audio_or_download and might_be_karaoke:
-                                relevant_new_files.append(filename)
+                                relevant_files.append((change_type, filename))
                         
-                        if relevant_new_files:
-                            logging.info(f"✅ Download started! New files detected: {relevant_new_files}")
+                        if relevant_files:
+                            file_descriptions = [f"{filename} ({change_type})" for change_type, filename in relevant_files]
+                            logging.info(f"✅ Download started! Files detected: {file_descriptions}")
                             logging.info(f"📁 Location: {path}")
                             return True
                         else:
-                            logging.debug(f"New files found but don't appear to be karaoke downloads: {new_files}")
+                            logging.debug(f"Files changed but don't appear to be karaoke downloads: {[f[1] for f in new_or_modified_files]}")
                 
-                # Update progress every 10 seconds
-                if waited % 10 == 0:
+                # Update progress every 5 seconds
+                if waited % 5 == 0:
                     logging.info(f"⏳ Still waiting for download to start... ({waited}s/{max_wait}s)")
             
             logging.warning(f"⚠️ Download detection timeout after {max_wait}s for {track_name}")

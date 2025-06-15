@@ -4,8 +4,36 @@ import logging
 from pathlib import Path
 
 
+def clear_existing_logs():
+    """Clear all existing log files to prevent stale data and confusion during debugging"""
+    try:
+        logs_dir = Path("logs")
+        if logs_dir.exists():
+            # Find all log files in the logs directory
+            log_files = list(logs_dir.glob("*.log"))
+            
+            if log_files:
+                print(f"🗑️ Clearing {len(log_files)} existing log files...")
+                for log_file in log_files:
+                    try:
+                        log_file.unlink()
+                        print(f"   Cleared: {log_file.name}")
+                    except Exception as e:
+                        print(f"   Warning: Could not clear {log_file.name}: {e}")
+                print("✅ Log files cleared successfully")
+            else:
+                print("📁 No existing log files to clear")
+        else:
+            print("📁 Logs directory doesn't exist yet")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not clear logs directory: {e}")
+
+
 def setup_logging(debug_mode):
     """Setup logging configuration based on debug mode"""
+    # Clear existing log files first to prevent stale data
+    clear_existing_logs()
+    
     # Clear existing handlers
     logging.getLogger().handlers.clear()
     
@@ -40,7 +68,7 @@ def setup_logging(debug_mode):
         logging.getLogger().setLevel(logging.INFO)
         
         # File handler
-        file_handler = logging.FileHandler('logs/automation.log')
+        file_handler = logging.FileHandler('logs/automation.log', mode='w')  # Fresh file each run
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(detailed_formatter)
         logging.getLogger().addHandler(file_handler)

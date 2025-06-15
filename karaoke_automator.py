@@ -16,7 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from packages.configuration import ConfigurationManager
 from packages.browser import ChromeManager
 from packages.authentication import LoginManager
-from packages.progress import ProgressTracker
+from packages.progress import ProgressTracker, StatsReporter
 from packages.file_operations import FileManager
 from packages.track_management import TrackManager
 from packages.download_management import DownloadManager
@@ -46,6 +46,7 @@ class KaraokeVersionAutomator:
         self.show_progress = show_progress
         self.config_manager = ConfigurationManager(config_file)
         self.progress = ProgressTracker() if show_progress else None
+        self.stats = StatsReporter()  # Always track stats
         
         # Initialize browser manager
         self.chrome_manager = ChromeManager(headless=headless)
@@ -68,6 +69,7 @@ class KaraokeVersionAutomator:
             self.download_manager.set_progress_tracker(self.progress)
         self.download_manager.set_file_manager(self.file_manager)
         self.download_manager.set_chrome_manager(self.chrome_manager)
+        self.download_manager.set_stats_reporter(self.stats)  # Connect stats to download manager
     
     
     def login(self):
@@ -149,6 +151,9 @@ class KaraokeVersionAutomator:
                     if self.progress:
                         self.progress.start_song(song['name'], tracks)
                     
+                    # Start stats tracking for this song
+                    self.stats.start_song(song['name'], song['url'], len(tracks))
+                    
                     # Setup mixer controls once per song
                     logging.info("🎛️ Setting up mixer controls...")
                     
@@ -199,15 +204,55 @@ class KaraokeVersionAutomator:
                     # Finish progress tracking for this song
                     if self.progress:
                         self.progress.finish_song()
+                    
+                    # Finish stats tracking for this song
+                    self.stats.finish_song(song['name'])
                         
                 else:
                     logging.error(f"No tracks found for {song['name']}")
+                    # Still record the song in stats even if no tracks found
+                    self.stats.start_song(song['name'], song['url'], 0)
+                    self.stats.finish_song(song['name'])
             
             logging.info("Automation completed")
+            
+            # Generate and display final stats report
+            try:
+                print("\n" + "="*80)
+                print("📊 GENERATING FINAL STATISTICS REPORT...")
+                print("="*80)
+                
+                final_report = self.stats.generate_final_report()
+                print(final_report)
+                
+                # Save detailed JSON report
+                stats_saved = self.stats.save_detailed_report("logs/automation_stats.json")
+                if stats_saved:
+                    print(f"\n📁 Detailed statistics saved to: logs/automation_stats.json")
+                
+            except Exception as e:
+                logging.error(f"Error generating final statistics report: {e}")
+            
             return True
             
         except Exception as e:
             logging.error(f"Automation failed: {e}")
+            
+            # Still generate stats report even if automation failed
+            try:
+                print("\n" + "="*80)
+                print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
+                print("="*80)
+                
+                final_report = self.stats.generate_final_report()
+                print(final_report)
+                
+                # Save detailed JSON report
+                self.stats.save_detailed_report("logs/automation_stats_failed.json")
+                
+            except Exception as stats_error:
+                logging.error(f"Error generating final statistics report: {stats_error}")
+            
             return False
         finally:
             self.driver.quit()
