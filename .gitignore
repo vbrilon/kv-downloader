@@ -176,3 +176,7 @@ chromedriver*
 # Test artifacts
 .pytest_cache/
 *.log
+
+# Session and browser data (should not be committed)
+session_data.pkl
+chrome_profile/
