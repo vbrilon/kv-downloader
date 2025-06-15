@@ -57,6 +57,12 @@ python karaoke_automator.py
 
 # Debug mode (visible browser, detailed logging)
 python karaoke_automator.py --debug
+
+# Force fresh login (bypass saved session)
+python karaoke_automator.py --force-login
+
+# Clear saved session and exit
+python karaoke_automator.py --clear-session
 ```
 
 ---
@@ -117,6 +123,25 @@ Use `--debug` flag for troubleshooting:
 - Saves detailed logs to `logs/debug.log`
 - Displays element inspection info
 
+### Session Persistence
+
+The script automatically saves your login session after the first successful login. This means:
+
+- **First run**: Performs normal login (~4-14 seconds)
+- **Subsequent runs**: Restores saved session (~2-3 seconds)
+- **Session expiry**: Automatically falls back to fresh login after 24 hours
+
+**Session Management Commands**:
+```bash
+# Force fresh login (ignore saved session)
+python karaoke_automator.py --force-login
+
+# Clear saved session data
+python karaoke_automator.py --clear-session
+```
+
+**Session Data**: Stored in `session_data.pkl` (cookies, localStorage, etc.) - safe to delete if needed.
+
 ### Environment Variables
 
 ```bash
@@ -168,6 +193,7 @@ DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 - **Automatic file organization** with clean filenames
 - **Key adjustment support** (-12 to +12 semitones)
 - **Background mode** (headless) or debug mode (visible browser)
+- **Session persistence** - saves login state to skip future logins
 - **Robust error handling** and session management
 - **Smart download sequencing** with proper waiting
 

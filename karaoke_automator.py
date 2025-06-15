@@ -72,9 +72,9 @@ class KaraokeVersionAutomator:
         self.download_manager.set_stats_reporter(self.stats)  # Connect stats to download manager
     
     
-    def login(self):
-        """Login using centralized login handler"""
-        return self.login_handler.login()
+    def login(self, force_relogin=False):
+        """Login using centralized login handler with session persistence"""
+        return self.login_handler.login_with_session_persistence(force_relogin=force_relogin)
     
     def is_logged_in(self):
         """Check login status using centralized handler"""
@@ -275,7 +275,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Karaoke-Version.com Track Automation')
     parser.add_argument('--debug', action='store_true', 
                        help='Run in debug mode with visible browser and detailed file logging')
+    parser.add_argument('--force-login', action='store_true',
+                       help='Force fresh login instead of using saved session')
+    parser.add_argument('--clear-session', action='store_true',
+                       help='Clear saved session data and exit')
     args = parser.parse_args()
+    
+    # Handle session clearing
+    if args.clear_session:
+        from packages.authentication import LoginManager
+        # Create a temporary login manager just to clear session
+        temp_login = LoginManager(None, None)
+        if temp_login.clear_session():
+            print("✅ Saved session data cleared successfully")
+        else:
+            print("❌ Could not clear session data")
+        exit(0)
     
     # Setup logging based on debug mode
     setup_logging(args.debug)
@@ -285,4 +300,17 @@ if __name__ == "__main__":
     
     # Initialize automator with appropriate mode
     automator = KaraokeVersionAutomator(headless=headless_mode)
+    
+    # Override login method if force login requested
+    if args.force_login:
+        logging.info("🔄 Force login requested via command line")
+        original_run = automator.run_automation
+        def run_with_force_login():
+            # Step 1: Login (force relogin)
+            if not automator.login(force_relogin=True):
+                logging.error("Login failed")
+                return False
+            return original_run()
+        automator.run_automation = run_with_force_login
+    
     automator.run_automation()

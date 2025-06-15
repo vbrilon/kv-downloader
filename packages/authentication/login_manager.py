@@ -2,6 +2,9 @@
 
 import time
 import logging
+import json
+import pickle
+from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -16,16 +19,21 @@ except ImportError:
 class LoginManager:
     """Handles all login-related functionality for Karaoke-Version.com"""
     
-    def __init__(self, driver, wait):
+    def __init__(self, driver, wait, session_file="session_data.pkl"):
         """
         Initialize login manager
         
         Args:
             driver: Selenium WebDriver instance
             wait: WebDriverWait instance
+            session_file: Path to file for storing session data (cookies, etc.)
         """
         self.driver = driver
         self.wait = wait
+        self.session_file = Path(session_file)
+        
+        # Create session storage directory if it doesn't exist
+        self.session_file.parent.mkdir(parents=True, exist_ok=True)
     
     def is_logged_in(self):
         """Check if user is currently logged in"""
@@ -266,7 +274,181 @@ class LoginManager:
         # Verify login success
         if self.is_logged_in():
             logging.info("✅ Login successful!")
+            # Save session data for future use
+            self.save_session()
             return True
         else:
             logging.error("❌ Login failed - verification unsuccessful")
             return False
+    
+    def save_session(self):
+        """Save current browser session data (cookies, localStorage, etc.) to file"""
+        try:
+            session_data = {
+                'cookies': self.driver.get_cookies(),
+                'url': self.driver.current_url,
+                'timestamp': time.time(),
+                'user_agent': self.driver.execute_script("return navigator.userAgent"),
+                'window_size': self.driver.get_window_size()
+            }
+            
+            # Try to get localStorage data
+            try:
+                local_storage = self.driver.execute_script("return window.localStorage;")
+                session_data['localStorage'] = local_storage
+            except Exception as e:
+                logging.debug(f"Could not save localStorage: {e}")
+                session_data['localStorage'] = {}
+            
+            # Try to get sessionStorage data
+            try:
+                session_storage = self.driver.execute_script("return window.sessionStorage;")
+                session_data['sessionStorage'] = session_storage
+            except Exception as e:
+                logging.debug(f"Could not save sessionStorage: {e}")
+                session_data['sessionStorage'] = {}
+            
+            # Save to file
+            with open(self.session_file, 'wb') as f:
+                pickle.dump(session_data, f)
+            
+            logging.info(f"💾 Session data saved to {self.session_file}")
+            return True
+            
+        except Exception as e:
+            logging.warning(f"⚠️ Could not save session data: {e}")
+            return False
+    
+    def load_session(self):
+        """Load and restore browser session data from file"""
+        try:
+            if not self.session_file.exists():
+                logging.debug("No session file found")
+                return False
+            
+            # Load session data
+            with open(self.session_file, 'rb') as f:
+                session_data = pickle.load(f)
+            
+            # Check if session is not too old (24 hours max)
+            session_age = time.time() - session_data.get('timestamp', 0)
+            max_age = 24 * 60 * 60  # 24 hours in seconds
+            
+            if session_age > max_age:
+                logging.info(f"🕐 Saved session is {session_age/3600:.1f} hours old, too old to use")
+                self.clear_session()
+                return False
+            
+            logging.info(f"🔄 Loading session from {session_age/60:.1f} minutes ago")
+            
+            # Navigate to the saved URL first
+            saved_url = session_data.get('url', 'https://www.karaoke-version.com')
+            self.driver.get(saved_url)
+            time.sleep(2)
+            
+            # Restore cookies
+            cookies = session_data.get('cookies', [])
+            for cookie in cookies:
+                try:
+                    # Remove problematic attributes that can cause issues
+                    cookie_copy = cookie.copy()
+                    # Remove attributes that might cause issues when adding
+                    for attr in ['expiry', 'httpOnly', 'sameSite']:
+                        cookie_copy.pop(attr, None)
+                    
+                    self.driver.add_cookie(cookie_copy)
+                except Exception as e:
+                    logging.debug(f"Could not restore cookie {cookie.get('name', 'unknown')}: {e}")
+            
+            # Restore localStorage
+            local_storage = session_data.get('localStorage', {})
+            for key, value in local_storage.items():
+                try:
+                    self.driver.execute_script(f"window.localStorage.setItem('{key}', '{value}');")
+                except Exception as e:
+                    logging.debug(f"Could not restore localStorage item {key}: {e}")
+            
+            # Restore sessionStorage
+            session_storage = session_data.get('sessionStorage', {})
+            for key, value in session_storage.items():
+                try:
+                    self.driver.execute_script(f"window.sessionStorage.setItem('{key}', '{value}');")
+                except Exception as e:
+                    logging.debug(f"Could not restore sessionStorage item {key}: {e}")
+            
+            # Refresh page to apply restored session
+            self.driver.refresh()
+            time.sleep(3)
+            
+            logging.info("✅ Session data restored")
+            return True
+            
+        except Exception as e:
+            logging.warning(f"⚠️ Could not load session data: {e}")
+            return False
+    
+    def clear_session(self):
+        """Clear saved session data"""
+        try:
+            if self.session_file.exists():
+                self.session_file.unlink()
+                logging.info("🗑️ Cleared saved session data")
+            return True
+        except Exception as e:
+            logging.warning(f"⚠️ Could not clear session data: {e}")
+            return False
+    
+    def is_session_valid(self):
+        """Check if there's a valid saved session without loading it"""
+        try:
+            if not self.session_file.exists():
+                return False
+            
+            with open(self.session_file, 'rb') as f:
+                session_data = pickle.load(f)
+            
+            # Check age
+            session_age = time.time() - session_data.get('timestamp', 0)
+            max_age = 24 * 60 * 60  # 24 hours
+            
+            return session_age <= max_age
+            
+        except Exception:
+            return False
+    
+    def login_with_session_persistence(self, username=None, password=None, force_relogin=False):
+        """Enhanced login with session persistence - tries to restore session first"""
+        username = username or USERNAME
+        password = password or PASSWORD
+        
+        if not username or not password:
+            logging.error("Username and password are required for login")
+            return False
+        
+        # If not forcing relogin, try to restore saved session first
+        if not force_relogin:
+            logging.info("🔍 Checking for saved session...")
+            
+            if self.is_session_valid():
+                logging.info("📁 Found valid saved session, attempting to restore...")
+                
+                if self.load_session():
+                    # Verify the restored session is still logged in
+                    if self.is_logged_in():
+                        logging.info("🎉 Successfully restored login session!")
+                        logging.info("⚡ Login skipped - using saved session")
+                        return True
+                    else:
+                        logging.info("⚠️ Restored session is no longer valid")
+                        self.clear_session()
+                else:
+                    logging.info("⚠️ Could not restore session data")
+            else:
+                logging.info("💡 No valid saved session found")
+        else:
+            logging.info("🔄 Force relogin requested, clearing saved session")
+            self.clear_session()
+        
+        # Fall back to regular login process
+        logging.info("🔐 Proceeding with fresh login...")
+        return self.login(username, password, force_relogin=False)  # Don't double force
