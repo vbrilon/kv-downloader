@@ -29,7 +29,7 @@ class DownloadManager:
         """Set the chrome manager for download path management"""
         self.chrome_manager = chrome_manager
     
-    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0):
+    def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
         """Download the current track mix (after soloing)
         
         Args:
@@ -38,6 +38,7 @@ class DownloadManager:
             cleanup_existing (bool): Remove existing files before download
             song_folder (str): Optional specific folder name for the song
             key_adjustment (int): Key adjustment applied to the track (-12 to +12)
+            track_index (int): Optional track index for progress tracking
         """
         # Extract or create song folder name
         if not song_folder:
@@ -46,15 +47,21 @@ class DownloadManager:
         logging.info(f"Downloading current mix: {track_name} to folder: {song_folder}")
         
         # Update progress tracker
-        track_index = None
         if self.progress_tracker:
-            # Find track by name to get index
-            for track in self.progress_tracker.tracks:
-                if track_name.lower() in track['name'].lower() or track['name'].lower() in track_name.lower():
-                    track_index = track['index']
-                    break
+            # Use provided track_index if available, otherwise try to find by name
+            if track_index is None:
+                # Find track by name to get index (fallback method)
+                for track in self.progress_tracker.tracks:
+                    if track_name.lower() in track['name'].lower() or track['name'].lower() in track_name.lower():
+                        track_index = track['index']
+                        logging.debug(f"Found track index {track_index} for {track_name}")
+                        break
+                
+                if track_index is None:
+                    logging.warning(f"Could not find track index for {track_name}")
             
-            if track_index:
+            if track_index is not None:
+                logging.debug(f"Updating progress for track {track_index}: {track_name}")
                 self.progress_tracker.update_track_status(track_index, 'downloading')
         
         # Create song-specific folder and update download path

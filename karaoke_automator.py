@@ -179,7 +179,8 @@ class KaraokeVersionAutomator:
                                 track_name,
                                 cleanup_existing=False,  # Don't clear folder for each track
                                 song_folder=song.get('name'),  # None if not specified, triggers URL extraction
-                                key_adjustment=song_key
+                                key_adjustment=song_key,
+                                track_index=track['index']  # Pass track index for accurate progress tracking
                             )
                             
                             if not success:

@@ -284,18 +284,26 @@ class FileManager:
             original_name = file_path.name
             new_name = original_name
             
-            # Remove various forms of Custom_Backing_Track
+            # Remove various forms of Custom_Backing_Track using regex for more robust matching
+            import re
+            
+            # Comprehensive patterns to match various Custom_Backing_Track forms
+            # ORDER MATTERS: Most specific patterns first!
             patterns_to_remove = [
-                '_Custom_Backing_Track',
-                '(Custom_Backing_Track)',
-                'Custom_Backing_Track',
-                '(Custom)',
-                '_Custom'
+                r'\([^)]*_Custom_Backing_Track\)',  # (Click_Custom_Backing_Track), (Drum_Custom_Backing_Track), etc.
+                r'_Custom_Backing_Track[^)]*\)',    # _Custom_Backing_Track)
+                r'\(Custom_Backing_Track\)',        # (Custom_Backing_Track)
+                r'_Custom_Backing_Track',           # _Custom_Backing_Track
+                r'Custom_Backing_Track',            # Custom_Backing_Track
+                r'\(Custom\)',                      # (Custom)
+                r'_Custom'                          # _Custom
             ]
             
+            # Try each pattern until we find a match
             for pattern in patterns_to_remove:
-                if pattern in new_name:
-                    new_name = new_name.replace(pattern, '')
+                if re.search(pattern, new_name):
+                    new_name = re.sub(pattern, '', new_name)
+                    logging.debug(f"Removed pattern '{pattern}' from filename")
                     break
             
             # If we have a track name and it's not already in the filename, add it
