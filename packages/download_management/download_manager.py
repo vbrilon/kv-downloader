@@ -112,6 +112,57 @@ class DownloadManager:
         
         return song_path
 
+    def _find_download_button(self):
+        """Find and validate the download button on the current page
+        
+        Returns:
+            WebElement or None: The download button if found and usable, None otherwise
+        """
+        # Find the download button - discovered selector
+        download_selectors = [
+            "a.download",  # Primary discovered selector
+            "a[class*='download']",
+            "//a[contains(@class, 'download')]",
+            "//a[contains(text(), 'Download')]",
+            "//a[contains(text(), 'MP3')]"
+        ]
+        
+        logging.debug(f"Searching for download button with {len(download_selectors)} selectors")
+        
+        download_button = None
+        for i, selector in enumerate(download_selectors):
+            try:
+                logging.debug(f"Trying download selector {i+1}/{len(download_selectors)}: {selector}")
+                if selector.startswith("//"):
+                    download_button = self.driver.find_element(By.XPATH, selector)
+                else:
+                    download_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if download_button and download_button.is_displayed() and download_button.is_enabled():
+                    logging.info(f"Found download button with selector: {selector}")
+                    logging.debug(f"Download button displayed: {download_button.is_displayed()}, enabled: {download_button.is_enabled()}")
+                    break
+                else:
+                    logging.debug(f"Download button found but not usable (displayed: {download_button.is_displayed()}, enabled: {download_button.is_enabled()})")
+                    download_button = None
+            except Exception as e:
+                logging.debug(f"Selector {selector} failed: {e}")
+                continue
+        
+        if not download_button:
+            # Debug: show available download-related elements
+            logging.debug("Available download-related elements on page:")
+            try:
+                all_links = self.driver.find_elements(By.TAG_NAME, "a")
+                download_links = [link for link in all_links if 'download' in link.get_attribute('class').lower() or 'download' in link.text.lower()]
+                for link in download_links[:5]:  # Show first 5 matches
+                    logging.debug(f"  - {link.tag_name} class='{link.get_attribute('class')}' text='{link.text[:30]}'")
+            except (Exception, AttributeError, WebDriverException) as e:
+                logging.debug(f"Could not analyze download links: {e}")
+                pass
+        
+        return download_button
+
     def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
         """Download the current track mix (after soloing)
         
@@ -136,36 +187,8 @@ class DownloadManager:
                 self.driver.get(song_url)
                 time.sleep(3)
             
-            # Find the download button - discovered selector
-            download_selectors = [
-                "a.download",  # Primary discovered selector
-                "a[class*='download']",
-                "//a[contains(@class, 'download')]",
-                "//a[contains(text(), 'Download')]",
-                "//a[contains(text(), 'MP3')]"
-            ]
-            
-            logging.debug(f"Searching for download button with {len(download_selectors)} selectors")
-            
-            download_button = None
-            for i, selector in enumerate(download_selectors):
-                try:
-                    logging.debug(f"Trying download selector {i+1}/{len(download_selectors)}: {selector}")
-                    if selector.startswith("//"):
-                        download_button = self.driver.find_element(By.XPATH, selector)
-                    else:
-                        download_button = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    
-                    if download_button and download_button.is_displayed() and download_button.is_enabled():
-                        logging.info(f"Found download button with selector: {selector}")
-                        logging.debug(f"Download button displayed: {download_button.is_displayed()}, enabled: {download_button.is_enabled()}")
-                        break
-                    else:
-                        logging.debug(f"Download button found but not usable (displayed: {download_button.is_displayed()}, enabled: {download_button.is_enabled()})")
-                        download_button = None
-                except Exception as e:
-                    logging.debug(f"Selector {selector} failed: {e}")
-                    continue
+            # Find and validate download button
+            download_button = self._find_download_button()
             
             if not download_button:
                 # Check if this is because the song hasn't been purchased
@@ -179,15 +202,6 @@ class DownloadManager:
                     return False
                 else:
                     logging.error("Could not find download button - unknown error")
-                    logging.debug("Available download-related elements on page:")
-                    try:
-                        all_links = self.driver.find_elements(By.TAG_NAME, "a")
-                        download_links = [link for link in all_links if 'download' in link.get_attribute('class').lower() or 'download' in link.text.lower()]
-                        for link in download_links[:5]:  # Show first 5 matches
-                            logging.debug(f"  - {link.tag_name} class='{link.get_attribute('class')}' text='{link.text[:30]}'")
-                    except (Exception, AttributeError, WebDriverException) as e:
-                        logging.debug(f"Could not analyze download links: {e}")
-                        pass
                     return False
             
             # Get button details for logging
