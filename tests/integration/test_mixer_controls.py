@@ -56,7 +56,7 @@ def test_mixer_controls():
         
         # Test 1: Intro Count Checkbox
         print("\n1. 🎼 Testing Intro Count Checkbox:")
-        intro_success = automator.track_handler.ensure_intro_count_enabled(test_song_url)
+        intro_success = automator.track_manager.ensure_intro_count_enabled(test_song_url)
         if intro_success:
             print("   ✅ Intro count checkbox test passed")
         else:
@@ -68,7 +68,7 @@ def test_mixer_controls():
             print("   ℹ️ No key adjustment needed (key = 0)")
             key_success = True
         else:
-            key_success = automator.track_handler.adjust_key(test_song_url, song_key)
+            key_success = automator.track_manager.adjust_key(test_song_url, song_key)
             if key_success:
                 print(f"   ✅ Key adjustment to {song_key:+d} test passed")
             else:
@@ -80,7 +80,7 @@ def test_mixer_controls():
         
         for test_key in test_keys:
             print(f"   Testing key adjustment to {test_key:+d}...")
-            adjust_success = automator.track_handler.adjust_key(test_song_url, test_key)
+            adjust_success = automator.track_manager.adjust_key(test_song_url, test_key)
             if adjust_success:
                 print(f"   ✅ Key {test_key:+d} adjustment successful")
             else:
@@ -133,8 +133,8 @@ def test_mixer_controls():
             print("🔧 Check the browser window and debug logs for issues")
         
         print("\n⏸️ Browser window left open for inspection")
-        print("Press Enter to close browser and exit...")
-        input()
+        print("Automatically closing in 3 seconds...")
+        time.sleep(3)
         
         return overall_success
         

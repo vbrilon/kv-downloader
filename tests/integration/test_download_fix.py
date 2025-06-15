@@ -135,8 +135,8 @@ def test_single_track_download():
     finally:
         # Keep browser open for inspection
         print("\n⏸️ Browser window left open for inspection")
-        print("Press Enter to close browser and exit...")
-        input()
+        print("Automatically closing in 3 seconds...")
+        time.sleep(3)
         automator.driver.quit()
 
 if __name__ == "__main__":
