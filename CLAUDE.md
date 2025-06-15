@@ -167,9 +167,10 @@ python tests/test_modular_login.py
 4. ✅ **Session Management** - Maintains and verifies login state throughout
 5. ✅ **Track Isolation** - Solo button functionality for track selection (mutually exclusive)
 6. ✅ **Download Process** - Complete download workflow with JavaScript fallback
-7. ✅ **File Organization** - Song-specific folders with duplicate cleanup
-8. ✅ **Performance Options** - Headless mode and optimized login detection
-9. ✅ **Error Handling** - Click interception, network issues, edge cases
+7. ✅ **File Organization** - Song-specific folders with automatic filename cleanup
+8. ✅ **Filename Standardization** - Removes `_Custom_Backing_Track` for clean filenames
+9. ✅ **Performance Options** - Headless mode and optimized login detection
+10. ✅ **Error Handling** - Click interception, network issues, edge cases
 
 ## SOLO BUTTON FUNCTIONALITY ✅ (NEW)
 **Successfully implemented and tested track isolation:**
@@ -279,7 +280,11 @@ automator.clear_all_solos(song_url)
 3. **Actual Download Location**: Files go to system Downloads folder by default, require active path management
 4. **Download Button Response**: Clicking download doesn't immediately start download - requires waiting for file generation
 5. **Chrome Download Process**: Files appear first as `.crdownload` extension during download, removed when complete
-6. **Filename Pattern**: Downloaded files follow pattern: `Artist_Song(Track_Name_Custom_Backing_Track).mp3`
+6. **Automatic Key Adjustment in Filenames**: The site automatically appends key adjustments to filenames when downloading with non-zero key settings
+7. **Filename Patterns**: 
+   - **No key adjustment**: `Jimmy_Eat_World_The_Middle(Drum_Kit_Custom_Backing_Track).mp3`
+   - **With key adjustment**: `Jimmy_Eat_World_The_Middle(Drum_Kit_Custom_Backing_Track-1).mp3`
+   - **Key adjustment is site-generated**: The `-1`, `+2`, etc. suffix is automatically added by Karaoke-Version.com, not by our automation
 
 ### Technical Solutions (WORKING)
 1. **Filesystem Monitoring**: `_wait_for_download_to_start()` method monitors for new files to detect actual download start
@@ -475,12 +480,51 @@ tests/
 - **Enhanced validation**: Supports optional fields and auto-generation
 
 ### Current Status
-- ✅ **Both bugs completely fixed and tested**
+- ✅ **Simple filename cleanup implemented** - Removes `_Custom_Backing_Track` from downloaded files
 - ✅ **All regression tests passing** 
 - ✅ **Enhanced configuration system** with optional names and auto-extraction
-- ✅ **Comprehensive filename cleaning** with proper key adjustment handling
 - ✅ **Test suite organized** for safe future refactoring
-- ✅ **Production ready** with improved file organization
+- ✅ **Production ready** with clean, standardized filenames
+
+---
+
+## 📁 FILENAME HANDLING SIMPLIFICATION (DECEMBER 2024)
+
+### ✅ Complete Removal of Filename Renaming Logic
+**Problem**: Complex filename cleaning code was causing bugs and inconsistent results
+
+**Actions Completed**:
+1. **Removed `_clean_filename_after_download()` method** (107 lines)
+2. **Removed `_cleanup_downloaded_filenames()` method** (133 lines) 
+3. **Removed all calls to filename cleaning functions**
+4. **Total reduction**: ~240 lines of problematic filename manipulation code
+
+### ✅ Simple Post-Download Cleanup (CURRENT APPROACH)
+**Implementation**: Simple `_Custom_Backing_Track` removal after download completion:
+- **Downloaded**: `Jimmy_Eat_World_The_Middle(Drum_Kit_Custom_Backing_Track-1).mp3`
+- **Cleaned**: `Jimmy_Eat_World_The_Middle(Drum_Kit-1).mp3`
+- **Downloaded**: `Jimmy_Eat_World_The_Middle(Drum_Kit_Custom_Backing_Track).mp3`  
+- **Cleaned**: `Jimmy_Eat_World_The_Middle(Drum_Kit).mp3`
+
+### Implementation Details
+- **Method**: `_clean_downloaded_filename()` - Simple string replacement
+- **Trigger**: Runs automatically after each download completes
+- **Logic**: `filename.replace('_Custom_Backing_Track', '')`
+- **Safety**: Avoids overwriting existing files, handles errors gracefully
+
+### Benefits
+- **Clean filenames**: Removes unnecessary `_Custom_Backing_Track` text
+- **Preserves everything else**: Song name, instrument, key adjustments all intact
+- **Simple and reliable**: Only 25 lines of straightforward code
+- **Site compatibility**: Works with all site-generated filename formats
+
+### Key Context for Future Sessions
+- **Filename Pattern**: All downloads follow `Band_Song(Instrument)` format with optional key suffix
+- **Site Behavior**: Karaoke-Version.com automatically adds key adjustments to filenames (e.g., `-1`, `+2`)
+- **Cleanup Logic**: Simple string replacement removes only `_Custom_Backing_Track` - no other manipulation needed
+- **Implementation**: `_clean_downloaded_filename()` method in `KaraokeVersionTracker` class at line ~1296
+- **Trigger Point**: Called after download completion detection in `_schedule_download_completion_monitoring()`
+- **Testing**: Manual testing confirmed all transformations work correctly
 
 ---
 

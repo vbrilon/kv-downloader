@@ -1223,9 +1223,9 @@ class KaraokeVersionTracker:
                     if completed_files:
                         logging.info(f"🎉 Download completed for {track_name}: {len(completed_files)} files")
                         
-                        # Clean up filenames
+                        # Clean up filenames by removing '_Custom_Backing_Track'
                         for file_path in completed_files:
-                            self._clean_filename_after_download(file_path, track_name, key_adjustment)
+                            self._clean_downloaded_filename(file_path)
                         
                         # Update progress tracker
                         if self.progress_tracker and track_index:
@@ -1293,254 +1293,32 @@ class KaraokeVersionTracker:
             logging.debug(f"Error checking for completed downloads: {e}")
             return []
     
-    def _clean_filename_after_download(self, file_path, track_name=None, key_adjustment=0):
-        """Remove 'Custom_Backing_Track' patterns and improve filename with track name and key info"""
+    def _clean_downloaded_filename(self, file_path):
+        """Remove '_Custom_Backing_Track' from downloaded filename"""
         try:
-            import re
             original_name = file_path.name
-            new_name = original_name
             
-            # Simple patterns to remove
-            cleanup_patterns = [
-                "_Custom_Backing_Track",
-                "(Custom_Backing_Track)",
-                "_Custom_Backing_Track_",
-                "(Custom Backing Track)",
-                "_custom_backing_track",
-                "Custom_Backing_Track"
-            ]
-            
-            # Remove simple patterns
-            for pattern in cleanup_patterns:
-                new_name = new_name.replace(pattern, '')
-            
-            # Regex patterns for complex cases like "(Custom_Backing_Track-1)"
-            complex_patterns = [
-                r'\(Custom_Backing_Track[+-]?\d*\)',  # (Custom_Backing_Track-1), etc.
-                r'_Custom_Backing_Track[+-]?\d*_?',   # _Custom_Backing_Track-1_, etc.
-                r'Custom_Backing_Track[+-]?\d*'       # Custom_Backing_Track-1, etc.
-            ]
-            
-            # Remove complex patterns with regex
-            for pattern in complex_patterns:
-                new_name = re.sub(pattern, "", new_name, flags=re.IGNORECASE)
-            
-            # Remove redundant song name from filename (use folder name as reference)
-            song_folder_name = file_path.parent.name
-            song_name_normalized = song_folder_name.replace(' ', '_').replace('-', '_').lower()
-            new_name_lower = new_name.lower()
-            
-            # Look for song name patterns in the filename and remove them
-            if song_name_normalized in new_name_lower:
-                # Try to find and remove the song name portion
-                variations = [
-                    song_name_normalized,                    # the_middle
-                    song_name_normalized.replace('_', ''),   # themiddle
-                    song_name_normalized.replace('_', '-'),  # the-middle
-                    song_name_normalized.replace('_', ' ')   # the middle
-                ]
-                
-                for variation in variations:
-                    variation_pattern = re.escape(variation).replace(r'\ ', r'[_\-\s]*')
-                    new_name = re.sub(variation_pattern, '', new_name, flags=re.IGNORECASE)
-            
-            # Clean up any resulting double parentheses or underscores
-            new_name = new_name.replace('()', '')  # Remove empty parentheses
-            new_name = new_name.replace('__', '_')  # Fix double underscores
-            new_name = new_name.replace('_.', '.')  # Fix underscore before extension
-            new_name = new_name.strip('_-. ')      # Trim leading/trailing chars
-            
-            # Handle edge case where name becomes empty or just extension
-            if not new_name or new_name in [".mp3", "mp3"]:
-                new_name = f"{track_name}.mp3" if track_name else "track.mp3"
-            elif not new_name.endswith('.mp3'):
-                new_name = f"{new_name}.mp3"
-            
-            # Ensure track name is included if provided and not already present
-            if track_name:
-                name_without_ext = new_name.replace('.mp3', '').lower()
-                track_name_lower = track_name.lower()
-                
-                if track_name_lower not in name_without_ext:
-                    # Add track name to filename
-                    name_part = new_name.replace('.mp3', '')
-                    if name_part and name_part != track_name:
-                        new_name = f"{name_part}_{track_name}.mp3"
-                    else:
-                        new_name = f"{track_name}.mp3"
-            
-            # Add key adjustment if present and not already included
-            if key_adjustment != 0:
-                name_without_ext = new_name.replace('.mp3', '')
-                key_suffix = f"{key_adjustment:+d}"  # +1, -1, etc.
-                
-                # Check if key suffix is already present in the filename
-                if f"({key_suffix})" not in new_name:
-                    new_name = f"{name_without_ext}({key_suffix}).mp3"
-            
-            # Only rename if the name actually changed
-            if new_name != original_name:
+            # Simple replacement: remove '_Custom_Backing_Track'
+            if '_Custom_Backing_Track' in original_name:
+                new_name = original_name.replace('_Custom_Backing_Track', '')
                 new_path = file_path.parent / new_name
                 
                 # Avoid overwriting existing files
-                counter = 1
-                final_path = new_path
-                while final_path.exists():
-                    name_part = new_path.stem
-                    ext_part = new_path.suffix
-                    final_path = file_path.parent / f"{name_part}_{counter}{ext_part}"
-                    counter += 1
+                if new_path.exists():
+                    logging.warning(f"Target filename already exists, skipping cleanup: {new_name}")
+                    return file_path
                 
-                file_path.rename(final_path)
-                logging.info(f"📝 Cleaned filename: '{original_name}' → '{final_path.name}'")
-                return final_path
+                # Rename the file
+                file_path.rename(new_path)
+                logging.info(f"📝 Cleaned filename: '{original_name}' → '{new_name}'")
+                return new_path
             else:
-                logging.debug(f"Filename already clean: {original_name}")
+                logging.debug(f"No cleanup needed for: {original_name}")
                 return file_path
                 
         except Exception as e:
             logging.warning(f"Could not clean filename for {file_path.name}: {e}")
             return file_path
-
-
-    
-    def _cleanup_downloaded_filenames(self, song_path, track_name, key_adjustment=0):
-        """Clean up downloaded filenames by removing unwanted suffixes and adding key info"""
-        try:
-            song_folder = Path(song_path)
-            if not song_folder.exists():
-                return False
-            
-            # Patterns to clean up - including key adjustment variations
-            cleanup_patterns = [
-                "_Custom_Backing_Track",
-                "(Custom_Backing_Track)",
-                "_Custom_Backing_Track_",
-                "(Custom Backing Track)",
-                "_custom_backing_track",
-                "Custom_Backing_Track"
-            ]
-            
-            # Regex patterns for complex cases like "(Custom_Backing_Track-1)"
-            import re
-            complex_patterns = [
-                r'\(Custom_Backing_Track[+-]?\d*\)',  # (Custom_Backing_Track-1), (Custom_Backing_Track+2), etc.
-                r'_Custom_Backing_Track[+-]?\d*_?',   # _Custom_Backing_Track-1_, etc.
-                r'Custom_Backing_Track[+-]?\d*'       # Custom_Backing_Track-1, etc.
-            ]
-            
-            files_cleaned = 0
-            
-            # Look for recently downloaded MP3 files
-            for file_path in song_folder.glob("*.mp3"):
-                # Check if file is recent (less than 60 seconds old)
-                file_age = time.time() - file_path.stat().st_mtime
-                if file_age > 60:  # Skip old files
-                    continue
-                
-                original_name = file_path.name
-                new_name = original_name
-                
-                # Remove unwanted patterns (simple string replacements)
-                for pattern in cleanup_patterns:
-                    if pattern in new_name:
-                        new_name = new_name.replace(pattern, "")
-                        logging.debug(f"Removed pattern '{pattern}' from filename")
-                
-                # Remove complex patterns with regex (for key adjustments)
-                for pattern in complex_patterns:
-                    matches = re.findall(pattern, new_name, re.IGNORECASE)
-                    if matches:
-                        new_name = re.sub(pattern, "", new_name, flags=re.IGNORECASE)
-                        logging.debug(f"Removed regex pattern '{pattern}' matches: {matches}")
-                
-                # Clean up any double extensions or weird formatting
-                new_name = new_name.replace(".mp3.mp3", ".mp3")  # Fix double extensions
-                
-                # Remove redundant song name from filename if it's already in the folder name
-                song_name_normalized = song_folder.name.replace(' ', '_').replace('-', '_').lower()
-                new_name_lower = new_name.lower()
-                
-                # Look for song name patterns in the filename and remove them
-                if song_name_normalized in new_name_lower:
-                    # Try to find and remove the song name portion
-                    import re
-                    # Create a pattern that matches variations of the song name
-                    song_pattern = re.escape(song_name_normalized).replace(r'\_', r'[_\-\s]*')
-                    # Also try common variations
-                    variations = [
-                        song_name_normalized.replace('_', ''),  # No separators
-                        song_name_normalized.replace('_', '-'), # Dashes instead of underscores
-                        song_name_normalized.replace('_', ' ')  # Spaces instead of underscores
-                    ]
-                    
-                    for variation in variations:
-                        variation_pattern = re.escape(variation).replace(r'\ ', r'[_\-\s]*')
-                        new_name = re.sub(variation_pattern, '', new_name, flags=re.IGNORECASE)
-                
-                # Fix multiple underscores/dashes iteratively
-                while "__" in new_name:
-                    new_name = new_name.replace("__", "_")
-                while "--" in new_name:
-                    new_name = new_name.replace("--", "-")
-                
-                new_name = new_name.replace("()", "")   # Remove empty parentheses
-                new_name = new_name.strip("_-. ")       # Trim leading/trailing chars
-                
-                # Handle edge case where name becomes empty or just extension
-                if not new_name or new_name in [".mp3", "mp3"]:
-                    # Use track name as fallback
-                    new_name = f"{track_name}.mp3"
-                elif not new_name.endswith('.mp3'):
-                    new_name = f"{new_name}.mp3"
-                
-                # Ensure track name is included if not already present
-                name_without_ext = new_name.replace('.mp3', '').lower()
-                track_name_lower = track_name.lower()
-                
-                if track_name_lower not in name_without_ext:
-                    # Add track name to filename
-                    name_part = new_name.replace('.mp3', '')
-                    if name_part:
-                        new_name = f"{name_part}_{track_name}.mp3"
-                    else:
-                        new_name = f"{track_name}.mp3"
-                
-                # Add key adjustment if present
-                if key_adjustment != 0:
-                    name_without_ext = new_name.replace('.mp3', '')
-                    key_suffix = f"{key_adjustment:+d}"  # +1, -1, etc.
-                    new_name = f"{name_without_ext}({key_suffix}).mp3"
-                
-                # Ensure it still has .mp3 extension
-                if not new_name.endswith(".mp3"):
-                    new_name += ".mp3"
-                
-                # Rename if changed
-                if new_name != original_name:
-                    new_path = song_folder / new_name
-                    
-                    # Avoid overwriting existing files
-                    counter = 1
-                    final_name = new_name
-                    while new_path.exists():
-                        name_part = new_name.replace(".mp3", "")
-                        final_name = f"{name_part}_{counter}.mp3"
-                        new_path = song_folder / final_name
-                        counter += 1
-                    
-                    try:
-                        file_path.rename(new_path)
-                        logging.info(f"📝 Cleaned filename: '{original_name}' → '{final_name}'")
-                        files_cleaned += 1
-                    except Exception as e:
-                        logging.warning(f"Could not rename {original_name}: {e}")
-            
-            return files_cleaned > 0
-            
-        except Exception as e:
-            logging.debug(f"Error during filename cleanup: {e}")
-            return False
 
 
 class KaraokeVersionAutomator:
