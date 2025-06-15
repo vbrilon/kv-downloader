@@ -10,11 +10,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 try:
-    import config
+    from packages.configuration import DOWNLOAD_FOLDER
 except ImportError:
     # Fallback for when config is not available during testing
-    class config:
-        DOWNLOAD_FOLDER = "./downloads"
+    DOWNLOAD_FOLDER = "./downloads"
 
 
 class ChromeManager:
@@ -77,14 +76,14 @@ class ChromeManager:
         
         # Initial download preferences (will be updated per song)
         prefs = {
-            "download.default_directory": os.path.abspath(config.DOWNLOAD_FOLDER),
+            "download.default_directory": os.path.abspath(DOWNLOAD_FOLDER),
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True
         }
         chrome_options.add_experimental_option("prefs", prefs)
         
-        logging.debug(f"Chrome download directory: {os.path.abspath(config.DOWNLOAD_FOLDER)}")
+        logging.debug(f"Chrome download directory: {os.path.abspath(DOWNLOAD_FOLDER)}")
         logging.debug("Chrome preferences configured for automatic downloads")
         
         return chrome_options
@@ -135,7 +134,7 @@ class ChromeManager:
     
     def setup_folders(self):
         """Create necessary folders for downloads and logs"""
-        Path(config.DOWNLOAD_FOLDER).mkdir(exist_ok=True)
+        Path(DOWNLOAD_FOLDER).mkdir(exist_ok=True)
         Path("logs").mkdir(exist_ok=True)
     
     def set_download_path(self, path):

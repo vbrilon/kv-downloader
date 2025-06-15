@@ -6,12 +6,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
 try:
-    import config
+    from packages.configuration import USERNAME, PASSWORD
 except ImportError:
     # Fallback for when config is not available during testing
-    class config:
-        USERNAME = None
-        PASSWORD = None
+    USERNAME = None
+    PASSWORD = None
 
 
 class LoginManager:
@@ -226,9 +225,9 @@ class LoginManager:
         """
         # Use config credentials if not provided
         if not username:
-            username = config.USERNAME
+            username = USERNAME
         if not password:
-            password = config.PASSWORD
+            password = PASSWORD
         
         if not username or not password:
             logging.error("Username or password not provided")

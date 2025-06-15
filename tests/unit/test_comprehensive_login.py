@@ -20,7 +20,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-import config
+from packages.configuration import *
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -110,7 +110,7 @@ class ComprehensiveLoginTest:
         """Perform login with proven selectors"""
         print("\n🔐 Starting login process...")
         
-        if not config.USERNAME or not config.PASSWORD:
+        if not USERNAME or not PASSWORD:
             print("❌ Credentials not configured")
             return False
         
@@ -156,11 +156,11 @@ class ComprehensiveLoginTest:
             # Step 4: Fill credentials
             print("✏️ Filling credentials...")
             username_field.clear()
-            username_field.send_keys(config.USERNAME)
-            print(f"✅ Entered username: {config.USERNAME}")
+            username_field.send_keys(USERNAME)
+            print(f"✅ Entered username: {USERNAME}")
             
             password_field.clear()
-            password_field.send_keys(config.PASSWORD)
+            password_field.send_keys(PASSWORD)
             print("✅ Entered password")
             
             # Step 5: Submit form

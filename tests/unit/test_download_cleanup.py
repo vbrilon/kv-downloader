@@ -9,14 +9,14 @@ import sys
 import os
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent.parent))
 from karaoke_automator import KaraokeVersionAutomator
-import config
+from packages.configuration import *
 
 def create_test_files():
     """Create test files to simulate existing downloads"""
-    download_folder = Path(config.DOWNLOAD_FOLDER)
+    download_folder = Path(DOWNLOAD_FOLDER)
     download_folder.mkdir(exist_ok=True)
     
     test_files = [
@@ -121,7 +121,7 @@ def test_download_cleanup():
         print("\n6️⃣ Testing download without cleanup...")
         
         # Create new test file
-        test_file_no_cleanup = Path(config.DOWNLOAD_FOLDER) / "no_cleanup_test.mp3"
+        test_file_no_cleanup = Path(DOWNLOAD_FOLDER) / "no_cleanup_test.mp3"
         test_file_no_cleanup.write_text("test")
         print(f"Created: {test_file_no_cleanup.name}")
         
@@ -150,7 +150,7 @@ def test_download_cleanup():
         # Cleanup test files
         try:
             print("\n🧹 Cleaning up test files...")
-            download_folder = Path(config.DOWNLOAD_FOLDER)
+            download_folder = Path(DOWNLOAD_FOLDER)
             for file_path in download_folder.glob("*.mp3"):
                 if file_path.stat().st_size < 1000:  # Only remove small test files
                     file_path.unlink()
@@ -170,7 +170,7 @@ def test_cleanup_patterns():
     print("="*50)
     
     try:
-        download_folder = Path(config.DOWNLOAD_FOLDER)
+        download_folder = Path(DOWNLOAD_FOLDER)
         download_folder.mkdir(exist_ok=True)
         
         # Create files with different ages

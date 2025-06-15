@@ -13,8 +13,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import config
-from config_manager import ConfigurationManager
+from packages.configuration import ConfigurationManager
 from packages.browser import ChromeManager
 from packages.authentication import LoginManager
 from packages.progress import ProgressTracker

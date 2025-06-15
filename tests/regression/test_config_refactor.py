@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from config_manager import ConfigurationManager, load_songs_config, get_configuration_summary
+from packages.configuration import ConfigurationManager, load_songs_config
 
 def test_configuration_refactor():
     """Test the refactored configuration system"""
@@ -53,7 +53,8 @@ def test_configuration_refactor():
     
     # Test 4: Configuration summary
     print("\n4. Testing configuration summary...")
-    summary = get_configuration_summary()
+    config_manager = ConfigurationManager()
+    summary = config_manager.get_configuration_summary()
     print("✅ Configuration summary generated:")
     print(f"   - Config file: {summary['config_file']}")
     print(f"   - Total songs: {summary['total_songs']}")

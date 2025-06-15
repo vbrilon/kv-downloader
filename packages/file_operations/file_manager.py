@@ -5,11 +5,10 @@ import logging
 from pathlib import Path
 
 try:
-    import config
+    from packages.configuration import DOWNLOAD_FOLDER
 except ImportError:
     # Fallback for when config is not available during testing
-    class config:
-        DOWNLOAD_FOLDER = "./downloads"
+    DOWNLOAD_FOLDER = "./downloads"
 
 
 class FileManager:
@@ -22,7 +21,7 @@ class FileManager:
     def setup_song_folder(self, song_folder_name):
         """Create song-specific folder in downloads directory"""
         try:
-            base_download_folder = Path(config.DOWNLOAD_FOLDER)
+            base_download_folder = Path(DOWNLOAD_FOLDER)
             song_path = base_download_folder / song_folder_name
             song_path.mkdir(parents=True, exist_ok=True)
             
@@ -32,13 +31,13 @@ class FileManager:
         except Exception as e:
             logging.error(f"Error creating song folder: {e}")
             # Fallback to base download folder
-            return Path(config.DOWNLOAD_FOLDER)
+            return Path(DOWNLOAD_FOLDER)
     
     def cleanup_existing_downloads(self, track_name, download_folder=None):
         """Remove existing files that might conflict with new download"""
         try:
             if download_folder is None:
-                download_folder = Path(config.DOWNLOAD_FOLDER)
+                download_folder = Path(DOWNLOAD_FOLDER)
             else:
                 download_folder = Path(download_folder)
                 
