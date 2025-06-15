@@ -116,16 +116,26 @@ class DownloadManager:
                     continue
             
             if not download_button:
-                logging.error("Could not find download button")
-                logging.debug("Available download-related elements on page:")
-                try:
-                    all_links = self.driver.find_elements(By.TAG_NAME, "a")
-                    download_links = [link for link in all_links if 'download' in link.get_attribute('class').lower() or 'download' in link.text.lower()]
-                    for link in download_links[:5]:  # Show first 5 matches
-                        logging.debug(f"  - {link.tag_name} class='{link.get_attribute('class')}' text='{link.text[:30]}'")
-                except:
-                    pass
-                return False
+                # Check if this is because the song hasn't been purchased
+                purchase_required = self._check_purchase_required()
+                if purchase_required:
+                    logging.error(f"❌ SONG NOT PURCHASED: '{track_name}' is not available for download")
+                    logging.error("   💳 Please purchase this song on Karaoke-Version.com to download it")
+                    logging.error("   ⏭️  Skipping to next song...")
+                    if self.progress_tracker and track_index:
+                        self.progress_tracker.update_track_status(track_index, 'failed')
+                    return False
+                else:
+                    logging.error("Could not find download button - unknown error")
+                    logging.debug("Available download-related elements on page:")
+                    try:
+                        all_links = self.driver.find_elements(By.TAG_NAME, "a")
+                        download_links = [link for link in all_links if 'download' in link.get_attribute('class').lower() or 'download' in link.text.lower()]
+                        for link in download_links[:5]:  # Show first 5 matches
+                            logging.debug(f"  - {link.tag_name} class='{link.get_attribute('class')}' text='{link.text[:30]}'")
+                    except:
+                        pass
+                    return False
             
             # Get button details for logging
             button_text = download_button.text.strip()
@@ -325,3 +335,44 @@ class DownloadManager:
         monitor_thread = threading.Thread(target=completion_monitor, daemon=True)
         monitor_thread.start()
         logging.info(f"🎆 Started background completion monitoring for {track_name}")
+    
+    def _check_purchase_required(self):
+        """Check if the current page indicates the song needs to be purchased"""
+        try:
+            # Look for indicators that the song hasn't been purchased
+            purchase_indicators = [
+                # Look for "Add to Cart" or "Buy" buttons
+                "//a[contains(text(), 'Add to cart')]",
+                "//button[contains(text(), 'Add to cart')]",
+                "//a[contains(text(), 'Buy')]", 
+                "//button[contains(text(), 'Buy')]",
+                # Look for price indicators
+                "//span[contains(@class, 'price')]",
+                "//div[contains(@class, 'price')]",
+                # Look for "Purchase" or "Add to basket" text
+                "//a[contains(text(), 'Purchase')]",
+                "//a[contains(text(), 'Add to basket')]",
+                "//button[contains(text(), 'Purchase')]"
+            ]
+            
+            for indicator in purchase_indicators:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, indicator)
+                    if elements and any(elem.is_displayed() for elem in elements):
+                        logging.debug(f"Found purchase indicator: {indicator}")
+                        return True
+                except:
+                    continue
+            
+            # Also check for absence of premium content indicators
+            # If there are tracks but no download button, it's likely unpurchased
+            track_elements = self.driver.find_elements(By.CSS_SELECTOR, ".track")
+            if track_elements:
+                logging.debug(f"Found {len(track_elements)} tracks but no download button - likely unpurchased")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logging.debug(f"Error checking purchase status: {e}")
+            return False  # Default to False if we can't determine

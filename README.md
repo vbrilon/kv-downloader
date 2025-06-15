@@ -15,6 +15,9 @@ Automatically downloads individual instrument tracks (bass, guitar, vocals, drum
 git clone <repository-url>
 cd kv
 
+# Activate virtual environment (REQUIRED)
+source bin/activate
+
 # Install Python dependencies
 pip install -r requirements.txt
 ```
@@ -37,12 +40,12 @@ Edit the `songs.yaml` file to specify which songs to download:
 ```yaml
 songs:
   - url: "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
-    name: "The_Middle"
+    # name: "The_Middle"  # Optional: auto-extracts "Jimmy Eat World - The Middle" from URL
     description: "Jimmy Eat World - The Middle"
     key: 0  # Optional: Pitch adjustment in semitones (-12 to +12)
   
   - url: "https://www.karaoke-version.com/custombackingtrack/taylor-swift/shake-it-off.html"
-    name: "Shake_It_Off" 
+    name: "Shake_It_Off"  # Optional: override auto-extracted name
     description: "Taylor Swift - Shake It Off"
     key: 2  # Raise pitch by 2 semitones
 ```
@@ -54,14 +57,14 @@ songs:
 ### 4. Run the Downloader
 
 ```bash
+# Make sure virtual environment is activated first
+source bin/activate
+
 # Normal usage (runs in background with progress bar)
 python karaoke_automator.py
 
 # Debug mode (shows browser window + verbose logging)
 python karaoke_automator.py --debug
-
-# Demo the progress bar (see what it looks like)
-python demo_progress.py
 ```
 
 ---
@@ -116,27 +119,7 @@ Progress: 3/6 completed, 0 failed
 - ✅ **Summary stats**: Completed vs failed tracks at the top
 - ✅ **Download sequencing**: Waits for each download to start before proceeding
 
-**Try the demo:**
-```bash
-python demo_progress.py
-```
 
-### Programmatic Usage
-
-If using the automation in your own code:
-
-```python
-from karaoke_automator import KaraokeVersionAutomator
-
-# Background mode with progress bar (default)
-automator = KaraokeVersionAutomator(headless=True, show_progress=True)
-
-# Visible browser for debugging
-automator = KaraokeVersionAutomator(headless=False, show_progress=True)
-
-# Disable progress bar for simple logging
-automator = KaraokeVersionAutomator(headless=True, show_progress=False)
-```
 
 ### Download Location
 
@@ -145,13 +128,13 @@ Files are automatically organized in the `downloads/` folder:
 ```
 downloads/
 ├── Jimmy Eat World - The Middle/
-│   ├── bass_isolated.mp3
-│   ├── guitar_isolated.mp3
-│   ├── drums_isolated.mp3
-│   └── vocals_isolated.mp3
+│   ├── Bass.mp3
+│   ├── Lead Electric Guitar.mp3
+│   ├── Electronic Drum Kit.mp3
+│   └── Lead Vocal.mp3
 ├── Taylor Swift - Shake It Off/
-│   ├── piano_isolated.mp3
-│   └── synth_isolated.mp3
+│   ├── Piano.mp3
+│   └── Synth Keys 1(+2).mp3  # Shows key adjustment
 ```
 
 ### Credentials Storage
@@ -174,7 +157,7 @@ Each song in `songs.yaml` supports these fields:
 | Field | Required | Description | Example |
 |-------|----------|-------------|---------|
 | `url` | ✅ | Direct link to song page | `"https://www.karaoke-version.com/custombackingtrack/artist/song.html"` |
-| `name` | ✅ | Directory name for downloads | `"My_Song"` |
+| `name` | ❌ | Directory name for downloads (auto-extracted if omitted) | `"My_Song"` |
 | `description` | ❌ | Human-readable song info | `"Artist - Song Title"` |
 | `key` | ❌ | Pitch adjustment (-12 to +12 semitones) | `2` (raise 2 semitones), `-3` (lower 3 semitones) |
 
@@ -185,38 +168,6 @@ Each song in `songs.yaml` supports these fields:
 - `key: 12` - Raise by full octave
 - `key: -12` - Lower by full octave
 
----
-
-## 🎛️ Advanced Usage
-
-### Download Specific Tracks with Custom Settings
-
-```python
-from karaoke_automator import KaraokeVersionAutomator
-
-# Initialize
-automator = KaraokeVersionAutomator(headless=True)
-automator.login()
-
-# Get available tracks for a song
-song_url = "https://www.karaoke-version.com/custombackingtrack/artist/song.html"
-tracks = automator.get_available_tracks(song_url)
-
-# Setup mixer controls
-automator.track_handler.ensure_intro_count_enabled(song_url)  # Enable intro count
-automator.track_handler.adjust_key(song_url, 3)  # Raise key by 3 semitones
-
-# Find and download specific instruments
-bass_track = [t for t in tracks if 'bass' in t['name'].lower()][0]
-automator.solo_track(bass_track, song_url)
-automator.track_handler.download_current_mix(song_url, "bass_isolated")
-
-# Switch to guitar (mixer settings persist)
-guitar_track = [t for t in tracks if 'guitar' in t['name'].lower()][0]
-automator.solo_track(guitar_track, song_url)
-automator.track_handler.download_current_mix(song_url, "guitar_isolated")
-```
-
 ### Available Track Types
 
 Each song typically includes 10-15 tracks:
@@ -225,14 +176,6 @@ Each song typically includes 10-15 tracks:
 - **Keys**: Piano, synths, organ
 - **Vocals**: Lead vocals, backing vocals
 - **Other**: Click track, strings, brass (varies by song)
-
-### Force Re-login
-
-If you need to switch accounts or refresh your session:
-
-```python
-automator.login(force_relogin=True)
-```
 
 ---
 
@@ -244,6 +187,11 @@ automator.login(force_relogin=True)
 - Check your username/password in the `.env` file
 - Make sure you have an active Karaoke-Version.com account
 - Try running with `--debug` to see what's happening
+
+**"SONG NOT PURCHASED" error**
+- This means you haven't purchased the song on Karaoke-Version.com
+- Purchase the song first, then try downloading again
+- The automation will skip unpurchased songs and continue with the next one
 
 **"No tracks found"**
 - Make sure the song URL is correct and you own the song
@@ -260,16 +208,16 @@ automator.login(force_relogin=True)
 - Try updating Chrome to the latest version
 - **macOS users**: Install ChromeDriver via Homebrew: `brew install chromedriver`
 - **macOS users**: If getting "unexpectedly exited" error: `xattr -d com.apple.quarantine /opt/homebrew/bin/chromedriver`
-- Test Chrome setup: `python test_chrome_quick.py`
 
 ### Getting Help
 
 If you encounter issues:
 
-1. **Run in debug mode** first: `python karaoke_automator.py --debug`
-2. **Check the logs** in the `logs/` folder for detailed information
-3. **Test with one song** before running multiple songs
-4. **Verify your account** works on the website manually
+1. **Make sure virtual environment is activated**: `source bin/activate`
+2. **Run in debug mode** first: `python karaoke_automator.py --debug`
+3. **Check the logs** in the `logs/` folder for detailed information
+4. **Test with one song** before running multiple songs
+5. **Verify your account** works on the website manually
 
 ---
 

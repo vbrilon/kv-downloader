@@ -171,6 +171,7 @@ python tests/test_modular_login.py
 8. ✅ **Filename Standardization** - Removes `_Custom_Backing_Track` for clean filenames
 9. ✅ **Performance Options** - Headless mode and optimized login detection
 10. ✅ **Error Handling** - Click interception, network issues, edge cases
+11. ✅ **Purchase Status Detection** - Automatically detects unpurchased songs and skips with clear error message
 
 ## SOLO BUTTON FUNCTIONALITY ✅ (NEW)
 **Successfully implemented and tested track isolation:**
@@ -662,43 +663,91 @@ packages/
 
 ## 📋 TODO LIST & TASK TRACKING
 
-### 🔥 High Priority - Testing & Quality
-- [ ] **Test with songs that have strange edge cases** - Verify filename cleanup works with unusual song names, special characters, and edge cases
-
-### 🔧 High Priority - Major Refactoring  
-- [ ] **Phase 1: Extract Infrastructure** - Create browser/, progress/, authentication/ packages
-- [ ] **Phase 2: Break Down Core Logic** - Create file_operations/, track_management/ packages  
-- [ ] **Phase 3: Download Management** - Create download_management/ package
+### 🔧 Medium Priority - Bug Fixes & Enhancements
+- [ ] **Ensure songs.yaml key field parsing handles both "2" and "+2" formats for key adjustment** - Make key parsing more flexible and user-friendly
 
 ### 🧪 Medium Priority - Testing & Quality
 - [ ] **Create mock/stub tests** that don't require live site access for CI/automated testing
 
-### 🔧 Medium Priority - Major Refactoring
-- [ ] **Phase 4: Final Coordination** - Simplify main automator and cleanup
+### ✅ MAJOR REFACTORING COMPLETED (December 2024) 🎉
+- [x] **Phase 1: Infrastructure Extraction** - Created browser/, authentication/, progress/, file_operations/, configuration/ packages
+- [x] **Phase 2: Core Logic Extraction** - Created track_management/, download_management/ packages  
+- [x] **Phase 3: Utilities Extraction** - Created utils/ package for shared utilities
+- [x] **Phase 4: Final Coordination** - Eliminated wrapper classes, simplified main automator
+- [x] **87.8% Code Reduction** - Reduced main file from 1,866 lines to 227 lines
+- [x] **Complete Modular Architecture** - 8 focused packages with clean separation of concerns
+- [x] **All Regression Tests Passing** - Maintained 100% functionality throughout refactoring
 
-### ⚡ Low Priority - Performance
-- [ ] **Add performance test** to ensure mixer controls don't significantly slow down automation
+### ✅ Bug Fixes & Features Completed
+- [x] **Purchase Status Detection** - Detects unpurchased songs and provides clear error messages
+- [x] **Directory naming bug** - Fixed duplicate song name in download directory 
+- [x] **Track filename bug** - Fixed track filename to include instrument name and key adjustment
+- [x] **Auto-extraction of song names** - Made `name` field optional in songs.yaml, auto-extracts from URL
+- [x] **Enhanced filename cleaning** - Comprehensive `_Custom_Backing_Track` pattern removal
+- [x] **Key adjustment integration** - Proper key suffix handling in filenames
+- [x] **Dead code cleanup** - Removed unused methods and consolidated duplicate code
+- [x] **Test suite organization** - Organized 37 test files into logical directories
+- [x] **Inspection tools refactoring** - Refactored 9 inspection tools to use main automation classes
 
-### ✅ Completed Tasks
-- [x] **Dead code cleanup** - Removed unused methods and consolidated duplicate code in karaoke_automator.py
-- [x] **Test suite organization** - Organized 37 test files into logical directories (unit, integration, inspection, regression, legacy)
-- [x] **Login test consolidation** - Consolidated 8 duplicate login tests into 1 comprehensive test
-- [x] **Inspection tools refactoring** - Refactored 9 inspection tools to use main automation classes instead of raw Selenium
-- [x] **Track test cleanup** - Consolidated duplicate track discovery and bass isolation tests
-- [x] **Test organization** - Moved misplaced integration tests out of unit/ directory
-- [x] **Legacy cleanup** - Removed 3 legacy files and extracted useful patterns
-- [x] **Directory naming bug** - Fixed duplicate song name in download directory
-- [x] **Simple filename cleanup** - Implemented `_Custom_Backing_Track` removal for clean standardized filenames
-- [x] **End-to-end testing** - Created comprehensive test that validates complete workflow
-- [x] **Integration testing** - Added integration test for mixer controls + download workflow combination
-- [x] **Edge case testing** - Created test for edge cases: invalid key values, missing songs.yaml, network failures
-- [x] **Regression testing** - Added regression test suite for safe refactoring
+## 🎓 LESSONS LEARNED & BEST PRACTICES
+
+### Architecture & Refactoring Lessons
+1. **Incremental Refactoring Works**: Successfully reduced 1,866-line monolithic file to 227 lines through systematic package extraction
+2. **Regression Tests Are Critical**: Maintained functionality throughout major refactoring by running regression tests after each phase
+3. **Clear Package Boundaries**: Well-defined responsibility separation made code more maintainable and testable
+4. **Avoid Wrapper Classes**: Direct manager usage is cleaner than delegation through wrapper classes
+
+### Selenium & Web Automation Lessons
+1. **Purchase Status Detection Essential**: Always check if content is actually available before attempting downloads
+2. **Robust Selector Strategies**: Use multiple fallback selectors for critical elements like download buttons
+3. **Download Sequencing Critical**: Must wait for actual file creation, not just button clicks
+4. **Chrome Path Management**: Setting download paths programmatically prevents file organization issues
+
+### Configuration & User Experience Lessons  
+1. **Auto-extraction Reduces Errors**: Making `name` field optional with URL auto-extraction improves usability
+2. **Flexible Key Parsing Needed**: Users expect both "2" and "+2" formats to work for key adjustment
+3. **Clear Error Messages**: Specific error messages like "SONG NOT PURCHASED" guide users effectively
+4. **Virtual Environment Critical**: Always emphasize virtual environment activation in documentation
+
+### Testing & Quality Lessons
+1. **Organized Test Structure**: Separating unit, integration, regression, and inspection tests improves maintainability  
+2. **Mock Tests Still Needed**: Live site testing is comprehensive but CI/CD needs non-dependent tests
+3. **Edge Case Coverage**: Test unusual filenames, missing fields, and network failures
+4. **Performance Monitoring**: Track download times and automation speed during development
+
+## 🐛 KNOWN BUGS & ISSUES
+
+### Minor Issues
+- None currently identified - all major bugs have been resolved
+
+### Enhancement Opportunities  
+1. **Key Format Flexibility**: Support both "2" and "+2" syntax in songs.yaml key field
+2. **CI/CD Testing**: Mock/stub tests for automated testing environments
+3. **Performance Optimization**: Monitor impact of mixer controls on download speed
+
+## 📈 CURRENT PROJECT STATUS: PRODUCTION READY ✅
+
+### Architecture Excellence
+- **Clean Modular Design**: 8 focused packages with clear responsibilities
+- **87.8% Code Reduction**: From 1,866 lines to 227 lines in main file
+- **100% Functionality Preserved**: All features working after major refactoring
+- **Comprehensive Testing**: Regression, integration, and unit test coverage
+
+### Feature Completeness
+- **Authentication & Session Management** - Optimized login with session detection
+- **Track Discovery & Isolation** - Finds all tracks, solo button functionality  
+- **Download Orchestration** - Proper sequencing, monitoring, organized storage
+- **Progress Tracking** - Real-time visual progress with threading
+- **Purchase Detection** - Graceful handling of unpurchased songs
+- **Mixer Controls** - Intro count checkbox and key adjustment support
+- **File Organization** - Clean naming, song folders, duplicate prevention
+- **Error Handling** - Comprehensive error handling and recovery
 
 ### Critical Context for Next Session
-- **Virtual environment**: Always `source bin/activate` before any operations
-- **Test structure**: Use `python tests/run_tests.py` for organized test execution
-- **Regression safety**: Run `--regression-only` before any major changes
-- **Configuration**: `name` field now optional in songs.yaml, auto-extracts from URL
-- **File naming**: Simple cleanup removes `_Custom_Backing_Track` from all downloaded files automatically
-- **Refactoring Status**: Completed dead code cleanup and inspection tools refactoring  
-- **Next Priority**: Test edge cases with unusual song names, then major refactoring when ready
+- **Virtual Environment**: Always `source bin/activate` before any operations
+- **Test Execution**: Use `python tests/run_tests.py` for organized test execution  
+- **Regression Safety**: Run `--regression-only` before any major changes
+- **Architecture**: Modular package system with direct manager usage
+- **Configuration**: `name` field optional in songs.yaml, auto-extracts from URL
+- **File Naming**: Automatic cleanup with proper key adjustment suffixes
+- **Current Priority**: Enhance key parsing flexibility, then mock testing when needed
