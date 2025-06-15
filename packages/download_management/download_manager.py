@@ -58,7 +58,7 @@ class DownloadManager:
                 self.progress_tracker.update_track_status(track_index, 'downloading')
         
         # Create song-specific folder and update download path
-        song_path = self.file_manager.setup_song_folder(song_folder)
+        song_path = self.file_manager.setup_song_folder(song_folder, clear_existing=cleanup_existing)
         
         # Update Chrome download directory to song folder BEFORE clicking download
         try:

@@ -163,17 +163,21 @@ class KaraokeVersionAutomator:
                         if not key_success:
                             logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
                     
+                    # Clear song folder once at the beginning of the song (not for each track)
+                    song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
+                    self.file_manager.clear_song_folder(song_folder_name)
+                    
                     # Download each track individually
                     for track in tracks:
                         track_name = self.sanitize_filename(track['name'])
                         
                         # Solo this track
                         if self.solo_track(track, song['url']):
-                            # Download the soloed track
+                            # Download the soloed track (folder already cleared once per song)
                             success = self.download_manager.download_current_mix(
                                 song['url'], 
                                 track_name,
-                                cleanup_existing=True,
+                                cleanup_existing=False,  # Don't clear folder for each track
                                 song_folder=song.get('name'),  # None if not specified, triggers URL extraction
                                 key_adjustment=song_key
                             )

@@ -2,6 +2,7 @@
 
 import time
 import logging
+import shutil
 from pathlib import Path
 
 try:
@@ -18,14 +19,53 @@ class FileManager:
         """Initialize file manager"""
         pass
     
-    def setup_song_folder(self, song_folder_name):
-        """Create song-specific folder in downloads directory"""
+    def clear_song_folder(self, song_folder_name):
+        """Completely remove existing song folder and all its contents"""
         try:
             base_download_folder = Path(DOWNLOAD_FOLDER)
             song_path = base_download_folder / song_folder_name
+            
+            if song_path.exists() and song_path.is_dir():
+                # Safety check: ensure we're only deleting song folders, not random directories
+                if song_path.parent == base_download_folder:
+                    logging.info(f"🗑️ Clearing existing song folder: {song_path}")
+                    
+                    # Count files before deletion for logging
+                    file_count = len([f for f in song_path.rglob("*") if f.is_file()])
+                    if file_count > 0:
+                        logging.info(f"   Removing {file_count} existing files")
+                    
+                    # Remove the entire folder and its contents
+                    shutil.rmtree(song_path)
+                    logging.info(f"✅ Song folder cleared successfully")
+                else:
+                    logging.warning(f"⚠️ Safety check failed: {song_path} is not a direct child of downloads folder")
+            else:
+                logging.debug(f"No existing song folder to clear: {song_path}")
+                
+        except Exception as e:
+            logging.warning(f"⚠️ Could not clear song folder {song_folder_name}: {e}")
+            logging.info("Continuing with download - new files will be added to existing folder")
+
+    def setup_song_folder(self, song_folder_name, clear_existing=True):
+        """Create song-specific folder in downloads directory
+        
+        Args:
+            song_folder_name (str): Name of the song folder to create
+            clear_existing (bool): Whether to clear existing folder contents first (default: True)
+        """
+        try:
+            base_download_folder = Path(DOWNLOAD_FOLDER)
+            song_path = base_download_folder / song_folder_name
+            
+            # Clear existing folder if requested (default behavior)
+            if clear_existing:
+                self.clear_song_folder(song_folder_name)
+            
+            # Create the folder (will recreate if it was cleared)
             song_path.mkdir(parents=True, exist_ok=True)
             
-            logging.info(f"Song folder ready: {song_path}")
+            logging.info(f"📁 Song folder ready: {song_path}")
             return song_path
             
         except Exception as e:
