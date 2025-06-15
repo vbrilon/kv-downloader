@@ -9,19 +9,10 @@ songs:
     
   - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
 
-# Example configurations with different key formats:
-#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song1.html"
-#    key: 2      # Integer format (positive)
-#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song2.html"  
-#    key: "+3"   # String with explicit positive sign
-#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song3.html"
-#    key: "-2"   # String with negative sign
-#  - url: "https://www.karaoke-version.com/custombackingtrack/artist/song4.html"
-#    key: "5"    # String without sign (treated as positive)
-
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com
-# - Name is optional - auto-extracted from URL as "Artist - Song" if omitted
+# - Name is optional - auto-extracted from URL as "Artist - Song" if omitted. 
+#   This will be the name of the folder the track is downloaded to
 # - Description is optional and used for documentation only
 # - Key supports multiple formats:
 #   * Integer: 2, -3, 0
