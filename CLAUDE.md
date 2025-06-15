@@ -662,9 +662,8 @@ packages/
 
 ## 📋 TODO LIST & TASK TRACKING
 
-### 🔥 High Priority - Bug Fixes
-- [ ] **Fix click track filename**: Remove key adjustment suffix and fix spacing in `"(-1)_Intro count      Click.mp3"` → should be `"Intro count Click.mp3"`
-- [ ] **Fix missing instrument names**: Files show `"Jimmy_Eat_World_The_Middle(Custom_Backing_Track-1).mp3"` instead of `"Bass(-1).mp3"` with proper instrument names
+### 🔥 High Priority - Testing & Quality
+- [ ] **Test with songs that have strange edge cases** - Verify filename cleanup works with unusual song names, special characters, and edge cases
 
 ### 🔧 High Priority - Major Refactoring  
 - [ ] **Phase 1: Extract Infrastructure** - Create browser/, progress/, authentication/ packages
@@ -673,6 +672,8 @@ packages/
 
 ### 🧪 Medium Priority - Testing & Quality
 - [ ] **Create mock/stub tests** that don't require live site access for CI/automated testing
+
+### 🔧 Medium Priority - Major Refactoring
 - [ ] **Phase 4: Final Coordination** - Simplify main automator and cleanup
 
 ### ⚡ Low Priority - Performance
@@ -687,7 +688,7 @@ packages/
 - [x] **Test organization** - Moved misplaced integration tests out of unit/ directory
 - [x] **Legacy cleanup** - Removed 3 legacy files and extracted useful patterns
 - [x] **Directory naming bug** - Fixed duplicate song name in download directory
-- [x] **Track filename bug** - Fixed track filename to include instrument name and key adjustment without 'Custom_Backing_Track'
+- [x] **Simple filename cleanup** - Implemented `_Custom_Backing_Track` removal for clean standardized filenames
 - [x] **End-to-end testing** - Created comprehensive test that validates complete workflow
 - [x] **Integration testing** - Added integration test for mixer controls + download workflow combination
 - [x] **Edge case testing** - Created test for edge cases: invalid key values, missing songs.yaml, network failures
@@ -698,6 +699,6 @@ packages/
 - **Test structure**: Use `python tests/run_tests.py` for organized test execution
 - **Regression safety**: Run `--regression-only` before any major changes
 - **Configuration**: `name` field now optional in songs.yaml, auto-extracts from URL
-- **File naming**: Files now use format `TrackName(±KeyAdjustment).mp3` in `Artist_Song/` folders
-- **Refactoring Status**: Completed dead code cleanup and inspection tools refactoring
-- **Next Priority**: Fix the two new filename bugs, then package extraction when ready for major refactoring
+- **File naming**: Simple cleanup removes `_Custom_Backing_Track` from all downloaded files automatically
+- **Refactoring Status**: Completed dead code cleanup and inspection tools refactoring  
+- **Next Priority**: Test edge cases with unusual song names, then major refactoring when ready

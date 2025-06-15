@@ -140,6 +140,72 @@ class TestFilenameCleanup(unittest.TestCase):
                 
                 expected_path = self.temp_path / expected
                 self.assertTrue(expected_path.exists(), f"Expected cleaned file {expected}")
+    
+    def test_click_track_filename_bug(self):
+        """Test for click track filename bug - should not have key adjustment"""
+        test_cases = [
+            # Bug case: Click track getting key adjustment when it shouldn't
+            ("(-1)_Intro count      Click.mp3", "Intro count Click.mp3"),
+            ("(+2)_Intro count Click.mp3", "Intro count Click.mp3"),
+            ("Intro count      Click.mp3", "Intro count Click.mp3"),  # Fix extra spaces
+            ("(-1)Intro_count_Click_Custom_Backing_Track.mp3", "Intro count Click.mp3"),
+        ]
+        
+        for original, expected in test_cases:
+            with self.subTest(original=original):
+                self.create_test_file(original)
+                # Special handling for click tracks - they should not get key adjustments
+                # The bug is that key adjustment is being applied to click tracks when it shouldn't be
+                result_path = self.tracker._clean_filename_after_download(
+                    self.temp_path / original, 
+                    track_name="Intro count Click",
+                    key_adjustment=0  # Click tracks should always have key_adjustment=0
+                )
+                
+                # Check that the result file has the expected name
+                self.assertEqual(result_path.name, expected, f"Expected cleaned filename {expected}, got {result_path.name}")
+                self.assertTrue(result_path.exists(), f"Expected cleaned file {expected} to exist")
+                # Original file should be gone (renamed)
+                original_path = self.temp_path / original
+                if original != expected:  # Only check if names actually changed
+                    self.assertFalse(original_path.exists(), f"Original file {original} should be removed")
+    
+    def test_missing_instrument_names_bug(self):
+        """Test for missing instrument names in filenames"""
+        test_cases = [
+            # Bug case: Missing instrument names, showing full song name instead
+            ("Jimmy_Eat_World_The_Middle(Custom_Backing_Track-1).mp3", "Bass(-1).mp3"),
+            ("Jimmy_Eat_World_The_Middle_Custom_Backing_Track.mp3", "Bass.mp3"),
+            ("Chappell_Roan_Pink_Pony_Club(Custom_Backing_Track+2).mp3", "Vocals(+2).mp3"),
+            ("Artist_Song_Name_Custom_Backing_Track_.mp3", "Guitar.mp3"),
+        ]
+        
+        track_names = ["Bass", "Bass", "Vocals", "Guitar"]
+        key_adjustments = [-1, 0, 2, 0]
+        
+        for i, (original, expected) in enumerate(test_cases):
+            with self.subTest(original=original):
+                # Set up folder structure to simulate song folder
+                song_folder = self.temp_path / "Jimmy Eat World_The Middle"
+                song_folder.mkdir(exist_ok=True)
+                
+                # Create file in song folder
+                original_file = song_folder / original
+                original_file.write_text("test mp3 content")
+                
+                # Use clean filename method with proper track name and key adjustment
+                result_path = self.tracker._clean_filename_after_download(
+                    original_file,
+                    track_name=track_names[i],
+                    key_adjustment=key_adjustments[i]
+                )
+                
+                # Check that the result file has the expected name
+                self.assertEqual(result_path.name, expected, f"Expected cleaned filename {expected}, got {result_path.name}")
+                self.assertTrue(result_path.exists(), f"Expected cleaned file {expected} to exist")
+                # Original file should be gone (renamed) if names changed
+                if original != expected:
+                    self.assertFalse(original_file.exists(), f"Original file {original} should be removed")
 
 def run_manual_test():
     """Manual test showing before/after filename examples"""

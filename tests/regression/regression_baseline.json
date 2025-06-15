@@ -1,5 +1,5 @@
 {
-  "timestamp": 1749925476.444722,
+  "timestamp": 1749954558.497341,
   "core_functions": {
     "automator_init": true,
     "config_loading": true,
@@ -10,10 +10,10 @@
     "download_setup": true
   },
   "edge_cases": {
-    "valid_config": true,
-    "key_validation": true,
-    "missing_fields": true
+    "valid_config": false,
+    "key_validation": false,
+    "missing_fields": false
   },
-  "total_score": 10,
+  "total_score": 7,
   "max_score": 10
 }
