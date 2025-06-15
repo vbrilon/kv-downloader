@@ -144,45 +144,60 @@ class TrackManager:
                     self.driver.execute_script("arguments[0].click();", solo_button)
                 else:
                     raise e
-            time.sleep(2)  # Longer pause for UI to update
+            # Wait for UI to update and poll for active state
+            max_wait = 10  # Maximum 10 seconds to wait for solo to activate
+            check_interval = 0.5  # Check every 500ms
+            waited = 0
+            solo_activated = False
             
-            # Verify solo button is active (critical for ensuring isolation worked)
-            try:
-                button_classes = solo_button.get_attribute('class') or ''
-                logging.debug(f"Solo button classes after click: '{button_classes}'")
+            logging.debug(f"Polling for solo activation for {track_name}...")
+            
+            while waited < max_wait and not solo_activated:
+                time.sleep(check_interval)
+                waited += check_interval
                 
-                if 'is-active' in button_classes.lower() or 'active' in button_classes.lower() or 'selected' in button_classes.lower():
-                    logging.info(f"✅ Solo button appears active for {track_name}")
-                    return True
-                else:
-                    logging.warning(f"⚠️ Solo button clicked but not active for {track_name}")
-                    logging.warning(f"   Button classes: '{button_classes}'")
+                try:
+                    button_classes = solo_button.get_attribute('class') or ''
+                    if 'is-active' in button_classes.lower() or 'active' in button_classes.lower() or 'selected' in button_classes.lower():
+                        solo_activated = True
+                        logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
+                        break
                     
-                    # Try clicking again after a longer delay
-                    logging.info(f"🔄 Retrying solo click for {track_name}")
-                    time.sleep(2)
-                    try:
-                        self.driver.execute_script("arguments[0].click();", solo_button)
-                        time.sleep(2)
+                    # Log periodically for debugging
+                    if waited % 2 == 0:  # Every 2 seconds
+                        logging.debug(f"   Still waiting for solo activation... ({waited}s) - classes: '{button_classes}'")
                         
-                        # Check again
-                        button_classes_retry = solo_button.get_attribute('class') or ''
-                        if 'is-active' in button_classes_retry.lower() or 'active' in button_classes_retry.lower():
-                            logging.info(f"✅ Solo button active after retry for {track_name}")
-                            return True
-                        else:
-                            logging.error(f"❌ Solo failed for {track_name} - button still not active after retry")
-                            logging.error(f"   This track may not support soloing or may have site-specific issues")
-                            return False
-                    except Exception as retry_e:
-                        logging.error(f"Error during solo retry for {track_name}: {retry_e}")
+                except Exception as e:
+                    logging.debug(f"Error checking solo status at {waited}s: {e}")
+            
+            if solo_activated:
+                return True
+            else:
+                logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name}")
+                
+                # Try one more aggressive retry with multiple click attempts
+                logging.info(f"🔄 Final retry attempt for {track_name}")
+                try:
+                    # Multiple clicks with JavaScript to ensure it registers
+                    for i in range(3):
+                        self.driver.execute_script("arguments[0].click();", solo_button)
+                        time.sleep(1)
+                    
+                    # Give it more time and check again
+                    time.sleep(3)
+                    final_classes = solo_button.get_attribute('class') or ''
+                    if 'is-active' in final_classes.lower() or 'active' in final_classes.lower():
+                        logging.info(f"✅ Solo button active after aggressive retry for {track_name}")
+                        return True
+                    else:
+                        logging.error(f"❌ Solo failed for {track_name} after all retry attempts")
+                        logging.error(f"   Final button classes: '{final_classes}'")
+                        logging.error(f"   Track may have timing issues or site-specific problems")
                         return False
                         
-            except Exception as e:
-                logging.warning(f"Could not verify solo status for {track_name}: {e}")
-                # Default to True for backward compatibility, but with warning
-                logging.warning("Assuming solo worked, but download may contain full mix")
-                return True
+                except Exception as retry_e:
+                    logging.error(f"Error during final retry for {track_name}: {retry_e}")
+                    return False
             
         except Exception as e:
             logging.error(f"Error soloing track {track_name}: {e}")
