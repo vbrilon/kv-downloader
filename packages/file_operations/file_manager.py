@@ -354,19 +354,22 @@ class FileManager:
                 # Remove all parenthetical content (existing track identifiers)
                 new_name = re.sub(track_identifier_pattern, '', new_name)
             
-            # STEP 3: Add the new track name (if provided)
+            # STEP 3: Create simplified filename with just track name (if provided)
             if track_name:
                 # Clean track name for filename
                 clean_track_name = track_name.replace('_', ' ').strip()
                 
-                # Add the clean track name as the single track identifier
+                # Get file extension from original file
                 name_parts = new_name.rsplit('.', 1)
                 if len(name_parts) == 2:
-                    new_name = f"{name_parts[0]}({clean_track_name}).{name_parts[1]}"
+                    file_extension = name_parts[1]
                 else:
-                    new_name = f"{new_name}({clean_track_name})"
+                    file_extension = 'mp3'  # Default extension
                 
-                logging.debug(f"Added track identifier: ({clean_track_name})")
+                # Create simple filename with just track name
+                new_name = f"{clean_track_name}.{file_extension}"
+                
+                logging.debug(f"Simplified filename to: {new_name}")
             
             # Clean up any double spaces or extra characters from the processing
             new_name = re.sub(r'\s+', ' ', new_name)  # Replace multiple spaces with single space
