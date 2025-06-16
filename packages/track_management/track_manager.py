@@ -7,6 +7,7 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     ElementClickInterceptedException
 )
+from ..utils import safe_click
 
 
 class TrackManager:
@@ -138,16 +139,7 @@ class TrackManager:
             
             # Click the solo button using JavaScript to avoid interception
             logging.info(f"Clicking solo button for {track_name}")
-            try:
-                # Try regular click first
-                solo_button.click()
-            except Exception as e:
-                if "element click intercepted" in str(e):
-                    # Use JavaScript click as fallback
-                    logging.info("Click intercepted, using JavaScript click")
-                    self.driver.execute_script("arguments[0].click();", solo_button)
-                else:
-                    raise e
+            safe_click(self.driver, solo_button, f"solo button for {track_name}")
             # Wait for UI to update and poll for active state
             max_wait = 10  # Maximum 10 seconds to wait for solo to activate
             check_interval = 0.5  # Check every 500ms

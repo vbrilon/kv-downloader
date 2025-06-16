@@ -8,6 +8,7 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     WebDriverException
 )
+from ..utils import safe_click_with_scroll
 
 
 class DownloadManager:
@@ -182,22 +183,7 @@ class DownloadManager:
         
         # Scroll to download button and click
         logging.info("Clicking download button...")
-        try:
-            # Scroll element into view first
-            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", download_button)
-            time.sleep(1)
-            
-            # Try regular click first
-            download_button.click()
-            logging.info("✅ Download button clicked successfully")
-        except Exception as e:
-            if "element click intercepted" in str(e):
-                # Use JavaScript click as fallback
-                logging.info("Click intercepted, using JavaScript click")
-                self.driver.execute_script("arguments[0].click();", download_button)
-                logging.info("✅ Download button clicked via JavaScript")
-            else:
-                raise e
+        safe_click_with_scroll(self.driver, download_button, "download button")
         
         # Give a moment for any immediate response
         time.sleep(2)
