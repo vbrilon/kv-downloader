@@ -3,9 +3,12 @@
 import time
 import logging
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import (
     NoSuchElementException,
-    ElementClickInterceptedException
+    ElementClickInterceptedException,
+    TimeoutException
 )
 from ..utils import safe_click
 
@@ -27,7 +30,16 @@ class TrackManager:
         """Verify user has access to song page"""
         logging.info(f"Verifying access to: {song_url}")
         self.driver.get(song_url)
-        time.sleep(3)
+        
+        # Wait for page to load - either track elements appear or login form appears
+        try:
+            WebDriverWait(self.driver, 10).until(
+                lambda driver: driver.find_elements(By.CSS_SELECTOR, ".track") or 
+                               "login" in driver.current_url.lower() or
+                               driver.find_elements(By.NAME, "frm_login")
+            )
+        except TimeoutException:
+            logging.warning("Page load timeout during song access verification")
         
         # Check for login redirects
         current_url = self.driver.current_url
@@ -95,7 +107,13 @@ class TrackManager:
         # Navigate to song page if not already there
         if self.driver.current_url != song_url:
             self.driver.get(song_url)
-            time.sleep(3)
+            # Wait for track elements to be present
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".track"))
+                )
+            except TimeoutException:
+                logging.warning("Timeout waiting for track elements to load")
         
         try:
             # Find the specific track element
@@ -149,8 +167,17 @@ class TrackManager:
             logging.debug(f"Polling for solo activation for {track_name}...")
             
             while waited < max_wait and not solo_activated:
-                time.sleep(check_interval)
-                waited += check_interval
+                try:
+                    # Smart wait for button state change
+                    WebDriverWait(self.driver, check_interval).until(
+                        lambda driver: 'is-active' in (solo_button.get_attribute('class') or '').lower() or
+                                       'active' in (solo_button.get_attribute('class') or '').lower() or
+                                       'selected' in (solo_button.get_attribute('class') or '').lower()
+                    )
+                    solo_activated = True
+                    break
+                except TimeoutException:
+                    waited += check_interval
                 
                 try:
                     button_classes = solo_button.get_attribute('class') or ''
@@ -177,10 +204,22 @@ class TrackManager:
                     # Multiple clicks with JavaScript to ensure it registers
                     for i in range(3):
                         self.driver.execute_script("arguments[0].click();", solo_button)
-                        time.sleep(1)
+                        # Brief wait between clicks
+                        try:
+                            WebDriverWait(self.driver, 1).until(
+                                lambda driver: True  # Just a minimal delay replacement
+                            )
+                        except TimeoutException:
+                            pass
                     
-                    # Give it more time and check again
-                    time.sleep(3)
+                    # Wait for UI state change
+                    try:
+                        WebDriverWait(self.driver, 3).until(
+                            lambda driver: 'is-active' in (solo_button.get_attribute('class') or '').lower() or
+                                           'active' in (solo_button.get_attribute('class') or '').lower()
+                        )
+                    except TimeoutException:
+                        pass  # Continue to final check
                     final_classes = solo_button.get_attribute('class') or ''
                     if 'is-active' in final_classes.lower() or 'active' in final_classes.lower():
                         logging.info(f"✅ Solo button active after aggressive retry for {track_name}")
@@ -207,7 +246,13 @@ class TrackManager:
             # Navigate to song page if needed
             if self.driver.current_url != song_url:
                 self.driver.get(song_url)
-                time.sleep(3)
+                # Wait for solo buttons to be present
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "button.track__solo"))
+                    )
+                except TimeoutException:
+                    logging.warning("Timeout waiting for solo buttons to load")
             
             # Find all solo buttons
             solo_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button.track__solo")
@@ -220,7 +265,13 @@ class TrackManager:
                         logging.info("Clicking to deactivate active solo button")
                         button.click()
                         active_solos += 1
-                        time.sleep(0.5)
+                        # Brief wait for UI update
+                        try:
+                            WebDriverWait(self.driver, 0.5).until(
+                                lambda driver: 'active' not in (button.get_attribute('class') or '').lower()
+                            )
+                        except TimeoutException:
+                            pass  # Continue even if state change not detected
                 except (Exception, AttributeError, ElementClickInterceptedException) as e:
                     logging.debug(f"Could not click solo button: {e}")
                     continue
@@ -242,7 +293,13 @@ class TrackManager:
             # Navigate to song page if needed
             if self.driver.current_url != song_url:
                 self.driver.get(song_url)
-                time.sleep(3)
+                # Wait for intro count checkbox to be present
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "precount"))
+                    )
+                except TimeoutException:
+                    logging.warning("Timeout waiting for intro count checkbox to load")
             
             logging.info("🎼 Checking intro count checkbox...")
             
@@ -264,7 +321,13 @@ class TrackManager:
                     else:
                         raise e
                 
-                time.sleep(1)  # Brief pause for UI update
+                # Wait for checkbox state change
+                try:
+                    WebDriverWait(self.driver, 2).until(
+                        lambda driver: intro_checkbox.is_selected()
+                    )
+                except TimeoutException:
+                    logging.debug("Checkbox state change not detected within timeout")
                 logging.info("✅ Intro count checkbox enabled")
             else:
                 logging.info("✅ Intro count checkbox already enabled")
@@ -286,7 +349,13 @@ class TrackManager:
             # Navigate to song page if needed
             if self.driver.current_url != song_url:
                 self.driver.get(song_url)
-                time.sleep(3)
+                # Wait for pitch controls to be present
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".pitch"))
+                    )
+                except TimeoutException:
+                    logging.warning("Timeout waiting for pitch controls to load")
             
             logging.info(f"🎵 Adjusting key to: {target_key:+d} semitones")
             
@@ -354,11 +423,22 @@ class TrackManager:
                     else:
                         raise e
                 
-                time.sleep(0.5)  # Small delay between clicks
+                # Brief wait between clicks for UI responsiveness
+                try:
+                    WebDriverWait(self.driver, 0.5).until(
+                        lambda driver: True  # Minimal delay replacement
+                    )
+                except TimeoutException:
+                    pass
                 logging.debug(f"   Step {step + 1}/{steps_needed}")
             
-            # Verify the final key value
-            time.sleep(1)  # Wait for UI to update
+            # Wait for UI to update the key display
+            try:
+                WebDriverWait(self.driver, 2).until(
+                    lambda driver: True  # Allow UI update time
+                )
+            except TimeoutException:
+                pass
             try:
                 final_value_element = pitch_container.find_element(By.XPATH, ".//div[text()!='' and not(@class) and not(contains(@class, 'pitch__label'))]")
                 final_key = int(final_value_element.text.strip())

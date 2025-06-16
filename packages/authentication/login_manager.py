@@ -83,7 +83,13 @@ class LoginManager:
                         if "my account" in element.text.lower():
                             # Click My Account to access logout
                             element.click()
-                            time.sleep(2)
+                            # Wait for account menu to appear
+                            try:
+                                self.wait.until(
+                                    EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log out')]"))
+                                )
+                            except TimeoutException:
+                                pass
                             # Now look for logout within account area
                             logout_element = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Log out')]")
                             logout_element.click()
@@ -91,7 +97,13 @@ class LoginManager:
                             # Direct logout link
                             element.click()
                         
-                        time.sleep(3)
+                        # Wait for logout to complete - look for login link to appear
+                        try:
+                            self.wait.until(
+                                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log in')]"))
+                            )
+                        except TimeoutException:
+                            pass
                         logging.info("Logout completed")
                         return True
                 except (Exception, AttributeError, ElementClickInterceptedException) as e:
@@ -102,7 +114,13 @@ class LoginManager:
             logging.info("Direct logout not found, clearing session cookies")
             self.driver.delete_all_cookies()
             self.driver.refresh()
-            time.sleep(3)
+            # Wait for page to reload after cookie clearing
+            try:
+                self.wait.until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except TimeoutException:
+                pass
             return True
             
         except Exception as e:
@@ -111,7 +129,13 @@ class LoginManager:
             try:
                 self.driver.delete_all_cookies()
                 self.driver.refresh()
-                time.sleep(3)
+                # Wait for page reload after fallback cookie clearing
+                try:
+                    self.wait.until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                except TimeoutException:
+                    pass
                 return True
             except (Exception, WebDriverException) as e:
                 logging.debug(f"Cookie fallback failed: {e}")
@@ -133,7 +157,13 @@ class LoginManager:
                     if element and element.is_displayed():
                         logging.info(f"Clicking login link: '{element.text}'")
                         element.click()
-                        time.sleep(3)
+                        # Wait for login form to appear
+                        try:
+                            self.wait.until(
+                                EC.presence_of_element_located((By.NAME, "frm_login"))
+                            )
+                        except TimeoutException:
+                            pass
                         return True
                 except (Exception, NoSuchElementException, ElementNotInteractableException) as e:
                     logging.debug(f"Login selector failed: {e}")
@@ -229,7 +259,15 @@ class LoginManager:
             # Submit form
             submit_button.click()
             logging.info("Login form submitted")
-            time.sleep(5)  # Wait for login to process
+            # Wait for login to process - look for login success indicators
+            try:
+                self.wait.until(
+                    lambda driver: "login" not in driver.current_url.lower() or
+                                   driver.find_elements(By.XPATH, "//*[contains(text(), 'My Account')]") or
+                                   driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
+                )
+            except TimeoutException:
+                logging.debug("Login processing timeout, continuing")
             
             return True
             
@@ -259,7 +297,13 @@ class LoginManager:
         
         # Navigate to homepage to check current login status
         self.driver.get("https://www.karaoke-version.com")
-        time.sleep(3)
+        # Wait for homepage to load
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
         
         # Check if already logged in (unless forced)
         if not force_relogin and self.is_logged_in():
@@ -390,7 +434,13 @@ class LoginManager:
         # Navigate to the saved URL first
         saved_url = session_data.get('url', 'https://www.karaoke-version.com')
         self.driver.get(saved_url)
-        time.sleep(2)
+        # Wait for page to load before restoring session data
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
         
         self._restore_cookies(session_data.get('cookies', []))
         self._restore_local_storage(session_data.get('localStorage', {}))
@@ -398,7 +448,13 @@ class LoginManager:
         
         # Refresh page to apply restored session
         self.driver.refresh()
-        time.sleep(3)
+        # Wait for page to reload with restored session
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
     
     def _restore_cookies(self, cookies):
         """Restore browser cookies with fallback handling"""
@@ -470,7 +526,14 @@ class LoginManager:
         try:
             # Navigate to account page which should validate session
             self.driver.get("https://www.karaoke-version.com/my/index.html")
-            time.sleep(3)
+            # Wait for account page to load or redirect to login
+            try:
+                self.wait.until(
+                    lambda driver: driver.current_url != "https://www.karaoke-version.com/my/index.html" or
+                                   driver.find_elements(By.TAG_NAME, "body")
+                )
+            except TimeoutException:
+                pass
             
             # Check if we were redirected to login page
             current_url = self.driver.current_url
@@ -483,7 +546,13 @@ class LoginManager:
         
         # Go back to home page and verify login status
         self.driver.get("https://www.karaoke-version.com")
-        time.sleep(3)
+        # Wait for homepage to load for login verification
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
         
         # Verify the session restoration worked by checking login status
         if self.is_logged_in():
@@ -537,7 +606,13 @@ class LoginManager:
             
             # Navigate to homepage and check if already logged in via Chrome's persistent cookies
             self.driver.get("https://www.karaoke-version.com")
-            time.sleep(3)
+            # Wait for homepage to load for Chrome session check
+            try:
+                self.wait.until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except TimeoutException:
+                pass
             
             if self.is_logged_in():
                 logging.info("🎉 Already logged in via Chrome's persistent session!")

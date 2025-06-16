@@ -4,9 +4,12 @@ import time
 import logging
 import threading
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import (
     NoSuchElementException,
-    WebDriverException
+    WebDriverException,
+    TimeoutException
 )
 from ..utils import safe_click_with_scroll
 
@@ -185,15 +188,30 @@ class DownloadManager:
         logging.info("Clicking download button...")
         safe_click_with_scroll(self.driver, download_button, "download button")
         
-        # Give a moment for any immediate response
-        time.sleep(2)
+        # Wait for any immediate UI response or popup to appear
+        try:
+            # Wait briefly for any popups, new windows, or page changes
+            WebDriverWait(self.driver, 2).until(
+                lambda driver: len(driver.window_handles) > 1 or
+                               driver.current_url != self.driver.current_url
+            )
+        except TimeoutException:
+            pass  # No immediate response detected
         
         # Check if any popup or new window appeared
         original_window_count = len(self.driver.window_handles)
         logging.debug(f"Windows before download: {original_window_count}")
         
-        # Wait a moment and check again
-        time.sleep(3)
+        # Wait for download initialization to complete
+        try:
+            # Wait for window changes or download-related indicators
+            WebDriverWait(self.driver, 3).until(
+                lambda driver: len(driver.window_handles) != original_window_count or
+                               "generating" in driver.page_source.lower() or
+                               "preparing" in driver.page_source.lower()
+            )
+        except TimeoutException:
+            pass  # Continue with download monitoring
         current_window_count = len(self.driver.window_handles)
         logging.debug(f"Windows after download: {current_window_count}")
         
@@ -245,7 +263,13 @@ class DownloadManager:
             # Navigate to song page if needed
             if self.driver.current_url != song_url:
                 self.driver.get(song_url)
-                time.sleep(3)
+                # Wait for song page to load and download button to be available
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "a.download"))
+                    )
+                except TimeoutException:
+                    logging.warning("Timeout waiting for download button to load")
             
             # Find and validate download button
             download_button = self._find_download_button()
@@ -369,7 +393,13 @@ class DownloadManager:
                 logging.info(f"🔍 Starting completion monitoring for {track_name}")
                 
                 while waited < max_wait:
-                    time.sleep(check_interval)
+                    # Use WebDriverWait for the check interval instead of sleep
+                    try:
+                        WebDriverWait(self.driver, check_interval).until(
+                            lambda driver: False  # Always timeout to create the delay
+                        )
+                    except TimeoutException:
+                        pass  # Expected timeout for delay
                     waited += check_interval
                     
                     # Look for completed downloads
