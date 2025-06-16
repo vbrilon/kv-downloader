@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import os
 import logging
 from pathlib import Path
+import pytest
 
 from packages.browser.chrome_manager import ChromeManager
 

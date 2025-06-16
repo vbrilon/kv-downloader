@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch, call
 import time
 import threading
 from io import StringIO
+import pytest
 
 from packages.progress.progress_tracker import ProgressTracker
 
@@ -15,6 +16,7 @@ class TestProgressTracker(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         self.progress_tracker = ProgressTracker()
+        # Use the shared fixture data for consistency
         self.sample_tracks = [
             {'name': 'Electronic Drum Kit', 'index': 1},
             {'name': 'Lead Electric Guitar', 'index': 4},
