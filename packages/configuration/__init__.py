@@ -1,6 +1,9 @@
 """Configuration management package for karaoke automation"""
 
-from .config import *
+from .config import (
+    USERNAME, PASSWORD, DOWNLOAD_FOLDER, DELAY_BETWEEN_DOWNLOADS,
+    MAX_RETRIES, DOWNLOAD_TIMEOUT, LOGIN_URL, SONGS_CONFIG_FILE
+)
 from .config_manager import ConfigurationManager, load_songs_config
 
 __all__ = [
