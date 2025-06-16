@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))

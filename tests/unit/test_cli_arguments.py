@@ -1,7 +1,7 @@
 """Unit tests for CLI argument parsing functionality"""
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import argparse
 import sys
 from io import StringIO

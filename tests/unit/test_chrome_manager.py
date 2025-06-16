@@ -1,7 +1,7 @@
 """Unit tests for Chrome browser management functionality"""
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import os
 import logging
 from pathlib import Path
