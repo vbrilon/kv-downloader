@@ -44,5 +44,3 @@ SONGS_CONFIG_FILE = "songs.yaml"
 MIN_KEY_ADJUSTMENT = -12
 MAX_KEY_ADJUSTMENT = 12
 
-# Backward compatibility - import from config_manager
-from .config_manager import load_songs_config

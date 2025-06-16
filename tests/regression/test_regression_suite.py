@@ -154,7 +154,7 @@ def test_configuration_validation():
     
     try:
         # Test valid configuration
-        from config import load_songs_config
+        from packages.configuration import load_songs_config
         songs = load_songs_config()
         if songs:
             print("✅ Valid configuration loaded")
