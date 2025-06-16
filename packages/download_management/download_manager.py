@@ -416,17 +416,15 @@ class DownloadManager:
                         files_needing_cleanup = []
                         for file_path in completed_files:
                             filename = file_path.name
-                            # Only clean files that:
-                            # 1. Contain Custom_Backing_Track (indicating they need cleaning)
-                            # 2. Are very recent (downloaded in last 30 seconds) to avoid cleaning old files
+                            # Clean all files that contain Custom_Backing_Track suffix
+                            # These are generated files that need to be renamed to track names
                             has_custom_suffix = 'Custom_Backing_Track' in filename
-                            is_very_recent = (time.time() - file_path.stat().st_mtime) < 30  # Only files from last 30 seconds
                             
-                            if has_custom_suffix and is_very_recent:
+                            if has_custom_suffix:
                                 files_needing_cleanup.append(file_path)
                                 logging.info(f"📝 File needs cleanup: {filename}")
                             else:
-                                logging.debug(f"📝 Skipping cleanup for {filename} (has_custom_suffix={has_custom_suffix}, is_very_recent={is_very_recent})")
+                                logging.debug(f"📝 File already clean: {filename}")
                         
                         # Calculate file size for stats (all completed files, not just ones needing cleanup)
                         total_file_size = sum(f.stat().st_size for f in completed_files)
