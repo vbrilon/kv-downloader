@@ -44,7 +44,7 @@ def test_song_folder_extraction():
         for i, test_case in enumerate(test_cases, 1):
             print(f"{i}️⃣ Testing URL: {test_case['url']}")
             
-            folder_name = automator.track_handler._extract_song_folder_name(test_case['url'])
+            folder_name = automator.download_manager.extract_song_folder_name(test_case['url'])
             print(f"   Generated folder: '{folder_name}'")
             
             # Check if expected elements are in the folder name

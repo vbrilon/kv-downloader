@@ -11,11 +11,12 @@ Downloads individual instrument tracks (bass, guitar, vocals, drums, etc.) from 
 ### 1. Installation
 
 ```bash
+# Recommend that you set up and activate a virtual environment to run in
+python3 -m venv kv-downloader
+
 # Clone the project
 git clone https://github.com/vbrilon/kv-downloader
 cd kv-downloader
-
-# Recommend that you set up and activate a virtual environment to run in
 
 # Install dependencies
 pip install -r requirements.txt
@@ -79,7 +80,6 @@ downloads/
 │   ├── Electronic Drum Kit.mp3
 │   └── Lead Vocal.mp3
 ├── Taylor Swift - Shake It Off/
-│   ├── Piano.mp3
 │   └── Synth Keys 1(+2).mp3  # Shows key adjustment
 ```
 
@@ -122,10 +122,11 @@ Use `--debug` flag for troubleshooting:
 - Shows visible browser window
 - Saves detailed logs to `logs/debug.log`
 - Displays element inspection info
+- Logs are cleared at each new invocation of the script
 
 ### Session Persistence ✅
 
-The script automatically saves your login session after the first successful login. This feature is fully working and provides significant time savings:
+The script automatically saves your login session after the first successful login. This feature  provides significant time savings:
 
 - **First run**: Performs normal login (~4-14 seconds)
 - **Subsequent runs**: Restores saved session (~2-3 seconds) 

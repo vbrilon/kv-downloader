@@ -137,11 +137,11 @@ class TestTrackManager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             
-            # Create test files
+            # Create test files that match cleanup criteria
             test_files = [
-                "track_test.mp3",
-                "old_track.mp3", 
-                "custombackingtrack_test.mp3"
+                "track_test.mp3",  # Should match "track_test" track name
+                "test_track_old.mp3",  # Should match "track_test" via word matching
+                "custom_backing_track.mp3"  # Should match backing track suffix
             ]
             
             for filename in test_files:
@@ -149,10 +149,10 @@ class TestTrackManager(unittest.TestCase):
             
             # Test cleanup
             with patch('time.time', return_value=1000):  # Mock current time
-                # Set file times to recent (should be removed)
+                # Set file times to old enough to be removed (>30 seconds)
                 for filename in test_files:
                     file_path = temp_path / filename
-                    os.utime(file_path, (999, 999))  # 1 second old
+                    os.utime(file_path, (950, 950))  # 50 seconds old (>30 threshold)
                 
                 file_manager = FileManager()
                 file_manager.cleanup_existing_downloads("track_test", temp_path)
@@ -183,15 +183,22 @@ class TestTrackManager(unittest.TestCase):
 class TestKaraokeVersionAutomator(unittest.TestCase):
     """Unit tests for main automator class"""
     
-    def test_init_headless_mode(self):
+    @patch('karaoke_automator.ChromeManager')
+    def test_init_headless_mode(self, mock_chrome_manager):
         """Test automator initialization with headless mode"""
+        # Mock the chrome manager to avoid real browser creation
+        mock_chrome_instance = Mock()
+        mock_chrome_manager.return_value = mock_chrome_instance
+        
         # Test headless mode
         automator = KaraokeVersionAutomator(headless=True)
         self.assertTrue(automator.headless)
+        mock_chrome_manager.assert_called_with(headless=True)
         
-        # Test visible mode
+        # Test visible mode  
         automator = KaraokeVersionAutomator(headless=False)
         self.assertFalse(automator.headless)
+        mock_chrome_manager.assert_called_with(headless=False)
     
     def test_sanitize_filename(self):
         """Test filename sanitization"""

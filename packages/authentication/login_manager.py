@@ -27,7 +27,7 @@ except ImportError:
 class LoginManager:
     """Handles all login-related functionality for Karaoke-Version.com"""
     
-    def __init__(self, driver, wait, session_file="session_data.pkl"):
+    def __init__(self, driver, wait, session_file=".cache/session_data.pkl"):
         """
         Initialize login manager
         
@@ -352,124 +352,145 @@ class LoginManager:
     def load_session(self):
         """Load and restore browser session data from file"""
         try:
-            if not self.session_file.exists():
-                logging.debug("No session file found")
+            session_data = self._load_and_validate_session_data()
+            if not session_data:
                 return False
             
-            # Load session data
-            with open(self.session_file, 'rb') as f:
-                session_data = pickle.load(f)
-            
-            # Check if session is not too old (24 hours max)
-            session_age = time.time() - session_data.get('timestamp', 0)
-            max_age = 24 * 60 * 60  # 24 hours in seconds
-            
-            if session_age > max_age:
-                logging.info(f"🕐 Saved session is {session_age/3600:.1f} hours old, too old to use")
-                self.clear_session()
-                return False
-            
-            logging.info(f"🔄 Loading session from {session_age/60:.1f} minutes ago")
-            
-            # Navigate to the saved URL first
-            saved_url = session_data.get('url', 'https://www.karaoke-version.com')
-            self.driver.get(saved_url)
-            time.sleep(2)
-            
-            # Restore cookies
-            cookies = session_data.get('cookies', [])
-            for cookie in cookies:
-                try:
-                    # Keep all cookie attributes, but handle expiry specially
-                    cookie_copy = cookie.copy()
-                    
-                    # Handle expiry - convert to int if present
-                    if 'expiry' in cookie_copy:
-                        try:
-                            cookie_copy['expiry'] = int(cookie_copy['expiry'])
-                        except (ValueError, TypeError) as e:
-                            logging.debug(f"Could not convert expiry to int: {e}")
-                            del cookie_copy['expiry']
-                    
-                    self.driver.add_cookie(cookie_copy)
-                    logging.debug(f"Restored cookie: {cookie.get('name', 'unknown')}")
-                except Exception as e:
-                    logging.debug(f"Could not restore cookie {cookie.get('name', 'unknown')}: {e}")
-                    # Try with minimal attributes as fallback
-                    try:
-                        minimal_cookie = {
-                            'name': cookie.get('name'),
-                            'value': cookie.get('value'),
-                            'domain': cookie.get('domain'),
-                            'path': cookie.get('path', '/'),
-                            'secure': cookie.get('secure', False)
-                        }
-                        self.driver.add_cookie(minimal_cookie)
-                        logging.debug(f"Restored cookie with minimal attributes: {cookie.get('name', 'unknown')}")
-                    except Exception as e2:
-                        logging.debug(f"Failed to restore cookie even with minimal attributes: {e2}")
-            
-            # Restore localStorage
-            local_storage = session_data.get('localStorage', {})
-            if local_storage and isinstance(local_storage, dict):
-                for key, value in local_storage.items():
-                    try:
-                        # Use JSON.stringify to safely encode the value
-                        self.driver.execute_script(
-                            "window.localStorage.setItem(arguments[0], arguments[1]);", 
-                            key, str(value)
-                        )
-                        logging.debug(f"Restored localStorage: {key}")
-                    except Exception as e:
-                        logging.debug(f"Could not restore localStorage item {key}: {e}")
-            
-            # Restore sessionStorage
-            session_storage = session_data.get('sessionStorage', {})
-            if session_storage and isinstance(session_storage, dict):
-                for key, value in session_storage.items():
-                    try:
-                        # Use arguments to safely pass values to avoid injection issues
-                        self.driver.execute_script(
-                            "window.sessionStorage.setItem(arguments[0], arguments[1]);", 
-                            key, str(value)
-                        )
-                        logging.debug(f"Restored sessionStorage: {key}")
-                    except Exception as e:
-                        logging.debug(f"Could not restore sessionStorage item {key}: {e}")
-            
-            # Refresh page to apply restored session
-            self.driver.refresh()
-            time.sleep(3)
-            
-            # Try accessing a protected area to trigger session validation
-            try:
-                # Navigate to account page which should validate session
-                self.driver.get("https://www.karaoke-version.com/my/index.html")
-                time.sleep(3)
-                
-                # Check if we were redirected to login page
-                current_url = self.driver.current_url
-                if "login" in current_url.lower() or "signin" in current_url.lower():
-                    logging.debug("Redirected to login page, session invalid")
-                    return False
-                    
-            except Exception as e:
-                logging.debug(f"Error accessing account page: {e}")
-            
-            # Go back to home page and verify login status
-            self.driver.get("https://www.karaoke-version.com")
-            time.sleep(3)
-            
-            # Verify the session restoration worked by checking login status
-            if self.is_logged_in():
-                logging.info("✅ Session data restored and login verified")
-                return True
-            else:
-                logging.warning("⚠️ Session data restored but login verification failed")
-                return False
+            self._restore_browser_state(session_data)
+            return self._verify_session_restoration()
             
         except Exception as e:
             logging.warning(f"⚠️ Could not load session data: {e}")
+            return False
+    
+    def _load_and_validate_session_data(self):
+        """Load session data from file and validate expiry"""
+        if not self.session_file.exists():
+            logging.debug("No session file found")
+            return None
+        
+        # Load session data
+        with open(self.session_file, 'rb') as f:
+            session_data = pickle.load(f)
+        
+        # Check if session is not too old (24 hours max)
+        session_age = time.time() - session_data.get('timestamp', 0)
+        max_age = 24 * 60 * 60  # 24 hours in seconds
+        
+        if session_age > max_age:
+            logging.info(f"🕐 Saved session is {session_age/3600:.1f} hours old, too old to use")
+            self.clear_session()
+            return None
+        
+        logging.info(f"🔄 Loading session from {session_age/60:.1f} minutes ago")
+        return session_data
+    
+    def _restore_browser_state(self, session_data):
+        """Restore browser cookies, localStorage, and sessionStorage"""
+        # Navigate to the saved URL first
+        saved_url = session_data.get('url', 'https://www.karaoke-version.com')
+        self.driver.get(saved_url)
+        time.sleep(2)
+        
+        self._restore_cookies(session_data.get('cookies', []))
+        self._restore_local_storage(session_data.get('localStorage', {}))
+        self._restore_session_storage(session_data.get('sessionStorage', {}))
+        
+        # Refresh page to apply restored session
+        self.driver.refresh()
+        time.sleep(3)
+    
+    def _restore_cookies(self, cookies):
+        """Restore browser cookies with fallback handling"""
+        for cookie in cookies:
+            try:
+                # Keep all cookie attributes, but handle expiry specially
+                cookie_copy = cookie.copy()
+                
+                # Handle expiry - convert to int if present
+                if 'expiry' in cookie_copy:
+                    try:
+                        cookie_copy['expiry'] = int(cookie_copy['expiry'])
+                    except (ValueError, TypeError) as e:
+                        logging.debug(f"Could not convert expiry to int: {e}")
+                        del cookie_copy['expiry']
+                
+                self.driver.add_cookie(cookie_copy)
+                logging.debug(f"Restored cookie: {cookie.get('name', 'unknown')}")
+            except Exception as e:
+                logging.debug(f"Could not restore cookie {cookie.get('name', 'unknown')}: {e}")
+                self._restore_cookie_fallback(cookie)
+    
+    def _restore_cookie_fallback(self, cookie):
+        """Fallback cookie restoration with minimal attributes"""
+        try:
+            minimal_cookie = {
+                'name': cookie.get('name'),
+                'value': cookie.get('value'),
+                'domain': cookie.get('domain'),
+                'path': cookie.get('path', '/'),
+                'secure': cookie.get('secure', False)
+            }
+            self.driver.add_cookie(minimal_cookie)
+            logging.debug(f"Restored cookie with minimal attributes: {cookie.get('name', 'unknown')}")
+        except Exception as e:
+            logging.debug(f"Failed to restore cookie even with minimal attributes: {e}")
+    
+    def _restore_local_storage(self, local_storage):
+        """Restore browser localStorage data"""
+        if local_storage and isinstance(local_storage, dict):
+            for key, value in local_storage.items():
+                try:
+                    # Use JSON.stringify to safely encode the value
+                    self.driver.execute_script(
+                        "window.localStorage.setItem(arguments[0], arguments[1]);", 
+                        key, str(value)
+                    )
+                    logging.debug(f"Restored localStorage: {key}")
+                except Exception as e:
+                    logging.debug(f"Could not restore localStorage item {key}: {e}")
+    
+    def _restore_session_storage(self, session_storage):
+        """Restore browser sessionStorage data"""
+        if session_storage and isinstance(session_storage, dict):
+            for key, value in session_storage.items():
+                try:
+                    # Use arguments to safely pass values to avoid injection issues
+                    self.driver.execute_script(
+                        "window.sessionStorage.setItem(arguments[0], arguments[1]);", 
+                        key, str(value)
+                    )
+                    logging.debug(f"Restored sessionStorage: {key}")
+                except Exception as e:
+                    logging.debug(f"Could not restore sessionStorage item {key}: {e}")
+    
+    def _verify_session_restoration(self):
+        """Verify that session restoration was successful"""
+        # Try accessing a protected area to trigger session validation
+        try:
+            # Navigate to account page which should validate session
+            self.driver.get("https://www.karaoke-version.com/my/index.html")
+            time.sleep(3)
+            
+            # Check if we were redirected to login page
+            current_url = self.driver.current_url
+            if "login" in current_url.lower() or "signin" in current_url.lower():
+                logging.debug("Redirected to login page, session invalid")
+                return False
+                
+        except Exception as e:
+            logging.debug(f"Error accessing account page: {e}")
+        
+        # Go back to home page and verify login status
+        self.driver.get("https://www.karaoke-version.com")
+        time.sleep(3)
+        
+        # Verify the session restoration worked by checking login status
+        if self.is_logged_in():
+            logging.info("✅ Session data restored and login verified")
+            return True
+        else:
+            logging.warning("⚠️ Session data restored but login verification failed")
             return False
     
     def clear_session(self):

@@ -179,4 +179,5 @@ chromedriver*
 
 # Session and browser data (should not be committed)
 session_data.pkl
+.cache/
 chrome_profile/
