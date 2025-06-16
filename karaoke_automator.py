@@ -8,6 +8,9 @@ import time
 import os
 import logging
 import threading
+import signal
+import sys
+import glob
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -299,18 +302,82 @@ if __name__ == "__main__":
     headless_mode = not args.debug
     
     # Initialize automator with appropriate mode
-    automator = KaraokeVersionAutomator(headless=headless_mode)
+    automator = None
     
-    # Override login method if force login requested
-    if args.force_login:
-        logging.info("🔄 Force login requested via command line")
-        original_run = automator.run_automation
-        def run_with_force_login():
-            # Step 1: Login (force relogin)
-            if not automator.login(force_relogin=True):
-                logging.error("Login failed")
-                return False
-            return original_run()
-        automator.run_automation = run_with_force_login
+    # Setup signal handler for graceful shutdown
+    def signal_handler(signum, frame):
+        logging.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+        if automator:
+            try:
+                if hasattr(automator, 'driver') and automator.driver:
+                    logging.info("🧹 Shutting down browser driver...")
+                    automator.driver.quit()
+                if hasattr(automator, 'chrome_manager') and automator.chrome_manager:
+                    logging.info("🧹 Shutting down Chrome manager...")
+                    automator.chrome_manager.quit()
+            except Exception as e:
+                logging.error(f"⚠️ Error during signal cleanup: {e}")
+        sys.exit(0)
     
-    automator.run_automation()
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        automator = KaraokeVersionAutomator(headless=headless_mode)
+        
+        # Override login method if force login requested
+        if args.force_login:
+            logging.info("🔄 Force login requested via command line")
+            original_run = automator.run_automation
+            def run_with_force_login():
+                # Step 1: Login (force relogin)
+                if not automator.login(force_relogin=True):
+                    logging.error("Login failed")
+                    return False
+                return original_run()
+            automator.run_automation = run_with_force_login
+        
+        # Run the automation
+        automator.run_automation()
+        
+    except KeyboardInterrupt:
+        logging.info("🛑 Automation interrupted by user")
+    except Exception as e:
+        logging.error(f"💥 Fatal error during automation: {e}")
+        sys.exit(1)
+    finally:
+        # Comprehensive cleanup - ensure browser resources are properly closed
+        if automator:
+            try:
+                # Try to quit the browser driver if it exists
+                if hasattr(automator, 'driver') and automator.driver:
+                    logging.info("🧹 Cleaning up browser driver...")
+                    automator.driver.quit()
+                    
+                # Try to quit the chrome manager if it exists
+                if hasattr(automator, 'chrome_manager') and automator.chrome_manager:
+                    logging.info("🧹 Cleaning up Chrome manager...")
+                    automator.chrome_manager.quit()
+                
+                # Clean up any temporary files in download directory
+                if hasattr(automator, 'file_manager') and automator.file_manager:
+                    try:
+                        logging.info("🧹 Cleaning up temporary download files...")
+                        # Clean up .crdownload files that may be left behind
+                        from packages.configuration import DOWNLOAD_FOLDER
+                        temp_files = glob.glob(os.path.join(DOWNLOAD_FOLDER, "*.crdownload"))
+                        for temp_file in temp_files:
+                            try:
+                                os.remove(temp_file)
+                                logging.debug(f"Removed temporary file: {temp_file}")
+                            except Exception:
+                                pass  # Don't log failed temp file cleanup
+                    except Exception:
+                        pass  # Don't fail cleanup for temporary file issues
+                    
+                logging.info("✅ Resource cleanup completed successfully")
+                
+            except Exception as cleanup_error:
+                logging.error(f"⚠️ Error during resource cleanup: {cleanup_error}")
+                # Don't raise - we don't want cleanup errors to mask the original error
