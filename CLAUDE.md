@@ -514,6 +514,17 @@ python tests/run_tests.py --regression-only
 - **Comprehensive documentation** for testing standards and practices
 
 ### **Next Session Priorities**
+📂 **New Discovery - Potential Architecture Simplification**:
+**Priority Item**: **medium-14** - Test pickled session persistence to determine if it's needed
+
+**Background**: The system currently uses dual session persistence (Chrome profile + custom pickle). The pickle solution may be redundant and non-functional.
+
+**Investigation Required**: Comprehensive testing plan created in `PICKLE_PERSISTENCE_TESTING_PLAN.md`
+- Test pickle-only persistence (disable Chrome profile)
+- Verify login maintenance across browser restarts
+- Assess if pickle provides unique value or is removable technical debt
+- **Potential Impact**: Could significantly simplify authentication architecture
+
 📂 **Phase 4 Remaining Optimization Work** - See `IMPROVEMENT_ROADMAP.md` for details:
 **Note**: All cleanup items are now complete! Only 5 low-priority optimization items remain (80% project completion).
 
