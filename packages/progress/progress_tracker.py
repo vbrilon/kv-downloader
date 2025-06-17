@@ -9,13 +9,19 @@ import logging
 class ProgressTracker:
     """Track and display download progress for tracks"""
     
-    def __init__(self):
-        """Initialize progress tracker"""
+    def __init__(self, show_display=True):
+        """Initialize progress tracker
+        
+        Args:
+            show_display (bool): Whether to show visual progress display (True for debug mode)
+        """
         self.tracks = []
         self.current_song = ""
         self.lock = threading.Lock()
         self._display_thread = None
         self._stop_display = False
+        self.show_display = show_display
+        self.logger = logging.getLogger(__name__)
     
     def start_song(self, song_name, track_list):
         """Initialize progress tracking for a new song"""
@@ -79,6 +85,9 @@ class ProgressTracker:
     
     def _update_display(self):
         """Update the progress display"""
+        if not self.show_display:
+            return
+            
         with self.lock:
             # Clear screen and show progress
             os.system('clear' if os.name == 'posix' else 'cls')
@@ -97,6 +106,9 @@ class ProgressTracker:
     
     def _display_track_progress(self, track):
         """Display progress for a single track"""
+        if not self.show_display:
+            return
+            
         name = track['name'][:30].ljust(30)  # Truncate/pad name to 30 chars
         status = track['status']
         progress = track['progress']
@@ -162,16 +174,25 @@ class ProgressTracker:
             completed = [t for t in self.tracks if t['status'] == 'completed']
             failed = [t for t in self.tracks if t['status'] == 'failed']
             
-            print(f"\n🎉 Download Summary for: {self.current_song}")
-            print("-" * 50)
-            print(f"✅ Completed: {len(completed)}")
-            print(f"❌ Failed: {len(failed)}")
-            print(f"📊 Success Rate: {len(completed)/len(self.tracks)*100:.1f}%")
+            if self.show_display:
+                print(f"\n🎉 Download Summary for: {self.current_song}")
+                print("-" * 50)
+                print(f"✅ Completed: {len(completed)}")
+                print(f"❌ Failed: {len(failed)}")
+                print(f"📊 Success Rate: {len(completed)/len(self.tracks)*100:.1f}%")
+            else:
+                # Use logging for non-display mode
+                self.logger.info(f"Download completed for: {self.current_song}")
+                self.logger.info(f"Completed: {len(completed)}, Failed: {len(failed)}, Success Rate: {len(completed)/len(self.tracks)*100:.1f}%")
             
             if failed:
-                print("\nFailed tracks:")
-                for track in failed:
-                    print(f"  ❌ {track['name']}")
+                if self.show_display:
+                    print("\nFailed tracks:")
+                    for track in failed:
+                        print(f"  ❌ {track['name']}")
+                else:
+                    failed_names = [track['name'] for track in failed]
+                    self.logger.warning(f"Failed tracks: {', '.join(failed_names)}")
             
             total_time = 0
             if completed:
@@ -179,6 +200,10 @@ class ProgressTracker:
                     if track['start_time'] and track['end_time']:
                         total_time += track['end_time'] - track['start_time']
                 avg_time = total_time / len(completed)
-                print(f"\n⏱️ Average download time: {avg_time:.1f}s per track")
+                if self.show_display:
+                    print(f"\n⏱️ Average download time: {avg_time:.1f}s per track")
+                else:
+                    self.logger.debug(f"Average download time: {avg_time:.1f}s per track")
             
-            print()
+            if self.show_display:
+                print()

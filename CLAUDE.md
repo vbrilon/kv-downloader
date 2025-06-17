@@ -501,6 +501,18 @@ python karaoke_automator.py --debug      # Debug mode with visible browser
 **Result**: "Queen_Dont Stop Me Now" (clean directory names) ✅
 **Status**: ✅ **FIXED** - All regression tests pass, functionality preserved
 
+### 🖥️ Stdout Log Leakage Fixed (2025-06-17)
+**Issue**: Log data was printing to stdout during download process in non-debug mode, interfering with clean status UI
+**Root Cause**: `ProgressTracker` class used `print()` statements that bypassed the logging system configuration
+**Examples**: Progress displays, download summaries, and final reports appeared on stdout regardless of debug mode
+**Fix Applied**:
+- **packages/progress/progress_tracker.py**: Added `show_display` parameter to control visual output
+- **Modified methods**: `_update_display()`, `_display_track_progress()`, `_final_display()` now respect display mode
+- **karaoke_automator.py**: Pass `show_progress=args.debug` to only show progress in debug mode
+- **Final reports**: Conditional display vs logging based on debug mode
+**Result**: Clean stdout in non-debug mode, detailed progress display preserved in debug mode ✅
+**Status**: ✅ **FIXED** - Non-debug mode now shows only essential logging messages
+
 ---
 
 ## important-instruction-reminders

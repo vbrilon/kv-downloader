@@ -48,7 +48,7 @@ class KaraokeVersionAutomator:
         self.headless = headless
         self.show_progress = show_progress
         self.config_manager = ConfigurationManager(config_file)
-        self.progress = ProgressTracker() if show_progress else None
+        self.progress = ProgressTracker(show_display=show_progress) if show_progress else None
         self.stats = StatsReporter()  # Always track stats
         
         # Initialize browser manager
@@ -264,21 +264,34 @@ class KaraokeVersionAutomator:
     def _generate_final_reports(self, failed=False):
         """Generate and display final statistics reports"""
         try:
-            print("\n" + "="*80)
-            if failed:
-                print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
+            if self.show_progress:
+                print("\n" + "="*80)
+                if failed:
+                    print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
+                else:
+                    print("📊 GENERATING FINAL STATISTICS REPORT...")
+                print("="*80)
+                
+                final_report = self.stats.generate_final_report()
+                print(final_report)
             else:
-                print("📊 GENERATING FINAL STATISTICS REPORT...")
-            print("="*80)
-            
-            final_report = self.stats.generate_final_report()
-            print(final_report)
+                # Use logging for non-display mode
+                if failed:
+                    logging.info("Generating final statistics report (automation failed)")
+                else:
+                    logging.info("Generating final statistics report")
+                
+                final_report = self.stats.generate_final_report()
+                logging.info(f"Final report:\n{final_report}")
             
             filename = "logs/automation_stats_failed.json" if failed else "logs/automation_stats.json"
             stats_saved = self.stats.save_detailed_report(filename)
             
             if stats_saved and not failed:
-                print(f"\n📁 Detailed statistics saved to: {filename}")
+                if self.show_progress:
+                    print(f"\n📁 Detailed statistics saved to: {filename}")
+                else:
+                    logging.info(f"Detailed statistics saved to: {filename}")
             
         except Exception as e:
             logging.error(f"Error generating final statistics report: {e}")
@@ -342,7 +355,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        automator = KaraokeVersionAutomator(headless=headless_mode)
+        automator = KaraokeVersionAutomator(headless=headless_mode, show_progress=args.debug)
         
         # Override login method if force login requested
         if args.force_login:
