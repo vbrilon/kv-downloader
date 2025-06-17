@@ -292,10 +292,15 @@ class DownloadManager:
             download_started = self.file_manager.wait_for_download_to_start(track_name, song_path, track_index)
             
             if download_started:
-                logging.info(f"✅ Download started for: {track_name} - proceeding to next track")
+                logging.info(f"✅ Download started for: {track_name} - monitoring completion")
                 
                 # Start background monitoring for completion and file cleanup
-                self.start_completion_monitoring(song_path, track_name, track_index)
+                monitor_thread = self.start_completion_monitoring(song_path, track_name, track_index)
+                
+                # Wait for completion monitoring to finish before returning
+                logging.info(f"⏳ Waiting for {track_name} completion monitoring to finish...")
+                monitor_thread.join()
+                logging.info(f"✅ Completion monitoring finished for {track_name}")
                 
             else:
                 logging.warning(f"⚠️ Download not detected for: {track_name}")
@@ -504,10 +509,13 @@ class DownloadManager:
                     self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
                                                                error_message=f"Monitoring error: {str(e)}")
         
-        # Start monitoring in background thread
-        monitor_thread = threading.Thread(target=completion_monitor, daemon=True)
+        # Start monitoring in background thread (non-daemon so we can wait for it)
+        monitor_thread = threading.Thread(target=completion_monitor, daemon=False)
         monitor_thread.start()
         logging.info(f"🎆 Started background completion monitoring for {track_name}")
+        
+        # Return the thread so caller can join it if needed
+        return monitor_thread
     
     def _find_new_completed_files(self, song_path, track_name, initial_files):
         """Find newly completed files that weren't in the initial snapshot"""
