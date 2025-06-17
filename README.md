@@ -94,6 +94,33 @@ downloads/
 | `description` | ❌ | Song description | `"Artist - Song Title"` |
 | `key` | ❌ | Pitch adjustment (-12 to +12 semitones) | `2`, `"+3"`, `"-2"` |
 
+### ⚠️ YAML Formatting Requirements
+
+**Critical formatting rules to avoid configuration errors:**
+
+1. **Indentation**: Use exactly **2 spaces** for each level - tabs and inconsistent spacing will break YAML parsing
+   ```yaml
+   songs:        # No indentation
+     - url: "..."  # Exactly 2 spaces
+       name: "..." # Exactly 4 spaces (2 levels)
+   ```
+
+2. **String Quotes**: Always wrap string values in double quotes to prevent parsing errors
+   ```yaml
+   # ✅ Correct
+   - url: "https://www.karaoke-version.com/custombackingtrack/artist/song.html"
+     name: "My_Song"
+   
+   # ❌ Incorrect (missing quotes)
+   - url: https://www.karaoke-version.com/custombackingtrack/artist/song.html
+     name: My_Song
+   ```
+
+3. **Common Errors**:
+   - **Wrong indentation**: `ERROR: string indices must be integers, not 'str'`
+   - **Missing quotes**: Unexpected parsing behavior or validation errors
+   - **Tabs instead of spaces**: YAML structure corruption
+
 ### Key Adjustment Formats
 
 The `key` field supports multiple input formats for flexibility:
@@ -142,7 +169,7 @@ python karaoke_automator.py --force-login
 python karaoke_automator.py --clear-session
 ```
 
-**Session Data**: Stored in `session_data.pkl` (cookies, localStorage, etc.) - safe to delete if needed.
+**Session Data**: Stored in `.cache/session_data.pkl` (cookies, localStorage, etc.) - safe to delete if needed.
 
 ### Environment Variables
 
@@ -175,6 +202,27 @@ DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 **"Force login not working"**
 - Update to latest version (fixed bug where `--force-login --debug` didn't properly log out)
 - Use `--clear-session` to manually clear saved session data if needed
+
+**"ERROR: string indices must be integers, not 'str'"**
+- Check `songs.yaml` for correct indentation (exactly 2 spaces per level)
+- Ensure all string values are wrapped in double quotes
+- Verify no tabs are used (only spaces for indentation)
+
+### Testing
+
+Run the test suite to verify functionality:
+
+```bash
+# Run all tests
+python tests/run_tests.py
+
+# Run only regression tests (quick verification)
+python tests/run_tests.py --regression-only
+
+# Run specific test categories
+python tests/run_tests.py --unit-only
+python tests/run_tests.py --integration-only
+```
 
 ### Getting Help
 
