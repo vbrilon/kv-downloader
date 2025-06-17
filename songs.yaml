@@ -8,6 +8,7 @@ songs:
 #    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
     
   - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
+  - url: "https://www.karaoke-version.com/custombackingtrack/deep-purple/black-night.html"
 
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com

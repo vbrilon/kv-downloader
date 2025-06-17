@@ -11,6 +11,7 @@ from selenium.common.exceptions import (
     TimeoutException
 )
 from ..utils import safe_click
+from ..configuration import SOLO_ACTIVATION_DELAY
 
 
 class TrackManager:
@@ -194,6 +195,15 @@ class TrackManager:
                     logging.debug(f"Error checking solo status at {waited}s: {e}")
             
             if solo_activated:
+                # Wait for backend audio generation to synchronize with UI state
+                logging.info(f"⏳ Waiting {SOLO_ACTIVATION_DELAY}s for audio generation to sync with solo state...")
+                try:
+                    WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
+                        lambda driver: False  # Always timeout to create the delay
+                    )
+                except TimeoutException:
+                    pass  # Expected timeout for delay
+                logging.info(f"✅ Solo activation delay complete for {track_name}")
                 return True
             else:
                 logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name}")
@@ -223,6 +233,15 @@ class TrackManager:
                     final_classes = solo_button.get_attribute('class') or ''
                     if 'is-active' in final_classes.lower() or 'active' in final_classes.lower():
                         logging.info(f"✅ Solo button active after aggressive retry for {track_name}")
+                        # Wait for backend audio generation to synchronize with UI state
+                        logging.info(f"⏳ Waiting {SOLO_ACTIVATION_DELAY}s for audio generation to sync with solo state...")
+                        try:
+                            WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
+                                lambda driver: False  # Always timeout to create the delay
+                            )
+                        except TimeoutException:
+                            pass  # Expected timeout for delay
+                        logging.info(f"✅ Solo activation delay complete for {track_name}")
                         return True
                     else:
                         logging.error(f"❌ Solo failed for {track_name} after all retry attempts")

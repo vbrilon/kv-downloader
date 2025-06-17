@@ -217,27 +217,14 @@ class DownloadManager:
         
         if current_window_count > original_window_count:
             logging.info(f"🪟 New window/popup detected ({current_window_count} vs {original_window_count})")
-            # Switch to new window to see what it contains
-            try:
-                new_window = self.driver.window_handles[-1]
-                self.driver.switch_to.window(new_window)
-                logging.info(f"📄 New window title: {self.driver.title}")
-                logging.info(f"📄 New window URL: {self.driver.current_url}")
-                
-                # Look for download-related text
-                page_text = self.driver.page_source.lower()
-                if any(phrase in page_text for phrase in ['download', 'generating', 'preparing', 'your file']):
-                    logging.info("🎵 Download generation page detected!")
-                
-                # Switch back to original window
-                self.driver.switch_to.window(self.driver.window_handles[0])
-            except Exception as e:
-                logging.warning(f"Could not inspect new window: {e}")
-                try:
-                    self.driver.switch_to.window(self.driver.window_handles[0])
-                except (Exception, WebDriverException) as e:
-                    logging.debug(f"Could not switch back to original window: {e}")
-                    pass
+            popup_handled = self._handle_download_popup()
+            if popup_handled:
+                logging.info("✅ Download popup handled successfully")
+            else:
+                logging.warning("⚠️ Download popup handling had issues")
+        
+        # Check for download popup elements in current window (non-window popups)
+        self._check_and_handle_inline_popups()
         
         return True
 
@@ -287,6 +274,11 @@ class DownloadManager:
                 else:
                     logging.error("Could not find download button - unknown error")
                     return False
+            
+            # Verify track selection state before download
+            verification_passed = self._verify_track_selection_state(track_name, track_index)
+            if not verification_passed:
+                logging.warning(f"⚠️ Track selection verification failed for {track_name} - proceeding anyway")
             
             # Execute download click and handle any popups
             self._execute_download_click(download_button)
@@ -390,7 +382,15 @@ class DownloadManager:
                 check_interval = 2  # Check every 2 seconds
                 waited = 0
                 
+                # Get initial file snapshot to track what was there before this download
+                initial_files = set()
+                if song_path.exists():
+                    for f in song_path.iterdir():
+                        if f.is_file() and any(f.name.lower().endswith(ext) for ext in ['.mp3', '.aif', '.wav']):
+                            initial_files.add(f.name)
+                
                 logging.info(f"🔍 Starting completion monitoring for {track_name}")
+                logging.info(f"📂 Initial files in folder: {len(initial_files)}")
                 
                 while waited < max_wait:
                     # Use WebDriverWait for the check interval instead of sleep
@@ -402,32 +402,36 @@ class DownloadManager:
                         pass  # Expected timeout for delay
                     waited += check_interval
                     
-                    # Look for completed downloads
-                    logging.info(f"🔍 Checking for completed downloads in {song_path}")
-                    completed_files = self.file_manager.check_for_completed_downloads(song_path, track_name)
+                    # Look for NEW completed downloads (files that weren't there initially)
+                    logging.info(f"🔍 Checking for NEW downloads in {song_path} (waited {waited}s)")
+                    new_completed_files = self._find_new_completed_files(song_path, track_name, initial_files)
                     
-                    if not completed_files:
-                        logging.info(f"   No completed files found yet (waited {waited}s)")
+                    if not new_completed_files:
+                        if waited % 10 == 0:  # Log every 10 seconds
+                            logging.info(f"   No new completed files found yet (waited {waited}s)")
                     
-                    if completed_files:
-                        logging.info(f"🎉 Download completed for {track_name}: {len(completed_files)} files")
+                    if new_completed_files:
+                        logging.info(f"🎉 NEW download completed for {track_name}: {len(new_completed_files)} files")
                         
-                        # Filter to only files that need cleaning (contain Custom_Backing_Track and match current track)
+                        # Filter to only files that need cleaning and match the current track
                         files_needing_cleanup = []
-                        for file_path in completed_files:
+                        for file_path in new_completed_files:
                             filename = file_path.name
-                            # Clean all files that contain Custom_Backing_Track suffix
-                            # These are generated files that need to be renamed to track names
+                            
+                            # Check if this file actually matches the track we're monitoring
+                            track_match = self._does_file_match_track(filename, track_name)
                             has_custom_suffix = 'Custom_Backing_Track' in filename
                             
-                            if has_custom_suffix:
+                            if has_custom_suffix and track_match:
                                 files_needing_cleanup.append(file_path)
-                                logging.info(f"📝 File needs cleanup: {filename}")
+                                logging.info(f"📝 File needs cleanup (matches {track_name}): {filename}")
+                            elif has_custom_suffix and not track_match:
+                                logging.info(f"📝 Skipping file (doesn't match {track_name}): {filename}")
                             else:
                                 logging.debug(f"📝 File already clean: {filename}")
                         
                         # Calculate file size for stats (all completed files, not just ones needing cleanup)
-                        total_file_size = sum(f.stat().st_size for f in completed_files)
+                        total_file_size = sum(f.stat().st_size for f in new_completed_files)
                         
                         # Clean up filenames only for files that actually need it
                         for file_path in files_needing_cleanup:
@@ -438,6 +442,26 @@ class DownloadManager:
                             logging.info(f"✅ Cleaned {len(files_needing_cleanup)} files for {track_name}")
                         else:
                             logging.info(f"✅ All files already clean for {track_name}")
+                        
+                        # Perform basic content validation on completed files
+                        validation_warnings = []
+                        for file_path in new_completed_files:
+                            try:
+                                validation_result = self.file_manager.validate_audio_content(file_path, track_name)
+                                if validation_result['warnings']:
+                                    validation_warnings.extend(validation_result['warnings'])
+                                if validation_result['errors']:
+                                    logging.error(f"❌ Content validation errors for {file_path.name}: {validation_result['errors']}")
+                            except Exception as e:
+                                logging.warning(f"⚠️ Could not validate content for {file_path.name}: {e}")
+                        
+                        # Log summary of validation warnings if any
+                        if validation_warnings:
+                            logging.warning(f"⚠️ Content validation warnings for {track_name}:")
+                            for warning in validation_warnings[:3]:  # Limit to first 3 warnings
+                                logging.warning(f"   - {warning}")
+                            if len(validation_warnings) > 3:
+                                logging.warning(f"   ... and {len(validation_warnings) - 3} more warnings")
                         
                         # Update progress tracker
                         if self.progress_tracker and track_index:
@@ -485,6 +509,213 @@ class DownloadManager:
         monitor_thread.start()
         logging.info(f"🎆 Started background completion monitoring for {track_name}")
     
+    def _find_new_completed_files(self, song_path, track_name, initial_files):
+        """Find newly completed files that weren't in the initial snapshot"""
+        try:
+            if not song_path.exists():
+                return []
+            
+            new_files = []
+            
+            for file_path in song_path.iterdir():
+                if file_path.is_file():
+                    filename = file_path.name
+                    filename_lower = filename.lower()
+                    
+                    # Check if it's an audio file (not .crdownload)
+                    is_audio = any(filename_lower.endswith(ext) for ext in ['.mp3', '.aif', '.wav', '.m4a'])
+                    is_recent = (time.time() - file_path.stat().st_mtime) < 300  # Less than 5 minutes old
+                    is_new = filename not in initial_files  # Wasn't there when we started monitoring
+                    
+                    if is_audio and is_recent and is_new:
+                        # Make sure there's no corresponding .crdownload file
+                        crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
+                        if not crdownload_path.exists():
+                            new_files.append(file_path)
+                            logging.info(f"✅ Found NEW completed download: {filename}")
+            
+            return new_files
+            
+        except Exception as e:
+            logging.debug(f"Error finding new completed files: {e}")
+            return []
+    
+    def _does_file_match_track(self, filename, track_name):
+        """Check if a downloaded filename matches the track we're monitoring"""
+        try:
+            filename_lower = filename.lower()
+            track_lower = track_name.lower()
+            
+            # Clean both names for comparison
+            clean_filename = filename_lower.replace('_', ' ').replace('-', ' ')
+            clean_track = track_lower.replace('_', ' ').replace('-', ' ')
+            
+            # Handle special cases first
+            # For "Click" tracks, the filename often just contains "click"
+            if 'click' in clean_track and 'click' in clean_filename:
+                logging.debug(f"Track matching for '{filename}' vs '{track_name}': Special 'click' track match -> MATCH")
+                return True
+            
+            # For vocal tracks, be more flexible with naming variations
+            if 'vocal' in clean_track:
+                vocal_variations = ['vocal', 'vocals', 'voice', 'singer', 'lead vocal', 'backing vocal']
+                if any(variation in clean_filename for variation in vocal_variations):
+                    logging.debug(f"Track matching for '{filename}' vs '{track_name}': Vocal track variation match -> MATCH")
+                    return True
+            
+            # Check for exact track name match in filename
+            track_words = clean_track.split()
+            
+            # All significant words from track name should be in filename
+            # Skip common words like 'the', 'a', 'an', 'and', 'or'
+            skip_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'intro', 'count'}
+            significant_words = [word for word in track_words if word not in skip_words and len(word) > 2]
+            
+            if not significant_words:
+                # If no significant words, fall back to basic check
+                return track_lower in filename_lower
+            
+            # Check if most significant words are present
+            matches = sum(1 for word in significant_words if word in clean_filename)
+            match_ratio = matches / len(significant_words) if significant_words else 0
+            
+            # For single-word tracks, be more lenient
+            if len(significant_words) == 1:
+                is_match = matches >= 1  # Must have the one significant word
+            else:
+                # For multi-word tracks, require at least 60% match
+                is_match = match_ratio >= 0.6
+            
+            logging.debug(f"Track matching for '{filename}' vs '{track_name}': {matches}/{len(significant_words)} significant words matched ({match_ratio:.1%}) -> {'MATCH' if is_match else 'NO MATCH'}")
+            
+            return is_match
+            
+        except Exception as e:
+            logging.debug(f"Error in track matching: {e}")
+            # Fallback to basic string containment
+            return track_name.lower() in filename.lower()
+    
+    def _handle_download_popup(self):
+        """Handle download popup windows that appear after clicking download"""
+        try:
+            original_window = self.driver.window_handles[0]
+            
+            # Get all windows and find the new one
+            all_windows = self.driver.window_handles
+            new_windows = [w for w in all_windows if w != original_window]
+            
+            for new_window in new_windows:
+                try:
+                    self.driver.switch_to.window(new_window)
+                    logging.info(f"📄 Popup window title: {self.driver.title}")
+                    logging.info(f"📄 Popup window URL: {self.driver.current_url}")
+                    
+                    # Look for download-related content
+                    page_text = self.driver.page_source.lower()
+                    has_download_content = any(phrase in page_text for phrase in [
+                        'download', 'generating', 'preparing', 'your file', 'custom backing track'
+                    ])
+                    
+                    if has_download_content:
+                        logging.info("🎵 Download generation page detected!")
+                        
+                        # Wait a bit for download to initialize, then close popup
+                        try:
+                            WebDriverWait(self.driver, 3).until(
+                                lambda driver: True  # Brief wait for initialization
+                            )
+                        except TimeoutException:
+                            pass
+                        
+                        # Close the popup
+                        self.driver.close()
+                        logging.info("🗂️ Closed download popup window")
+                    else:
+                        logging.info("📄 Popup doesn't appear to be download-related")
+                        # Close it anyway to avoid interference
+                        self.driver.close()
+                        logging.info("🗂️ Closed non-download popup window")
+                
+                except Exception as e:
+                    logging.warning(f"Error handling popup window: {e}")
+                    try:
+                        self.driver.close()  # Try to close problematic popup
+                    except:
+                        pass
+            
+            # Ensure we're back on the main window
+            self.driver.switch_to.window(original_window)
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error in popup handling: {e}")
+            try:
+                # Try to get back to main window
+                self.driver.switch_to.window(self.driver.window_handles[0])
+            except:
+                pass
+            return False
+    
+    def _check_and_handle_inline_popups(self):
+        """Check for and handle inline popups that don't create new windows"""
+        try:
+            # Look for common popup/modal selectors
+            popup_selectors = [
+                ".modal",
+                ".popup",
+                ".dialog",
+                ".overlay",
+                "[class*='popup']",
+                "[class*='modal']",
+                "[class*='overlay']"
+            ]
+            
+            for selector in popup_selectors:
+                try:
+                    popup_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    for popup in popup_elements:
+                        if popup.is_displayed():
+                            logging.info(f"🔍 Found inline popup with selector: {selector}")
+                            
+                            # Look for close button
+                            close_selectors = [
+                                "button[class*='close']",
+                                ".close",
+                                "[aria-label='close']",
+                                "[aria-label='Close']",
+                                "button:contains('×')",
+                                "button:contains('X')"
+                            ]
+                            
+                            closed = False
+                            for close_selector in close_selectors:
+                                try:
+                                    close_buttons = popup.find_elements(By.CSS_SELECTOR, close_selector)
+                                    for close_btn in close_buttons:
+                                        if close_btn.is_displayed() and close_btn.is_enabled():
+                                            close_btn.click()
+                                            logging.info(f"✅ Closed inline popup using: {close_selector}")
+                                            closed = True
+                                            break
+                                    if closed:
+                                        break
+                                except:
+                                    continue
+                            
+                            if not closed:
+                                # Try clicking outside the popup
+                                try:
+                                    self.driver.execute_script("arguments[0].style.display = 'none';", popup)
+                                    logging.info("✅ Hid inline popup with JavaScript")
+                                except:
+                                    logging.debug("Could not hide inline popup")
+                
+                except:
+                    continue
+                    
+        except Exception as e:
+            logging.debug(f"Error checking for inline popups: {e}")
+    
     def _check_purchase_required(self):
         """Check if the current page indicates the song needs to be purchased"""
         try:
@@ -526,3 +757,145 @@ class DownloadManager:
         except Exception as e:
             logging.debug(f"Error checking purchase status: {e}")
             return False  # Default to False if we can't determine
+    
+    def _verify_track_selection_state(self, track_name, track_index):
+        """Verify that the correct track is selected/isolated before download
+        
+        Args:
+            track_name (str): Name of the track that should be isolated
+            track_index (str/int): Data-index of the track that should be active
+            
+        Returns:
+            bool: True if verification passes, False otherwise
+        """
+        try:
+            logging.info(f"🔍 Verifying track selection state for {track_name} (index {track_index})")
+            
+            verification_results = {
+                'solo_button_active': False,
+                'track_element_found': False,
+                'other_solos_inactive': True,
+                'track_name_match': False
+            }
+            
+            # 1. Check if the specific track's solo button is active
+            try:
+                track_selector = f".track[data-index='{track_index}']"
+                track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
+                
+                if track_elements:
+                    verification_results['track_element_found'] = True
+                    track_element = track_elements[0]
+                    
+                    # Find solo button within this track
+                    solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
+                    button_classes = solo_button.get_attribute('class') or ''
+                    
+                    if 'is-active' in button_classes.lower() or 'active' in button_classes.lower():
+                        verification_results['solo_button_active'] = True
+                        logging.debug(f"✅ Solo button is active for track {track_index}")
+                    else:
+                        logging.warning(f"⚠️ Solo button not active for track {track_index} - classes: {button_classes}")
+                    
+                    # Check track name matches
+                    try:
+                        caption_element = track_element.find_element(By.CSS_SELECTOR, ".track__caption")
+                        actual_track_name = caption_element.text.strip()
+                        
+                        # Normalize names for comparison
+                        normalized_expected = track_name.lower().replace('_', ' ').replace('-', ' ')
+                        normalized_actual = actual_track_name.lower().replace('_', ' ').replace('-', ' ')
+                        
+                        # Check if names match (allowing for partial matches)
+                        if normalized_expected in normalized_actual or normalized_actual in normalized_expected:
+                            verification_results['track_name_match'] = True
+                            logging.debug(f"✅ Track name matches: expected '{track_name}', actual '{actual_track_name}'")
+                        else:
+                            logging.warning(f"⚠️ Track name mismatch: expected '{track_name}', actual '{actual_track_name}'")
+                    except Exception as e:
+                        logging.debug(f"Could not verify track name: {e}")
+                        
+                else:
+                    logging.warning(f"⚠️ Could not find track element with data-index '{track_index}'")
+                    
+            except Exception as e:
+                logging.warning(f"Error checking specific track solo state: {e}")
+            
+            # 2. Check that no other solo buttons are active (mutual exclusivity)
+            try:
+                all_solo_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button.track__solo")
+                active_count = 0
+                other_active_tracks = []
+                
+                for button in all_solo_buttons:
+                    try:
+                        # Get parent track element to find data-index
+                        parent_track = button.find_element(By.XPATH, "./ancestor::*[contains(@class, 'track')]")
+                        button_track_index = parent_track.get_attribute('data-index')
+                        button_classes = button.get_attribute('class') or ''
+                        
+                        if 'is-active' in button_classes.lower() or 'active' in button_classes.lower():
+                            active_count += 1
+                            if button_track_index != str(track_index):
+                                other_active_tracks.append(button_track_index)
+                    except Exception as e:
+                        logging.debug(f"Error checking solo button state: {e}")
+                
+                if active_count == 1 and not other_active_tracks:
+                    logging.debug(f"✅ Exactly one solo button active (track {track_index})")
+                elif active_count == 0:
+                    logging.warning(f"⚠️ No solo buttons are active (expected track {track_index})")
+                    verification_results['other_solos_inactive'] = False
+                elif other_active_tracks:
+                    logging.warning(f"⚠️ Other tracks also have active solos: {other_active_tracks}")
+                    verification_results['other_solos_inactive'] = False
+                else:
+                    logging.debug(f"Solo button state appears correct ({active_count} active)")
+                    
+            except Exception as e:
+                logging.warning(f"Error checking other solo buttons: {e}")
+            
+            # 3. Additional UI state checks
+            try:
+                # Check for any visible UI indicators of track isolation
+                page_text = self.driver.page_source.lower()
+                
+                # Look for indicators that might suggest track isolation is working
+                isolation_indicators = [
+                    'solo', 'isolated', 'muted', 'active'
+                ]
+                
+                found_indicators = [indicator for indicator in isolation_indicators if indicator in page_text]
+                if found_indicators:
+                    logging.debug(f"Found UI isolation indicators: {found_indicators}")
+                    
+            except Exception as e:
+                logging.debug(f"Error checking UI state indicators: {e}")
+            
+            # Calculate overall verification score
+            passed_checks = sum([
+                verification_results['solo_button_active'],
+                verification_results['track_element_found'],
+                verification_results['other_solos_inactive'],
+                verification_results['track_name_match']
+            ])
+            
+            total_checks = len(verification_results)
+            verification_score = passed_checks / total_checks
+            
+            logging.info(f"🔍 Track selection verification: {passed_checks}/{total_checks} checks passed ({verification_score:.1%})")
+            
+            # Consider verification passed if at least 75% of checks pass
+            verification_passed = verification_score >= 0.75
+            
+            if verification_passed:
+                logging.info(f"✅ Track selection verification PASSED for {track_name}")
+            else:
+                logging.warning(f"⚠️ Track selection verification FAILED for {track_name}")
+                logging.warning(f"   Failed checks: {[k for k, v in verification_results.items() if not v]}")
+            
+            return verification_passed
+            
+        except Exception as e:
+            logging.error(f"❌ Error during track selection verification: {e}")
+            return False  # Fail safely
