@@ -488,6 +488,19 @@ python karaoke_automator.py --debug      # Debug mode with visible browser
 **Analysis**: Identified 43 total helper methods across all packages requiring future test coverage
 **Impact**: Improved code maintainability and confidence in refactored methods
 
+### 📁 Directory Naming Bug - Apostrophe Handling Fixed (2025-06-17)
+**Issue**: Songs with apostrophes created poorly formatted directory names with orphaned letters
+**Example**: "Don't Stop Me Now" became "Queen_Don T Stop Me Now" (space before 'T')
+**Root Cause**: Two separate issues in different modules:
+1. **Direct apostrophes**: `sanitize_filesystem_name()` didn't include apostrophes in invalid_chars
+2. **URL patterns**: URLs like "don-t-stop-me-now" created "Don T Stop" instead of "Dont Stop"
+**Fix Applied**:
+- **packages/download_management/download_manager.py:362**: Added apostrophe to `invalid_chars = '<>:"/\\|?*\'`
+- **packages/configuration/config_manager.py:114**: Added apostrophe to `invalid_chars` + regex to handle `-[letter]-` patterns
+- **Enhanced logic**: `re.sub(r'-([a-z])-', r'\1-', path_part)` converts "don-t-stop" → "dont-stop"
+**Result**: "Queen_Dont Stop Me Now" (clean directory names) ✅
+**Status**: ✅ **FIXED** - All regression tests pass, functionality preserved
+
 ---
 
 ## important-instruction-reminders

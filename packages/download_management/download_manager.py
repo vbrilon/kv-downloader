@@ -359,7 +359,7 @@ class DownloadManager:
     
     def sanitize_filesystem_name(self, name):
         """Remove invalid filesystem characters"""
-        invalid_chars = '<>:"/\\|?*'
+        invalid_chars = '<>:"/\\|?*\''
         for char in invalid_chars:
             name = name.replace(char, '_')
         return name
