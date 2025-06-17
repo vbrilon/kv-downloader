@@ -101,161 +101,186 @@ class TrackManager:
         
         logging.info(f"Soloing track {track_index}: {track_name}")
         
-        # Update progress tracker
         if self.progress_tracker:
             self.progress_tracker.update_track_status(track_index, 'isolating')
         
-        # Navigate to song page if not already there
+        try:
+            self._navigate_to_song_if_needed(song_url)
+            track_element = self._find_track_element(track_index)
+            if not track_element:
+                return False
+            
+            solo_button = self._find_solo_button(track_element, track_index)
+            if not solo_button:
+                return False
+            
+            return self._activate_solo_button(solo_button, track_name)
+            
+        except Exception as e:
+            logging.error(f"Error soloing track {track_name}: {e}")
+            return False
+    
+    def _navigate_to_song_if_needed(self, song_url):
+        """Navigate to song page if not already there"""
         if self.driver.current_url != song_url:
             self.driver.get(song_url)
-            # Wait for track elements to be present
             try:
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, ".track"))
                 )
             except TimeoutException:
                 logging.warning("Timeout waiting for track elements to load")
+    
+    def _find_track_element(self, track_index):
+        """Find and return the track element for the given index"""
+        track_selector = f".track[data-index='{track_index}']"
+        logging.debug(f"Looking for track element with selector: {track_selector}")
+        track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
+        
+        if not track_elements:
+            logging.error(f"Could not find track element with data-index='{track_index}'")
+            available_tracks = [el.get_attribute('data-index') for el in self.driver.find_elements(By.CSS_SELECTOR, '.track')]
+            logging.debug(f"Available tracks on page: {available_tracks}")
+            return None
+        
+        logging.debug(f"Found track element for index {track_index}")
+        return track_elements[0]
+    
+    def _find_solo_button(self, track_element, track_index):
+        """Find and return the solo button within the track element"""
+        solo_selectors = [
+            "button.track__solo",  # Primary selector discovered
+            "button.track__controls.track__solo",
+            ".track__solo",
+            "button[class*='solo']"
+        ]
+        
+        for selector in solo_selectors:
+            try:
+                logging.debug(f"Trying solo button selector: {selector}")
+                solo_button = track_element.find_element(By.CSS_SELECTOR, selector)
+                if solo_button and solo_button.is_displayed():
+                    logging.info(f"Found solo button with selector: {selector}")
+                    logging.debug(f"Solo button is displayed: {solo_button.is_displayed()}, enabled: {solo_button.is_enabled()}")
+                    return solo_button
+            except Exception as e:
+                logging.debug(f"Selector {selector} failed: {e}")
+                continue
+        
+        logging.error(f"Could not find solo button for track {track_index}")
+        logging.debug(f"Track element HTML: {track_element.get_attribute('outerHTML')[:200]}...")
+        return None
+    
+    def _activate_solo_button(self, solo_button, track_name):
+        """Activate the solo button and verify success"""
+        logging.info(f"Clicking solo button for {track_name}")
+        safe_click(self.driver, solo_button, f"solo button for {track_name}")
+        
+        if self._wait_for_solo_activation(solo_button, track_name):
+            return self._finalize_solo_activation(track_name)
+        else:
+            return self._retry_solo_activation(solo_button, track_name)
+    
+    def _wait_for_solo_activation(self, solo_button, track_name):
+        """Wait for solo button to become active"""
+        max_wait = 10  # Maximum 10 seconds to wait for solo to activate
+        check_interval = 0.5  # Check every 500ms
+        waited = 0
+        
+        logging.debug(f"Polling for solo activation for {track_name}...")
+        
+        while waited < max_wait:
+            try:
+                WebDriverWait(self.driver, check_interval).until(
+                    lambda driver: self._is_solo_button_active(solo_button)
+                )
+                logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
+                return True
+            except TimeoutException:
+                waited += check_interval
+            
+            if self._check_solo_activation_status(solo_button, track_name, waited):
+                return True
+        
+        logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name}")
+        return False
+    
+    def _is_solo_button_active(self, solo_button):
+        """Check if solo button has active state"""
+        button_classes = (solo_button.get_attribute('class') or '').lower()
+        return any(state in button_classes for state in ['is-active', 'active', 'selected'])
+    
+    def _check_solo_activation_status(self, solo_button, track_name, waited):
+        """Check and log solo activation status"""
+        try:
+            if self._is_solo_button_active(solo_button):
+                logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
+                return True
+            
+            if waited % 2 == 0:  # Log every 2 seconds
+                button_classes = solo_button.get_attribute('class') or ''
+                logging.debug(f"   Still waiting for solo activation... ({waited}s) - classes: '{button_classes}'")
+        except Exception as e:
+            logging.debug(f"Error checking solo status at {waited}s: {e}")
+        
+        return False
+    
+    def _retry_solo_activation(self, solo_button, track_name):
+        """Retry solo activation with aggressive clicking"""
+        logging.info(f"🔄 Final retry attempt for {track_name}")
         
         try:
-            # Find the specific track element
-            track_selector = f".track[data-index='{track_index}']"
-            logging.debug(f"Looking for track element with selector: {track_selector}")
-            track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
+            self._perform_aggressive_clicks(solo_button)
             
-            if not track_elements:
-                logging.error(f"Could not find track element with data-index='{track_index}'")
-                logging.debug(f"Available tracks on page: {[el.get_attribute('data-index') for el in self.driver.find_elements(By.CSS_SELECTOR, '.track')]}")
-                return False
-            
-            track_element = track_elements[0]
-            logging.debug(f"Found track element for index {track_index}")
-            
-            # Find the solo button within this track
-            solo_selectors = [
-                "button.track__solo",  # Primary selector discovered
-                "button.track__controls.track__solo",
-                ".track__solo",
-                "button[class*='solo']"
-            ]
-            
-            solo_button = None
-            for selector in solo_selectors:
-                try:
-                    logging.debug(f"Trying solo button selector: {selector}")
-                    solo_button = track_element.find_element(By.CSS_SELECTOR, selector)
-                    if solo_button and solo_button.is_displayed():
-                        logging.info(f"Found solo button with selector: {selector}")
-                        logging.debug(f"Solo button is displayed: {solo_button.is_displayed()}, enabled: {solo_button.is_enabled()}")
-                        break
-                except Exception as e:
-                    logging.debug(f"Selector {selector} failed: {e}")
-                    continue
-            
-            if not solo_button:
-                logging.error(f"Could not find solo button for track {track_index}")
-                logging.debug(f"Track element HTML: {track_element.get_attribute('outerHTML')[:200]}...")
-                return False
-            
-            # Click the solo button using JavaScript to avoid interception
-            logging.info(f"Clicking solo button for {track_name}")
-            safe_click(self.driver, solo_button, f"solo button for {track_name}")
-            # Wait for UI to update and poll for active state
-            max_wait = 10  # Maximum 10 seconds to wait for solo to activate
-            check_interval = 0.5  # Check every 500ms
-            waited = 0
-            solo_activated = False
-            
-            logging.debug(f"Polling for solo activation for {track_name}...")
-            
-            while waited < max_wait and not solo_activated:
-                try:
-                    # Smart wait for button state change
-                    WebDriverWait(self.driver, check_interval).until(
-                        lambda driver: 'is-active' in (solo_button.get_attribute('class') or '').lower() or
-                                       'active' in (solo_button.get_attribute('class') or '').lower() or
-                                       'selected' in (solo_button.get_attribute('class') or '').lower()
-                    )
-                    solo_activated = True
-                    break
-                except TimeoutException:
-                    waited += check_interval
-                
-                try:
-                    button_classes = solo_button.get_attribute('class') or ''
-                    if 'is-active' in button_classes.lower() or 'active' in button_classes.lower() or 'selected' in button_classes.lower():
-                        solo_activated = True
-                        logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
-                        break
-                    
-                    # Log periodically for debugging
-                    if waited % 2 == 0:  # Every 2 seconds
-                        logging.debug(f"   Still waiting for solo activation... ({waited}s) - classes: '{button_classes}'")
-                        
-                except Exception as e:
-                    logging.debug(f"Error checking solo status at {waited}s: {e}")
-            
-            if solo_activated:
-                # Wait for backend audio generation to synchronize with UI state
-                logging.info(f"⏳ Waiting {SOLO_ACTIVATION_DELAY}s for audio generation to sync with solo state...")
-                try:
-                    WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
-                        lambda driver: False  # Always timeout to create the delay
-                    )
-                except TimeoutException:
-                    pass  # Expected timeout for delay
-                logging.info(f"✅ Solo activation delay complete for {track_name}")
-                return True
+            if self._wait_for_retry_activation(solo_button):
+                logging.info(f"✅ Solo button active after aggressive retry for {track_name}")
+                return self._finalize_solo_activation(track_name)
             else:
-                logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name}")
+                return self._handle_solo_failure(solo_button, track_name)
                 
-                # Try one more aggressive retry with multiple click attempts
-                logging.info(f"🔄 Final retry attempt for {track_name}")
-                try:
-                    # Multiple clicks with JavaScript to ensure it registers
-                    for i in range(3):
-                        self.driver.execute_script("arguments[0].click();", solo_button)
-                        # Brief wait between clicks
-                        try:
-                            WebDriverWait(self.driver, 1).until(
-                                lambda driver: True  # Just a minimal delay replacement
-                            )
-                        except TimeoutException:
-                            pass
-                    
-                    # Wait for UI state change
-                    try:
-                        WebDriverWait(self.driver, 3).until(
-                            lambda driver: 'is-active' in (solo_button.get_attribute('class') or '').lower() or
-                                           'active' in (solo_button.get_attribute('class') or '').lower()
-                        )
-                    except TimeoutException:
-                        pass  # Continue to final check
-                    final_classes = solo_button.get_attribute('class') or ''
-                    if 'is-active' in final_classes.lower() or 'active' in final_classes.lower():
-                        logging.info(f"✅ Solo button active after aggressive retry for {track_name}")
-                        # Wait for backend audio generation to synchronize with UI state
-                        logging.info(f"⏳ Waiting {SOLO_ACTIVATION_DELAY}s for audio generation to sync with solo state...")
-                        try:
-                            WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
-                                lambda driver: False  # Always timeout to create the delay
-                            )
-                        except TimeoutException:
-                            pass  # Expected timeout for delay
-                        logging.info(f"✅ Solo activation delay complete for {track_name}")
-                        return True
-                    else:
-                        logging.error(f"❌ Solo failed for {track_name} after all retry attempts")
-                        logging.error(f"   Final button classes: '{final_classes}'")
-                        logging.error(f"   Track may have timing issues or site-specific problems")
-                        return False
-                        
-                except Exception as retry_e:
-                    logging.error(f"Error during final retry for {track_name}: {retry_e}")
-                    return False
-            
-        except Exception as e:
-            logging.error(f"Error soloing track {track_name}: {e}")
+        except Exception as retry_e:
+            logging.error(f"Error during final retry for {track_name}: {retry_e}")
             return False
+    
+    def _perform_aggressive_clicks(self, solo_button):
+        """Perform multiple JavaScript clicks to ensure registration"""
+        for i in range(3):
+            self.driver.execute_script("arguments[0].click();", solo_button)
+            try:
+                WebDriverWait(self.driver, 1).until(lambda driver: True)
+            except TimeoutException:
+                pass
+    
+    def _wait_for_retry_activation(self, solo_button):
+        """Wait for solo button activation after retry"""
+        try:
+            WebDriverWait(self.driver, 3).until(
+                lambda driver: self._is_solo_button_active(solo_button)
+            )
+            return True
+        except TimeoutException:
+            return self._is_solo_button_active(solo_button)
+    
+    def _handle_solo_failure(self, solo_button, track_name):
+        """Handle failed solo activation"""
+        final_classes = solo_button.get_attribute('class') or ''
+        logging.error(f"❌ Solo failed for {track_name} after all retry attempts")
+        logging.error(f"   Final button classes: '{final_classes}'")
+        logging.error(f"   Track may have timing issues or site-specific problems")
+        return False
+    
+    def _finalize_solo_activation(self, track_name):
+        """Finalize solo activation with synchronization delay"""
+        logging.info(f"⏳ Waiting {SOLO_ACTIVATION_DELAY}s for audio generation to sync with solo state...")
+        try:
+            WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
+                lambda driver: False  # Always timeout to create the delay
+            )
+        except TimeoutException:
+            pass  # Expected timeout for delay
+        
+        logging.info(f"✅ Solo activation delay complete for {track_name}")
+        return True
     
     def clear_all_solos(self, song_url):
         """Clear all solo buttons (un-mute all tracks)"""

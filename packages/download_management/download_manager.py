@@ -377,145 +377,188 @@ class DownloadManager:
     
     def start_completion_monitoring(self, song_path, track_name, track_index):
         """Start background monitoring for download completion and file cleanup"""
-        
-        def completion_monitor():
-            try:
-                # Get song name from song_path for stats
-                song_name = song_path.name
-                # Monitor for up to 5 minutes for download completion
-                max_wait = 300  # 5 minutes
-                check_interval = 2  # Check every 2 seconds
-                waited = 0
-                
-                # Get initial file snapshot to track what was there before this download
-                initial_files = set()
-                if song_path.exists():
-                    for f in song_path.iterdir():
-                        if f.is_file() and any(f.name.lower().endswith(ext) for ext in ['.mp3', '.aif', '.wav']):
-                            initial_files.add(f.name)
-                
-                logging.info(f"🔍 Starting completion monitoring for {track_name}")
-                logging.info(f"📂 Initial files in folder: {len(initial_files)}")
-                
-                while waited < max_wait:
-                    # Use WebDriverWait for the check interval instead of sleep
-                    try:
-                        WebDriverWait(self.driver, check_interval).until(
-                            lambda driver: False  # Always timeout to create the delay
-                        )
-                    except TimeoutException:
-                        pass  # Expected timeout for delay
-                    waited += check_interval
-                    
-                    # Look for NEW completed downloads (files that weren't there initially)
-                    logging.info(f"🔍 Checking for NEW downloads in {song_path} (waited {waited}s)")
-                    new_completed_files = self._find_new_completed_files(song_path, track_name, initial_files)
-                    
-                    if not new_completed_files:
-                        if waited % 10 == 0:  # Log every 10 seconds
-                            logging.info(f"   No new completed files found yet (waited {waited}s)")
-                    
-                    if new_completed_files:
-                        logging.info(f"🎉 NEW download completed for {track_name}: {len(new_completed_files)} files")
-                        
-                        # Filter to only files that need cleaning and match the current track
-                        files_needing_cleanup = []
-                        for file_path in new_completed_files:
-                            filename = file_path.name
-                            
-                            # Check if this file actually matches the track we're monitoring
-                            track_match = self._does_file_match_track(filename, track_name)
-                            has_custom_suffix = 'Custom_Backing_Track' in filename
-                            
-                            if has_custom_suffix and track_match:
-                                files_needing_cleanup.append(file_path)
-                                logging.info(f"📝 File needs cleanup (matches {track_name}): {filename}")
-                            elif has_custom_suffix and not track_match:
-                                logging.info(f"📝 Skipping file (doesn't match {track_name}): {filename}")
-                            else:
-                                logging.debug(f"📝 File already clean: {filename}")
-                        
-                        # Calculate file size for stats (all completed files, not just ones needing cleanup)
-                        total_file_size = sum(f.stat().st_size for f in new_completed_files)
-                        
-                        # Clean up filenames only for files that actually need it
-                        for file_path in files_needing_cleanup:
-                            self.file_manager.clean_downloaded_filename(file_path, track_name)
-                        
-                        # If we cleaned any files, log success; otherwise log that files were already clean
-                        if files_needing_cleanup:
-                            logging.info(f"✅ Cleaned {len(files_needing_cleanup)} files for {track_name}")
-                        else:
-                            logging.info(f"✅ All files already clean for {track_name}")
-                        
-                        # Perform basic content validation on completed files
-                        validation_warnings = []
-                        for file_path in new_completed_files:
-                            try:
-                                validation_result = self.file_manager.validate_audio_content(file_path, track_name)
-                                if validation_result['warnings']:
-                                    validation_warnings.extend(validation_result['warnings'])
-                                if validation_result['errors']:
-                                    logging.error(f"❌ Content validation errors for {file_path.name}: {validation_result['errors']}")
-                            except Exception as e:
-                                logging.warning(f"⚠️ Could not validate content for {file_path.name}: {e}")
-                        
-                        # Log summary of validation warnings if any
-                        if validation_warnings:
-                            logging.warning(f"⚠️ Content validation warnings for {track_name}:")
-                            for warning in validation_warnings[:3]:  # Limit to first 3 warnings
-                                logging.warning(f"   - {warning}")
-                            if len(validation_warnings) > 3:
-                                logging.warning(f"   ... and {len(validation_warnings) - 3} more warnings")
-                        
-                        # Update progress tracker
-                        if self.progress_tracker and track_index:
-                            self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
-                        
-                        # Record success in stats
-                        if self.stats_reporter:
-                            self.stats_reporter.record_track_completion(song_name, track_name, success=True, 
-                                                                       file_size=total_file_size)
-                        
-                        break
-                    
-                    # Update progress periodically for ongoing downloads
-                    if waited % 20 == 0 and self.progress_tracker and track_index:  # Every 20 seconds
-                        # Check if we still have .crdownload files (download in progress)
-                        crdownload_files = list(song_path.glob("*.crdownload"))
-                        if crdownload_files:
-                            # Calculate rough progress based on time elapsed
-                            progress = min(95, 25 + (waited / max_wait) * 70)  # 25% to 95%
-                            self.progress_tracker.update_track_status(track_index, 'downloading', progress=progress)
-                
-                # Timeout handling
-                if waited >= max_wait:
-                    logging.warning(f"⚠️ Download completion monitoring timed out for {track_name}")
-                    if self.progress_tracker and track_index:
-                        self.progress_tracker.update_track_status(track_index, 'failed')
-                    
-                    # Record timeout failure in stats
-                    if self.stats_reporter:
-                        self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                                   error_message="Download completion timeout")
-                        
-            except Exception as e:
-                logging.error(f"Error in completion monitoring for {track_name}: {e}")
-                if self.progress_tracker and track_index:
-                    self.progress_tracker.update_track_status(track_index, 'failed')
-                
-                # Record monitoring error in stats
-                if self.stats_reporter:
-                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                               error_message=f"Monitoring error: {str(e)}")
-        
-        # Start monitoring in background thread (non-daemon so we can wait for it)
-        monitor_thread = threading.Thread(target=completion_monitor, daemon=False)
+        monitor_thread = threading.Thread(
+            target=self._completion_monitor_worker,
+            args=(song_path, track_name, track_index),
+            daemon=False
+        )
         monitor_thread.start()
         logging.info(f"🎆 Started background completion monitoring for {track_name}")
-        
-        # Return the thread so caller can join it if needed
         return monitor_thread
+    
+    def _completion_monitor_worker(self, song_path, track_name, track_index):
+        """Worker function for completion monitoring"""
+        try:
+            context = self._initialize_monitoring_context(song_path, track_name)
+            self._monitor_download_progress(context, track_index)
+        except Exception as e:
+            self._handle_monitoring_error(e, song_path.name, track_name, track_index)
+    
+    def _initialize_monitoring_context(self, song_path, track_name):
+        """Initialize monitoring context and parameters"""
+        context = {
+            'song_name': song_path.name,
+            'song_path': song_path,
+            'track_name': track_name,
+            'max_wait': 300,  # 5 minutes
+            'check_interval': 2,  # Check every 2 seconds
+            'waited': 0,
+            'initial_files': self._get_initial_file_snapshot(song_path)
+        }
+        
+        logging.info(f"🔍 Starting completion monitoring for {track_name}")
+        logging.info(f"📂 Initial files in folder: {len(context['initial_files'])}")
+        
+        return context
+    
+    def _get_initial_file_snapshot(self, song_path):
+        """Get snapshot of existing files before download"""
+        initial_files = set()
+        if song_path.exists():
+            for f in song_path.iterdir():
+                if f.is_file() and any(f.name.lower().endswith(ext) for ext in ['.mp3', '.aif', '.wav']):
+                    initial_files.add(f.name)
+        return initial_files
+    
+    def _monitor_download_progress(self, context, track_index):
+        """Main monitoring loop for download progress"""
+        while context['waited'] < context['max_wait']:
+            self._wait_for_check_interval(context['check_interval'])
+            context['waited'] += context['check_interval']
+            
+            new_completed_files = self._check_for_new_downloads(context)
+            
+            if new_completed_files:
+                self._handle_completed_download(new_completed_files, context, track_index)
+                break
+            
+            self._update_progress_if_needed(context, track_index)
+        
+        if context['waited'] >= context['max_wait']:
+            self._handle_timeout(context['track_name'], track_index, context['song_name'])
+    
+    def _wait_for_check_interval(self, check_interval):
+        """Wait for the specified check interval"""
+        try:
+            WebDriverWait(self.driver, check_interval).until(
+                lambda driver: False  # Always timeout to create the delay
+            )
+        except TimeoutException:
+            pass  # Expected timeout for delay
+    
+    def _check_for_new_downloads(self, context):
+        """Check for newly completed download files"""
+        logging.info(f"🔍 Checking for NEW downloads in {context['song_path']} (waited {context['waited']}s)")
+        new_completed_files = self._find_new_completed_files(
+            context['song_path'], context['track_name'], context['initial_files']
+        )
+        
+        if not new_completed_files and context['waited'] % 10 == 0:  # Log every 10 seconds
+            logging.info(f"   No new completed files found yet (waited {context['waited']}s)")
+        
+        return new_completed_files
+    
+    def _handle_completed_download(self, new_completed_files, context, track_index):
+        """Handle completed download files"""
+        logging.info(f"🎉 NEW download completed for {context['track_name']}: {len(new_completed_files)} files")
+        
+        files_needing_cleanup = self._identify_files_needing_cleanup(new_completed_files, context['track_name'])
+        total_file_size = sum(f.stat().st_size for f in new_completed_files)
+        
+        self._clean_downloaded_files(files_needing_cleanup, context['track_name'])
+        self._validate_downloaded_files(new_completed_files, context['track_name'])
+        self._update_completion_tracking(track_index, context['song_name'], context['track_name'], total_file_size)
+    
+    def _identify_files_needing_cleanup(self, new_completed_files, track_name):
+        """Identify which files need filename cleanup"""
+        files_needing_cleanup = []
+        for file_path in new_completed_files:
+            filename = file_path.name
+            track_match = self._does_file_match_track(filename, track_name)
+            has_custom_suffix = 'Custom_Backing_Track' in filename
+            
+            if has_custom_suffix and track_match:
+                files_needing_cleanup.append(file_path)
+                logging.info(f"📝 File needs cleanup (matches {track_name}): {filename}")
+            elif has_custom_suffix and not track_match:
+                logging.info(f"📝 Skipping file (doesn't match {track_name}): {filename}")
+            else:
+                logging.debug(f"📝 File already clean: {filename}")
+        
+        return files_needing_cleanup
+    
+    def _clean_downloaded_files(self, files_needing_cleanup, track_name):
+        """Clean filenames for downloaded files"""
+        for file_path in files_needing_cleanup:
+            self.file_manager.clean_downloaded_filename(file_path, track_name)
+        
+        if files_needing_cleanup:
+            logging.info(f"✅ Cleaned {len(files_needing_cleanup)} files for {track_name}")
+        else:
+            logging.info(f"✅ All files already clean for {track_name}")
+    
+    def _validate_downloaded_files(self, new_completed_files, track_name):
+        """Perform content validation on downloaded files"""
+        validation_warnings = []
+        for file_path in new_completed_files:
+            try:
+                validation_result = self.file_manager.validate_audio_content(file_path, track_name)
+                if validation_result['warnings']:
+                    validation_warnings.extend(validation_result['warnings'])
+                if validation_result['errors']:
+                    logging.error(f"❌ Content validation errors for {file_path.name}: {validation_result['errors']}")
+            except Exception as e:
+                logging.warning(f"⚠️ Could not validate content for {file_path.name}: {e}")
+        
+        if validation_warnings:
+            self._log_validation_warnings(validation_warnings, track_name)
+    
+    def _log_validation_warnings(self, validation_warnings, track_name):
+        """Log validation warnings with summary"""
+        logging.warning(f"⚠️ Content validation warnings for {track_name}:")
+        for warning in validation_warnings[:3]:  # Limit to first 3 warnings
+            logging.warning(f"   - {warning}")
+        if len(validation_warnings) > 3:
+            logging.warning(f"   ... and {len(validation_warnings) - 3} more warnings")
+    
+    def _update_completion_tracking(self, track_index, song_name, track_name, total_file_size):
+        """Update progress and statistics tracking for completed download"""
+        if self.progress_tracker and track_index:
+            self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
+        
+        if self.stats_reporter:
+            self.stats_reporter.record_track_completion(song_name, track_name, success=True, 
+                                                       file_size=total_file_size)
+    
+    def _update_progress_if_needed(self, context, track_index):
+        """Update progress periodically for ongoing downloads"""
+        if context['waited'] % 20 == 0 and self.progress_tracker and track_index:  # Every 20 seconds
+            crdownload_files = list(context['song_path'].glob("*.crdownload"))
+            if crdownload_files:
+                progress = min(95, 25 + (context['waited'] / context['max_wait']) * 70)  # 25% to 95%
+                self.progress_tracker.update_track_status(track_index, 'downloading', progress=progress)
+    
+    def _handle_timeout(self, track_name, track_index, song_name):
+        """Handle download monitoring timeout"""
+        logging.warning(f"⚠️ Download completion monitoring timed out for {track_name}")
+        
+        if self.progress_tracker and track_index:
+            self.progress_tracker.update_track_status(track_index, 'failed')
+        
+        if self.stats_reporter:
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                       error_message="Download completion timeout")
+    
+    def _handle_monitoring_error(self, error, song_name, track_name, track_index):
+        """Handle errors during monitoring process"""
+        logging.error(f"Error in completion monitoring for {track_name}: {error}")
+        
+        if self.progress_tracker and track_index:
+            self.progress_tracker.update_track_status(track_index, 'failed')
+        
+        if self.stats_reporter:
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                       error_message=f"Monitoring error: {str(error)}")
     
     def _find_new_completed_files(self, song_path, track_name, initial_files):
         """Find newly completed files that weren't in the initial snapshot"""

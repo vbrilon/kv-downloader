@@ -68,78 +68,103 @@ class LoginManager:
     def logout(self):
         """Logout from the current session"""
         try:
-            # Look for logout/account links
-            logout_selectors = [
-                "//a[contains(text(), 'Log out')]",
-                "//a[contains(text(), 'Logout')]", 
-                "//a[contains(text(), 'Sign out')]",
-                "//a[contains(text(), 'My Account')]"
-            ]
+            if self._attempt_direct_logout():
+                return True
             
-            for selector in logout_selectors:
-                try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    if element and element.is_displayed():
-                        if "my account" in element.text.lower():
-                            # Click My Account to access logout
-                            element.click()
-                            # Wait for account menu to appear
-                            try:
-                                self.wait.until(
-                                    EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log out')]"))
-                                )
-                            except TimeoutException:
-                                pass
-                            # Now look for logout within account area
-                            logout_element = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Log out')]")
-                            logout_element.click()
-                        else:
-                            # Direct logout link
-                            element.click()
-                        
-                        # Wait for logout to complete - look for login link to appear
-                        try:
-                            self.wait.until(
-                                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log in')]"))
-                            )
-                        except TimeoutException:
-                            pass
-                        logging.info("Logout completed")
-                        return True
-                except (Exception, AttributeError, ElementClickInterceptedException) as e:
-                    logging.debug(f"Logout selector failed: {e}")
-                    continue
+            return self._fallback_cookie_logout()
             
-            # Alternative: Clear cookies to force logout
-            logging.info("Direct logout not found, clearing session cookies")
+        except Exception as e:
+            logging.error(f"Error during logout: {e}")
+            return self._emergency_cookie_fallback()
+    
+    def _attempt_direct_logout(self):
+        """Attempt to logout using direct logout links"""
+        logout_selectors = [
+            "//a[contains(text(), 'Log out')]",
+            "//a[contains(text(), 'Logout')]", 
+            "//a[contains(text(), 'Sign out')]",
+            "//a[contains(text(), 'My Account')]"
+        ]
+        
+        for selector in logout_selectors:
+            try:
+                element = self.driver.find_element(By.XPATH, selector)
+                if element and element.is_displayed():
+                    if "my account" in element.text.lower():
+                        return self._logout_via_account_menu(element)
+                    else:
+                        return self._direct_logout_click(element)
+            except (Exception, AttributeError, ElementClickInterceptedException) as e:
+                logging.debug(f"Logout selector failed: {e}")
+                continue
+        
+        return False
+    
+    def _logout_via_account_menu(self, account_element):
+        """Logout by clicking My Account then logout link"""
+        account_element.click()
+        
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log out')]"))
+            )
+        except TimeoutException:
+            pass
+        
+        logout_element = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Log out')]")
+        logout_element.click()
+        
+        return self._verify_logout_success()
+    
+    def _direct_logout_click(self, logout_element):
+        """Logout by clicking direct logout link"""
+        logout_element.click()
+        return self._verify_logout_success()
+    
+    def _verify_logout_success(self):
+        """Verify that logout was successful"""
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log in')]"))
+            )
+        except TimeoutException:
+            pass
+        
+        logging.info("Logout completed")
+        return True
+    
+    def _fallback_cookie_logout(self):
+        """Fallback logout method using cookie clearing"""
+        logging.info("Direct logout not found, clearing session cookies")
+        self.driver.delete_all_cookies()
+        self.driver.refresh()
+        
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
+        
+        return True
+    
+    def _emergency_cookie_fallback(self):
+        """Emergency fallback for logout failures"""
+        try:
             self.driver.delete_all_cookies()
             self.driver.refresh()
-            # Wait for page to reload after cookie clearing
+            
             try:
                 self.wait.until(
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
             except TimeoutException:
                 pass
-            return True
             
-        except Exception as e:
-            logging.error(f"Error during logout: {e}")
-            # Fallback: clear cookies
-            try:
-                self.driver.delete_all_cookies()
-                self.driver.refresh()
-                # Wait for page reload after fallback cookie clearing
-                try:
-                    self.wait.until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                except TimeoutException:
-                    pass
-                return True
-            except (Exception, WebDriverException) as e:
-                logging.debug(f"Cookie fallback failed: {e}")
-                return False
+            return True
+        except (Exception, WebDriverException) as e:
+            logging.debug(f"Cookie fallback failed: {e}")
+            return False
     
     def click_login_link(self):
         """Find and click the login link"""
@@ -179,101 +204,125 @@ class LoginManager:
     def fill_login_form(self, username, password):
         """Fill and submit the login form"""
         try:
-            # Find username field
-            username_selectors = [
-                (By.NAME, "frm_login"),  # Working selector for Karaoke-Version.com
-                (By.NAME, "email"),
-                (By.NAME, "username"),
-                (By.ID, "email"),
-                (By.CSS_SELECTOR, "input[type='email']")
-            ]
-            
-            username_field = None
-            for selector_type, selector_value in username_selectors:
-                try:
-                    username_field = self.wait.until(
-                        EC.presence_of_element_located((selector_type, selector_value))
-                    )
-                    if username_field and username_field.is_displayed():
-                        logging.info(f"Found username field: {selector_type} = '{selector_value}'")
-                        break
-                except (TimeoutException, NoSuchElementException, ElementNotInteractableException) as e:
-                    logging.debug(f"Username selector failed: {e}")
-                    continue
-            
+            username_field = self._find_username_field()
             if not username_field:
-                logging.error("Could not find username field")
                 return False
             
-            # Find password field
-            password_selectors = [
-                (By.NAME, "frm_password"),  # Working selector for Karaoke-Version.com
-                (By.NAME, "password"),
-                (By.CSS_SELECTOR, "input[type='password']")
-            ]
-            
-            password_field = None
-            for selector_type, selector_value in password_selectors:
-                try:
-                    password_field = self.driver.find_element(selector_type, selector_value)
-                    if password_field and password_field.is_displayed():
-                        logging.info(f"Found password field: {selector_type} = '{selector_value}'")
-                        break
-                except (NoSuchElementException, ElementNotInteractableException) as e:
-                    logging.debug(f"Password selector failed: {e}")
-                    continue
-            
+            password_field = self._find_password_field()
             if not password_field:
-                logging.error("Could not find password field")
                 return False
             
-            # Fill credentials
-            logging.info("Filling in credentials...")
-            username_field.clear()
-            username_field.send_keys(username)
-            password_field.clear()
-            password_field.send_keys(password)
+            self._fill_credentials(username_field, username, password_field, password)
             
-            # Find and click submit button
-            submit_selectors = [
-                (By.NAME, "sbm"),  # Working selector for Karaoke-Version.com
-                (By.XPATH, "//input[@type='submit']"),
-                (By.XPATH, "//button[@type='submit']")
-            ]
-            
-            submit_button = None
-            for selector_type, selector_value in submit_selectors:
-                try:
-                    submit_button = self.driver.find_element(selector_type, selector_value)
-                    if submit_button and submit_button.is_displayed():
-                        logging.info(f"Found submit button: {selector_type} = '{selector_value}'")
-                        break
-                except (NoSuchElementException, ElementNotInteractableException) as e:
-                    logging.debug(f"Submit selector failed: {e}")
-                    continue
-            
+            submit_button = self._find_submit_button()
             if not submit_button:
-                logging.error("Could not find submit button")
                 return False
             
-            # Submit form
-            submit_button.click()
-            logging.info("Login form submitted")
-            # Wait for login to process - look for login success indicators
-            try:
-                self.wait.until(
-                    lambda driver: "login" not in driver.current_url.lower() or
-                                   driver.find_elements(By.XPATH, "//*[contains(text(), 'My Account')]") or
-                                   driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
-                )
-            except TimeoutException:
-                logging.debug("Login processing timeout, continuing")
-            
-            return True
+            return self._submit_form(submit_button)
             
         except Exception as e:
             logging.error(f"Error filling login form: {e}")
             return False
+    
+    def _find_username_field(self):
+        """Find and return the username field element"""
+        username_selectors = [
+            (By.NAME, "frm_login"),  # Working selector for Karaoke-Version.com
+            (By.NAME, "email"),
+            (By.NAME, "username"),
+            (By.ID, "email"),
+            (By.CSS_SELECTOR, "input[type='email']")
+        ]
+        
+        username_field = None
+        for selector_type, selector_value in username_selectors:
+            try:
+                username_field = self.wait.until(
+                    EC.presence_of_element_located((selector_type, selector_value))
+                )
+                if username_field and username_field.is_displayed():
+                    logging.info(f"Found username field: {selector_type} = '{selector_value}'")
+                    break
+            except (TimeoutException, NoSuchElementException, ElementNotInteractableException) as e:
+                logging.debug(f"Username selector failed: {e}")
+                continue
+        
+        if not username_field:
+            logging.error("Could not find username field")
+        
+        return username_field
+    
+    def _find_password_field(self):
+        """Find and return the password field element"""
+        password_selectors = [
+            (By.NAME, "frm_password"),  # Working selector for Karaoke-Version.com
+            (By.NAME, "password"),
+            (By.CSS_SELECTOR, "input[type='password']")
+        ]
+        
+        password_field = None
+        for selector_type, selector_value in password_selectors:
+            try:
+                password_field = self.driver.find_element(selector_type, selector_value)
+                if password_field and password_field.is_displayed():
+                    logging.info(f"Found password field: {selector_type} = '{selector_value}'")
+                    break
+            except (NoSuchElementException, ElementNotInteractableException) as e:
+                logging.debug(f"Password selector failed: {e}")
+                continue
+        
+        if not password_field:
+            logging.error("Could not find password field")
+        
+        return password_field
+    
+    def _fill_credentials(self, username_field, username, password_field, password):
+        """Fill username and password fields with credentials"""
+        logging.info("Filling in credentials...")
+        username_field.clear()
+        username_field.send_keys(username)
+        password_field.clear()
+        password_field.send_keys(password)
+    
+    def _find_submit_button(self):
+        """Find and return the submit button element"""
+        submit_selectors = [
+            (By.NAME, "sbm"),  # Working selector for Karaoke-Version.com
+            (By.XPATH, "//input[@type='submit']"),
+            (By.XPATH, "//button[@type='submit']")
+        ]
+        
+        submit_button = None
+        for selector_type, selector_value in submit_selectors:
+            try:
+                submit_button = self.driver.find_element(selector_type, selector_value)
+                if submit_button and submit_button.is_displayed():
+                    logging.info(f"Found submit button: {selector_type} = '{selector_value}'")
+                    break
+            except (NoSuchElementException, ElementNotInteractableException) as e:
+                logging.debug(f"Submit selector failed: {e}")
+                continue
+        
+        if not submit_button:
+            logging.error("Could not find submit button")
+        
+        return submit_button
+    
+    def _submit_form(self, submit_button):
+        """Submit the login form and wait for processing"""
+        submit_button.click()
+        logging.info("Login form submitted")
+        
+        try:
+            self.wait.until(
+                lambda driver: "login" not in driver.current_url.lower() or
+                               driver.find_elements(By.XPATH, "//*[contains(text(), 'My Account')]") or
+                               driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
+            )
+        except TimeoutException:
+            logging.debug("Login processing timeout, continuing")
+        
+        return True
     
     def login(self, username=None, password=None, force_relogin=False):
         """Complete login process with optimized login checking

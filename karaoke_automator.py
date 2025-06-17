@@ -114,12 +114,9 @@ class KaraokeVersionAutomator:
     def run_automation(self):
         """Run complete automation workflow"""
         try:
-            # Step 1: Login
-            if not self.login():
-                logging.error("Login failed - cannot proceed")
+            if not self._setup_automation_session():
                 return False
             
-            # Step 2: Load songs
             songs = self.load_songs_config()
             if not songs:
                 logging.error("No songs configured")
@@ -127,148 +124,163 @@ class KaraokeVersionAutomator:
             
             logging.info(f"Processing {len(songs)} songs...")
             
-            # Step 3: Process each song
             for song in songs:
-                logging.info(f"Processing: {song['name']}")
-                song_key = song.get('key', 0)  # Get key adjustment value
-                
-                # Log song configuration
-                if song_key != 0:
-                    logging.info(f"🎵 Song configuration - Key: {song_key:+d} semitones")
-                else:
-                    logging.info(f"🎵 Song configuration - Key: no adjustment")
-                
-                # Verify login status
-                if not self.is_logged_in():
-                    logging.error("Login session expired")
-                    if not self.login():
-                        logging.error("Re-login failed")
-                        break
-                
-                # Get tracks
-                tracks = self.get_available_tracks(song['url'])
-                if tracks:
-                    logging.info(f"Found {len(tracks)} tracks for {song['name']}")
-                    
-                    # Start progress tracking for this song
-                    if self.progress:
-                        self.progress.start_song(song['name'], tracks)
-                    
-                    # Start stats tracking for this song
-                    self.stats.start_song(song['name'], song['url'], len(tracks))
-                    
-                    # Setup mixer controls once per song
-                    logging.info("🎛️ Setting up mixer controls...")
-                    
-                    # Ensure intro count is enabled
-                    intro_success = self.track_manager.ensure_intro_count_enabled(song['url'])
-                    if not intro_success:
-                        logging.warning("⚠️ Could not enable intro count - continuing anyway")
-                    
-                    # Adjust key if needed
-                    if song_key != 0:
-                        key_success = self.track_manager.adjust_key(song['url'], song_key)
-                        if not key_success:
-                            logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
-                    
-                    # Clear song folder once at the beginning of the song (not for each track)
-                    song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
-                    self.file_manager.clear_song_folder(song_folder_name)
-                    
-                    # Download each track individually
-                    for track in tracks:
-                        track_name = self.sanitize_filename(track['name'])
-                        
-                        # Start timing for this track
-                        if self.progress:
-                            self.progress.update_track_status(track['index'], 'isolating')
-                        
-                        # Record track start in stats
-                        self.stats.record_track_start(song['name'], track_name, track['index'])
-                        
-                        # Solo this track
-                        if self.solo_track(track, song['url']):
-                            # Download the soloed track (folder already cleared once per song)
-                            success = self.download_manager.download_current_mix(
-                                song['url'], 
-                                track_name,
-                                cleanup_existing=False,  # Don't clear folder for each track
-                                song_folder=song.get('name'),  # None if not specified, triggers URL extraction
-                                key_adjustment=song_key,
-                                track_index=track['index']  # Pass track index for accurate progress tracking
-                            )
-                            
-                            if not success:
-                                logging.error(f"Failed to download {track_name}")
-                        else:
-                            logging.error(f"Failed to solo track {track_name}")
-                            if self.progress:
-                                self.progress.update_track_status(track['index'], 'failed')
-                            # Record failure in stats
-                            self.stats.record_track_completion(song['name'], track_name, success=False, 
-                                                             error_message="Failed to solo track")
-                        
-                        # Brief pause between tracks
-                        time.sleep(2)
-                    
-                    # Clear all solos when done
-                    self.clear_all_solos(song['url'])
-                    
-                    # Finish progress tracking for this song
-                    if self.progress:
-                        self.progress.finish_song()
-                    
-                    # Finish stats tracking for this song
-                    self.stats.finish_song(song['name'])
-                        
-                else:
-                    logging.error(f"No tracks found for {song['name']}")
-                    # Still record the song in stats even if no tracks found
-                    self.stats.start_song(song['name'], song['url'], 0)
-                    self.stats.finish_song(song['name'])
+                self._process_single_song(song)
             
             logging.info("Automation completed")
-            
-            # Generate and display final stats report
-            try:
-                print("\n" + "="*80)
-                print("📊 GENERATING FINAL STATISTICS REPORT...")
-                print("="*80)
-                
-                final_report = self.stats.generate_final_report()
-                print(final_report)
-                
-                # Save detailed JSON report
-                stats_saved = self.stats.save_detailed_report("logs/automation_stats.json")
-                if stats_saved:
-                    print(f"\n📁 Detailed statistics saved to: logs/automation_stats.json")
-                
-            except Exception as e:
-                logging.error(f"Error generating final statistics report: {e}")
-            
+            self._generate_final_reports()
             return True
             
         except Exception as e:
             logging.error(f"Automation failed: {e}")
-            
-            # Still generate stats report even if automation failed
-            try:
-                print("\n" + "="*80)
-                print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
-                print("="*80)
-                
-                final_report = self.stats.generate_final_report()
-                print(final_report)
-                
-                # Save detailed JSON report
-                self.stats.save_detailed_report("logs/automation_stats_failed.json")
-                
-            except Exception as stats_error:
-                logging.error(f"Error generating final statistics report: {stats_error}")
-            
+            self._generate_final_reports(failed=True)
             return False
         finally:
             self.driver.quit()
+    
+    def _setup_automation_session(self):
+        """Setup login and verify session is ready"""
+        if not self.login():
+            logging.error("Login failed - cannot proceed")
+            return False
+        return True
+    
+    def _process_single_song(self, song):
+        """Process a single song with all its tracks"""
+        logging.info(f"Processing: {song['name']}")
+        song_key = song.get('key', 0)
+        
+        self._log_song_configuration(song_key)
+        
+        if not self._verify_login_session():
+            return False
+        
+        tracks = self.get_available_tracks(song['url'])
+        if tracks:
+            self._process_song_with_tracks(song, tracks, song_key)
+        else:
+            self._handle_no_tracks_found(song)
+    
+    def _log_song_configuration(self, song_key):
+        """Log the current song configuration"""
+        if song_key != 0:
+            logging.info(f"🎵 Song configuration - Key: {song_key:+d} semitones")
+        else:
+            logging.info(f"🎵 Song configuration - Key: no adjustment")
+    
+    def _verify_login_session(self):
+        """Verify login session is still valid"""
+        if not self.is_logged_in():
+            logging.error("Login session expired")
+            if not self.login():
+                logging.error("Re-login failed")
+                return False
+        return True
+    
+    def _process_song_with_tracks(self, song, tracks, song_key):
+        """Process a song that has available tracks"""
+        logging.info(f"Found {len(tracks)} tracks for {song['name']}")
+        
+        self._start_song_tracking(song, tracks)
+        self._setup_mixer_controls(song, song_key)
+        self._prepare_song_folder(song)
+        self._download_all_tracks(song, tracks, song_key)
+        self._finish_song_processing(song)
+    
+    def _start_song_tracking(self, song, tracks):
+        """Initialize progress and statistics tracking for song"""
+        if self.progress:
+            self.progress.start_song(song['name'], tracks)
+        self.stats.start_song(song['name'], song['url'], len(tracks))
+    
+    def _setup_mixer_controls(self, song, song_key):
+        """Configure mixer controls for the song"""
+        logging.info("🎛️ Setting up mixer controls...")
+        
+        intro_success = self.track_manager.ensure_intro_count_enabled(song['url'])
+        if not intro_success:
+            logging.warning("⚠️ Could not enable intro count - continuing anyway")
+        
+        if song_key != 0:
+            key_success = self.track_manager.adjust_key(song['url'], song_key)
+            if not key_success:
+                logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
+    
+    def _prepare_song_folder(self, song):
+        """Clear and prepare the song folder for downloads"""
+        song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
+        self.file_manager.clear_song_folder(song_folder_name)
+    
+    def _download_all_tracks(self, song, tracks, song_key):
+        """Download all tracks for the song"""
+        for track in tracks:
+            self._download_single_track(song, track, song_key)
+            time.sleep(2)  # Brief pause between tracks
+    
+    def _download_single_track(self, song, track, song_key):
+        """Download a single track"""
+        track_name = self.sanitize_filename(track['name'])
+        
+        if self.progress:
+            self.progress.update_track_status(track['index'], 'isolating')
+        
+        self.stats.record_track_start(song['name'], track_name, track['index'])
+        
+        if self.solo_track(track, song['url']):
+            success = self.download_manager.download_current_mix(
+                song['url'], 
+                track_name,
+                cleanup_existing=False,
+                song_folder=song.get('name'),
+                key_adjustment=song_key,
+                track_index=track['index']
+            )
+            
+            if not success:
+                logging.error(f"Failed to download {track_name}")
+        else:
+            logging.error(f"Failed to solo track {track_name}")
+            if self.progress:
+                self.progress.update_track_status(track['index'], 'failed')
+            self.stats.record_track_completion(song['name'], track_name, success=False, 
+                                             error_message="Failed to solo track")
+    
+    def _finish_song_processing(self, song):
+        """Complete song processing and cleanup"""
+        self.clear_all_solos(song['url'])
+        
+        if self.progress:
+            self.progress.finish_song()
+        
+        self.stats.finish_song(song['name'])
+    
+    def _handle_no_tracks_found(self, song):
+        """Handle case where no tracks are found for a song"""
+        logging.error(f"No tracks found for {song['name']}")
+        self.stats.start_song(song['name'], song['url'], 0)
+        self.stats.finish_song(song['name'])
+    
+    def _generate_final_reports(self, failed=False):
+        """Generate and display final statistics reports"""
+        try:
+            print("\n" + "="*80)
+            if failed:
+                print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
+            else:
+                print("📊 GENERATING FINAL STATISTICS REPORT...")
+            print("="*80)
+            
+            final_report = self.stats.generate_final_report()
+            print(final_report)
+            
+            filename = "logs/automation_stats_failed.json" if failed else "logs/automation_stats.json"
+            stats_saved = self.stats.save_detailed_report(filename)
+            
+            if stats_saved and not failed:
+                print(f"\n📁 Detailed statistics saved to: {filename}")
+            
+        except Exception as e:
+            logging.error(f"Error generating final statistics report: {e}")
 
 
 if __name__ == "__main__":

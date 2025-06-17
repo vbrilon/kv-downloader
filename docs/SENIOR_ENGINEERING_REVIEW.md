@@ -73,9 +73,8 @@ if __name__ == "__main__":
 
 **Recommended Approach**:
 1. **Extract helper methods** with single responsibilities
-2. **Maintain public API** compatibility
-3. **Add unit tests** for extracted methods
-4. **Target**: Methods under 30 lines for optimal readability
+2. **Add unit tests** for extracted methods
+3. **Target**: Methods under 30 lines for optimal readability
 
 **Example Refactoring Pattern**:
 ```python
@@ -161,8 +160,6 @@ monitor_thread.join()
 ```
 
 ### **Future Enhancement Ideas**
-- **Async File Operations**: For handling large downloads efficiently
-- **Parallel Processing**: Concurrent song processing where browser state allows
 - **Performance Metrics**: Runtime monitoring and alerting systems
 - **Production Hardening**: Configuration validation, retry mechanisms, health checks
 
