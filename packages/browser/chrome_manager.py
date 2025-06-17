@@ -196,15 +196,17 @@ class ChromeManager:
                 
                 logging.info("🔚 Closing Chrome browser...")
                 self.driver.quit()
+                logging.info("🔚 Chrome browser closed")
                 
             except Exception as e:
                 logging.warning(f"⚠️ Error during browser cleanup: {e}")
                 # Force quit if normal quit fails
                 try:
                     self.driver.quit()
-                except:
-                    pass
+                except Exception as quit_error:
+                    # Suppress connection errors since browser may already be closed
+                    if "connection refused" not in str(quit_error).lower():
+                        logging.debug(f"Force quit error: {quit_error}")
             finally:
                 self.driver = None
                 self.wait = None
-                logging.info("🔚 Chrome browser closed")

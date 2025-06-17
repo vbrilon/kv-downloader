@@ -597,12 +597,12 @@ class DownloadManager:
             filename_lower = filename.lower()
             track_lower = track_name.lower()
             
-            # Clean both names for comparison
+            # Clean both names for comparison, normalize whitespace
             clean_filename = filename_lower.replace('_', ' ').replace('-', ' ')
-            clean_track = track_lower.replace('_', ' ').replace('-', ' ')
+            clean_track = ' '.join(track_lower.split())  # Normalize multiple spaces to single spaces
             
             # Handle special cases first
-            # For "Click" tracks, the filename often just contains "click"
+            # For "Click" tracks (including "Intro count Click"), match if both contain "click"
             if 'click' in clean_track and 'click' in clean_filename:
                 logging.debug(f"Track matching for '{filename}' vs '{track_name}': Special 'click' track match -> MATCH")
                 return True
@@ -619,7 +619,8 @@ class DownloadManager:
             
             # All significant words from track name should be in filename
             # Skip common words like 'the', 'a', 'an', 'and', 'or'
-            skip_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'intro', 'count'}
+            # Note: 'intro' and 'count' are NOT in skip words for Click tracks
+            skip_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for'}
             significant_words = [word for word in track_words if word not in skip_words and len(word) > 2]
             
             if not significant_words:

@@ -136,7 +136,8 @@ class KaraokeVersionAutomator:
             self._generate_final_reports(failed=True)
             return False
         finally:
-            self.driver.quit()
+            # Cleanup is handled by chrome_manager.quit() in main finally block
+            pass
     
     def _setup_automation_session(self):
         """Setup login and verify session is ready"""
@@ -321,12 +322,17 @@ if __name__ == "__main__":
         logging.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
         if automator:
             try:
-                if hasattr(automator, 'driver') and automator.driver:
-                    logging.info("🧹 Shutting down browser driver...")
-                    automator.driver.quit()
+                # Only use chrome_manager.quit() to avoid duplicate cleanup
                 if hasattr(automator, 'chrome_manager') and automator.chrome_manager:
                     logging.info("🧹 Shutting down Chrome manager...")
                     automator.chrome_manager.quit()
+                elif hasattr(automator, 'driver') and automator.driver:
+                    logging.info("🧹 Shutting down browser driver...")
+                    try:
+                        automator.driver.quit()
+                    except Exception as e:
+                        if "connection refused" not in str(e).lower():
+                            logging.debug(f"Signal cleanup error: {e}")
             except Exception as e:
                 logging.error(f"⚠️ Error during signal cleanup: {e}")
         sys.exit(0)
@@ -362,15 +368,18 @@ if __name__ == "__main__":
         # Comprehensive cleanup - ensure browser resources are properly closed
         if automator:
             try:
-                # Try to quit the browser driver if it exists
-                if hasattr(automator, 'driver') and automator.driver:
-                    logging.info("🧹 Cleaning up browser driver...")
-                    automator.driver.quit()
-                    
-                # Try to quit the chrome manager if it exists
+                # Only use chrome_manager.quit() to avoid duplicate cleanup
                 if hasattr(automator, 'chrome_manager') and automator.chrome_manager:
                     logging.info("🧹 Cleaning up Chrome manager...")
                     automator.chrome_manager.quit()
+                elif hasattr(automator, 'driver') and automator.driver:
+                    # Fallback if chrome_manager is not available
+                    logging.info("🧹 Cleaning up browser driver...")
+                    try:
+                        automator.driver.quit()
+                    except Exception as e:
+                        if "connection refused" not in str(e).lower():
+                            logging.debug(f"Driver cleanup error: {e}")
                 
                 # Clean up any temporary files in download directory
                 if hasattr(automator, 'file_manager') and automator.file_manager:
