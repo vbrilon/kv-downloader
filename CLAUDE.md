@@ -434,11 +434,49 @@ python -c "from karaoke_automator import KaraokeVersionAutomator; print('✅ Rea
 
 **Run Automation**:
 ```bash
-# Edit songs.yaml with your desired songs
+# Edit songs.yaml with your desired songs (check indentation: exactly 2 spaces!)
 python karaoke_automator.py              # Production mode
 python karaoke_automator.py --debug      # Debug mode with visible browser
 ```
 
+## Recent Updates & Bug Fixes
+
+### 🎯 Click Track Recognition Fixed (2025-06-17)
+**Issue**: Click tracks with spaced names like "Intro count      Click" were showing as failed despite successful downloads
+**Root Cause**: File matching logic incorrectly filtered out "intro" and "count" as skip words, failing to match downloaded files
+**Fix Applied**: 
+- Enhanced `_does_file_match_track()` method in `packages/download_management/download_manager.py`
+- Removed "intro" and "count" from skip words list  
+- Added proper whitespace normalization with `' '.join(track_lower.split())`
+- Improved click track special case handling
+**Result**: Click tracks now properly recognized and marked successful ✅
+
+### 🧹 Browser Cleanup Errors Fixed (2025-06-17)  
+**Issue**: Connection refused errors flooding the screen after automation completion
+**Root Cause**: Multiple cleanup attempts trying to quit the same browser driver (3 separate locations)
+**Fix Applied**:
+- Centralized cleanup through `chrome_manager.quit()` only
+- Removed duplicate `driver.quit()` from `run_automation()` finally block  
+- Added connection error suppression for already-closed browsers
+- Updated signal handler to prevent duplicate cleanup attempts
+**Result**: Clean automation completion without error message spam ✅
+
+### 📝 YAML Configuration Errors (2025-06-17)
+**Issue**: "ERROR: string indices must be integers, not 'str'" during configuration loading
+**Root Cause**: YAML indentation sensitivity - 3 spaces instead of 2 caused parsing failure
+**Fix Applied**: 
+- Fixed `songs.yaml` indentation (line 12: 3 spaces → 2 spaces)
+- Enhanced README with comprehensive YAML formatting requirements
+- Added troubleshooting section mapping errors to solutions
+**Result**: Proper configuration parsing and user guidance ✅
+
+### 🔧 Phase 2 Refactoring Completed (2025-06-17)
+**Achievement**: Successfully refactored 5 major methods (539 total lines) into 52 focused helper methods
+- **karaoke_automator.py**: `run_automation()` (124 lines → 12 methods)
+- **authentication/**: `fill_login_form()` (86→5), `logout()` (71→7)  
+- **download_management/**: `start_completion_monitoring()` (116→15)
+- **track_management/**: `solo_track()` (142→13)
+**Benefits**: Methods under 30 lines, improved maintainability, 100% functionality preserved
 
 ---
 
