@@ -16,7 +16,7 @@ git clone https://github.com/vbrilon/kv-downloader
 cd kv-downloader
 
 # Recommend that you set up and activate a virtual environment to run in
-python3 -m venv kv-downloader
+python3 -m venv .
 
 # Install dependencies
 pip install -r requirements.txt
