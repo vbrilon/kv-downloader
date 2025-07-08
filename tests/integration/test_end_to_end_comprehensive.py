@@ -5,10 +5,15 @@ Tests complete automation workflow from login to download completion
 This is the critical test to run before/after refactoring
 """
 
+import sys
 import time
 import logging
 import json
 from pathlib import Path
+
+# Add project root to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from karaoke_automator import KaraokeVersionAutomator, setup_logging
 
 def test_end_to_end_automation():
@@ -110,7 +115,7 @@ def test_end_to_end_automation():
         
         # Test 5: Intro count checkbox
         print("🎼 Testing intro count checkbox...")
-        intro_success = automator.track_handler.ensure_intro_count_enabled(song_url)
+        intro_success = automator.track_manager.ensure_intro_count_enabled(song_url)
         if intro_success:
             print("✅ Intro count checkbox enabled successfully")
             test_results['mixer_intro_count'] = True
@@ -124,7 +129,7 @@ def test_end_to_end_automation():
             print("   No key adjustment needed (key = 0)")
             test_results['mixer_key_adjustment'] = True
         else:
-            key_success = automator.track_handler.adjust_key(song_url, song_key)
+            key_success = automator.track_manager.adjust_key(song_url, song_key)
             if key_success:
                 print(f"✅ Key adjustment to {song_key:+d} successful")
                 test_results['mixer_key_adjustment'] = True
@@ -151,8 +156,13 @@ def test_end_to_end_automation():
         print("⬇️ Testing download initiation...")
         
         # Setup download monitoring
-        song_folder_name = automator.track_handler._extract_song_folder_name(song_url)
-        song_path = automator.track_handler._setup_song_folder(song_folder_name)
+        song_folder_name = automator.download_manager.extract_song_folder_name(song_url)
+        # Use the default download folder
+        try:
+            from packages.configuration import DOWNLOAD_FOLDER
+        except ImportError:
+            DOWNLOAD_FOLDER = "./downloads"
+        song_path = Path(DOWNLOAD_FOLDER) / song_folder_name
         
         # Clear any existing files for clean test
         existing_files = list(song_path.glob("*")) if song_path.exists() else []
@@ -162,7 +172,7 @@ def test_end_to_end_automation():
         track_name = automator.sanitize_filename(test_track['name'])
         download_start = time.time()
         
-        download_success = automator.track_handler.download_current_mix(
+        download_success = automator.download_manager.download_current_mix(
             song_url,
             track_name,
             cleanup_existing=True,

@@ -504,3 +504,120 @@ class FileManager:
         
         # If we can't extract a track name, return None
         return None
+    
+    def validate_audio_content(self, file_path, track_name, expected_properties=None):
+        """Perform basic audio content validation to detect mismatched tracks
+        
+        Args:
+            file_path (Path): Path to the downloaded audio file
+            track_name (str): Expected track name for validation
+            expected_properties (dict): Optional expected file properties
+            
+        Returns:
+            dict: Validation results with status and details
+        """
+        validation_result = {
+            'is_valid': True,
+            'warnings': [],
+            'errors': [],
+            'file_info': {}
+        }
+        
+        try:
+            if not file_path.exists():
+                validation_result['is_valid'] = False
+                validation_result['errors'].append(f"File does not exist: {file_path}")
+                return validation_result
+            
+            # Basic file validation
+            file_size = file_path.stat().st_size
+            file_ext = file_path.suffix.lower()
+            
+            validation_result['file_info'] = {
+                'size_bytes': file_size,
+                'size_mb': round(file_size / (1024 * 1024), 2),
+                'extension': file_ext,
+                'name': file_path.name
+            }
+            
+            # File size validation (typical karaoke tracks are 3-15 MB)
+            if file_size < 1024 * 1024:  # Less than 1 MB
+                validation_result['warnings'].append(
+                    f"File size is unusually small ({validation_result['file_info']['size_mb']} MB) - "
+                    "may be incomplete or corrupted"
+                )
+            elif file_size > 50 * 1024 * 1024:  # More than 50 MB
+                validation_result['warnings'].append(
+                    f"File size is unusually large ({validation_result['file_info']['size_mb']} MB) - "
+                    "may contain full song or multiple tracks"
+                )
+            
+            # File format validation
+            valid_extensions = ['.mp3', '.aif', '.wav', '.m4a']
+            if file_ext not in valid_extensions:
+                validation_result['warnings'].append(
+                    f"Unexpected file format: {file_ext}. Expected: {valid_extensions}"
+                )
+            
+            # Check if file appears to be audio (basic magic number check for MP3)
+            try:
+                with open(file_path, 'rb') as f:
+                    header = f.read(4)
+                    if file_ext == '.mp3':
+                        # Check for MP3 magic numbers
+                        if not (header.startswith(b'ID3') or header.startswith(b'\xff\xfb') or header.startswith(b'\xff\xf3')):
+                            validation_result['warnings'].append(
+                                "File may not be a valid MP3 audio file (unexpected header)"
+                            )
+            except Exception as e:
+                validation_result['warnings'].append(f"Could not validate file header: {e}")
+            
+            # Track name correlation check
+            filename_lower = file_path.name.lower()
+            track_lower = track_name.lower()
+            
+            # Extract significant words from track name
+            track_words = set(track_lower.replace('_', ' ').replace('-', ' ').split())
+            skip_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'custom', 'backing', 'track'}
+            significant_track_words = {word for word in track_words if word not in skip_words and len(word) > 2}
+            
+            if significant_track_words:
+                # Check how many track words appear in filename
+                matches = sum(1 for word in significant_track_words if word in filename_lower)
+                match_ratio = matches / len(significant_track_words)
+                
+                if match_ratio < 0.3:  # Less than 30% of words match
+                    validation_result['warnings'].append(
+                        f"Filename may not match track name - only {matches}/{len(significant_track_words)} "
+                        f"significant words found in filename"
+                    )
+                elif match_ratio >= 0.7:  # 70% or more words match
+                    validation_result['file_info']['name_correlation'] = 'good'
+                else:
+                    validation_result['file_info']['name_correlation'] = 'partial'
+            
+            # Additional validation based on expected properties
+            if expected_properties:
+                if 'expected_size_range' in expected_properties:
+                    min_size, max_size = expected_properties['expected_size_range']
+                    if not (min_size <= file_size <= max_size):
+                        validation_result['warnings'].append(
+                            f"File size ({validation_result['file_info']['size_mb']} MB) outside expected range "
+                            f"({min_size/(1024*1024):.1f}-{max_size/(1024*1024):.1f} MB)"
+                        )
+            
+            # Log validation results
+            if validation_result['errors']:
+                logging.error(f"❌ Content validation failed for {track_name}: {validation_result['errors']}")
+            elif validation_result['warnings']:
+                logging.warning(f"⚠️ Content validation warnings for {track_name}: {validation_result['warnings']}")
+            else:
+                logging.info(f"✅ Content validation passed for {track_name} ({validation_result['file_info']['size_mb']} MB)")
+            
+            return validation_result
+            
+        except Exception as e:
+            validation_result['is_valid'] = False
+            validation_result['errors'].append(f"Validation error: {str(e)}")
+            logging.error(f"❌ Error during content validation for {track_name}: {e}")
+            return validation_result

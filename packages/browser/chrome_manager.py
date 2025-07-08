@@ -158,10 +158,55 @@ class ChromeManager:
             })
             logging.debug(f"Updated download path to: {path}")
     
+    def wait_for_downloads_to_complete(self, download_path, timeout=60):
+        """Wait for any active downloads to complete before quitting"""
+        if not self.driver:
+            return
+            
+        import time
+        import glob
+        from pathlib import Path
+        
+        logging.info("🔍 Checking for active downloads before closing browser...")
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # Check for .crdownload files which indicate active downloads
+            download_folder = Path(download_path)
+            if download_folder.exists():
+                crdownload_files = list(download_folder.glob("**/*.crdownload"))
+                if crdownload_files:
+                    logging.info(f"⏳ Waiting for {len(crdownload_files)} active downloads to complete...")
+                    time.sleep(2)
+                    continue
+            
+            # No active downloads found
+            logging.info("✅ No active downloads detected")
+            break
+        else:
+            logging.warning(f"⚠️ Timeout waiting for downloads to complete after {timeout} seconds")
+    
     def quit(self):
-        """Safely quit the browser"""
+        """Safely quit the browser after waiting for downloads to complete"""
         if self.driver:
-            self.driver.quit()
-            self.driver = None
-            self.wait = None
-            logging.info("🔚 Chrome browser closed")
+            try:
+                # Wait for any active downloads to complete
+                from packages.configuration import DOWNLOAD_FOLDER
+                self.wait_for_downloads_to_complete(DOWNLOAD_FOLDER)
+                
+                logging.info("🔚 Closing Chrome browser...")
+                self.driver.quit()
+                logging.info("🔚 Chrome browser closed")
+                
+            except Exception as e:
+                logging.warning(f"⚠️ Error during browser cleanup: {e}")
+                # Force quit if normal quit fails
+                try:
+                    self.driver.quit()
+                except Exception as quit_error:
+                    # Suppress connection errors since browser may already be closed
+                    if "connection refused" not in str(quit_error).lower():
+                        logging.debug(f"Force quit error: {quit_error}")
+            finally:
+                self.driver = None
+                self.wait = None

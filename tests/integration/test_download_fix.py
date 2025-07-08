@@ -5,9 +5,14 @@ Test script to verify the download logic fixes
 - No cleanup, direct download to song folder only
 """
 
+import sys
 import time
 import logging
 from pathlib import Path
+
+# Add project root to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from karaoke_automator import KaraokeVersionAutomator, setup_logging
 
 def test_single_track_download():
@@ -54,8 +59,13 @@ def test_single_track_download():
         print(f"\n🎯 Testing download of: {test_track['name']}")
         
         # Check song folder before download
-        song_folder_name = automator.track_handler._extract_song_folder_name(test_song_url)
-        song_path = Path(automator.track_handler._setup_song_folder(song_folder_name))
+        song_folder_name = automator.download_manager.extract_song_folder_name(test_song_url)
+        # Use the default download folder
+        try:
+            from packages.configuration import DOWNLOAD_FOLDER
+        except ImportError:
+            DOWNLOAD_FOLDER = "./downloads"
+        song_path = Path(DOWNLOAD_FOLDER) / song_folder_name
         
         print(f"📁 Song folder: {song_path}")
         initial_files = list(song_path.glob("*")) if song_path.exists() else []
@@ -73,7 +83,7 @@ def test_single_track_download():
         print("⬇️ Starting download...")
         track_name = automator.sanitize_filename(test_track['name'])
         
-        download_success = automator.track_handler.download_current_mix(
+        download_success = automator.download_manager.download_current_mix(
             test_song_url,
             track_name,
             cleanup_existing=True,  # This is now commented out in the code
@@ -135,8 +145,8 @@ def test_single_track_download():
     finally:
         # Keep browser open for inspection
         print("\n⏸️ Browser window left open for inspection")
-        print("Press Enter to close browser and exit...")
-        input()
+        print("Automatically closing in 3 seconds...")
+        time.sleep(3)
         automator.driver.quit()
 
 if __name__ == "__main__":

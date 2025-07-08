@@ -107,11 +107,15 @@ class ConfigurationManager:
                 if path_part.endswith('.html'):
                     path_part = path_part[:-5]
                 
-                # Replace hyphens with spaces and title case
-                name = path_part.replace('-', ' ').title()
+                # Handle common apostrophe patterns in URLs (e.g., "don-t-stop" -> "dont-stop")
+                import re
+                name = re.sub(r'-([a-z])-', r'\1-', path_part)
+                
+                # Replace remaining hyphens with spaces and title case
+                name = name.replace('-', ' ').title()
                 
                 # Clean up any remaining invalid characters
-                invalid_chars = '<>:"/\\|?*'
+                invalid_chars = '<>:"/\\|?*\''
                 for char in invalid_chars:
                     name = name.replace(char, '_')
                 

@@ -7,6 +7,14 @@ import pickle
 from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import (
+    TimeoutException, 
+    NoSuchElementException, 
+    ElementNotInteractableException,
+    ElementClickInterceptedException,
+    WebDriverException,
+    StaleElementReferenceException
+)
 
 try:
     from packages.configuration import USERNAME, PASSWORD
@@ -19,7 +27,7 @@ except ImportError:
 class LoginManager:
     """Handles all login-related functionality for Karaoke-Version.com"""
     
-    def __init__(self, driver, wait, session_file="session_data.pkl"):
+    def __init__(self, driver, wait, session_file=".cache/session_data.pkl"):
         """
         Initialize login manager
         
@@ -60,52 +68,103 @@ class LoginManager:
     def logout(self):
         """Logout from the current session"""
         try:
-            # Look for logout/account links
-            logout_selectors = [
-                "//a[contains(text(), 'Log out')]",
-                "//a[contains(text(), 'Logout')]", 
-                "//a[contains(text(), 'Sign out')]",
-                "//a[contains(text(), 'My Account')]"
-            ]
+            if self._attempt_direct_logout():
+                return True
             
-            for selector in logout_selectors:
-                try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    if element and element.is_displayed():
-                        if "my account" in element.text.lower():
-                            # Click My Account to access logout
-                            element.click()
-                            time.sleep(2)
-                            # Now look for logout within account area
-                            logout_element = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Log out')]")
-                            logout_element.click()
-                        else:
-                            # Direct logout link
-                            element.click()
-                        
-                        time.sleep(3)
-                        logging.info("Logout completed")
-                        return True
-                except:
-                    continue
-            
-            # Alternative: Clear cookies to force logout
-            logging.info("Direct logout not found, clearing session cookies")
-            self.driver.delete_all_cookies()
-            self.driver.refresh()
-            time.sleep(3)
-            return True
+            return self._fallback_cookie_logout()
             
         except Exception as e:
             logging.error(f"Error during logout: {e}")
-            # Fallback: clear cookies
+            return self._emergency_cookie_fallback()
+    
+    def _attempt_direct_logout(self):
+        """Attempt to logout using direct logout links"""
+        logout_selectors = [
+            "//a[contains(text(), 'Log out')]",
+            "//a[contains(text(), 'Logout')]", 
+            "//a[contains(text(), 'Sign out')]",
+            "//a[contains(text(), 'My Account')]"
+        ]
+        
+        for selector in logout_selectors:
             try:
-                self.driver.delete_all_cookies()
-                self.driver.refresh()
-                time.sleep(3)
-                return True
-            except:
-                return False
+                element = self.driver.find_element(By.XPATH, selector)
+                if element and element.is_displayed():
+                    if "my account" in element.text.lower():
+                        return self._logout_via_account_menu(element)
+                    else:
+                        return self._direct_logout_click(element)
+            except (Exception, AttributeError, ElementClickInterceptedException) as e:
+                logging.debug(f"Logout selector failed: {e}")
+                continue
+        
+        return False
+    
+    def _logout_via_account_menu(self, account_element):
+        """Logout by clicking My Account then logout link"""
+        account_element.click()
+        
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log out')]"))
+            )
+        except TimeoutException:
+            pass
+        
+        logout_element = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Log out')]")
+        logout_element.click()
+        
+        return self._verify_logout_success()
+    
+    def _direct_logout_click(self, logout_element):
+        """Logout by clicking direct logout link"""
+        logout_element.click()
+        return self._verify_logout_success()
+    
+    def _verify_logout_success(self):
+        """Verify that logout was successful"""
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Log in')]"))
+            )
+        except TimeoutException:
+            pass
+        
+        logging.info("Logout completed")
+        return True
+    
+    def _fallback_cookie_logout(self):
+        """Fallback logout method using cookie clearing"""
+        logging.info("Direct logout not found, clearing session cookies")
+        self.driver.delete_all_cookies()
+        self.driver.refresh()
+        
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
+        
+        return True
+    
+    def _emergency_cookie_fallback(self):
+        """Emergency fallback for logout failures"""
+        try:
+            self.driver.delete_all_cookies()
+            self.driver.refresh()
+            
+            try:
+                self.wait.until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except TimeoutException:
+                pass
+            
+            return True
+        except (Exception, WebDriverException) as e:
+            logging.debug(f"Cookie fallback failed: {e}")
+            return False
     
     def click_login_link(self):
         """Find and click the login link"""
@@ -123,9 +182,16 @@ class LoginManager:
                     if element and element.is_displayed():
                         logging.info(f"Clicking login link: '{element.text}'")
                         element.click()
-                        time.sleep(3)
+                        # Wait for login form to appear
+                        try:
+                            self.wait.until(
+                                EC.presence_of_element_located((By.NAME, "frm_login"))
+                            )
+                        except TimeoutException:
+                            pass
                         return True
-                except:
+                except (Exception, NoSuchElementException, ElementNotInteractableException) as e:
+                    logging.debug(f"Login selector failed: {e}")
                     continue
             
             logging.warning("No login link found")
@@ -138,90 +204,125 @@ class LoginManager:
     def fill_login_form(self, username, password):
         """Fill and submit the login form"""
         try:
-            # Find username field
-            username_selectors = [
-                (By.NAME, "frm_login"),  # Working selector for Karaoke-Version.com
-                (By.NAME, "email"),
-                (By.NAME, "username"),
-                (By.ID, "email"),
-                (By.CSS_SELECTOR, "input[type='email']")
-            ]
-            
-            username_field = None
-            for selector_type, selector_value in username_selectors:
-                try:
-                    username_field = self.wait.until(
-                        EC.presence_of_element_located((selector_type, selector_value))
-                    )
-                    if username_field and username_field.is_displayed():
-                        logging.info(f"Found username field: {selector_type} = '{selector_value}'")
-                        break
-                except:
-                    continue
-            
+            username_field = self._find_username_field()
             if not username_field:
-                logging.error("Could not find username field")
                 return False
             
-            # Find password field
-            password_selectors = [
-                (By.NAME, "frm_password"),  # Working selector for Karaoke-Version.com
-                (By.NAME, "password"),
-                (By.CSS_SELECTOR, "input[type='password']")
-            ]
-            
-            password_field = None
-            for selector_type, selector_value in password_selectors:
-                try:
-                    password_field = self.driver.find_element(selector_type, selector_value)
-                    if password_field and password_field.is_displayed():
-                        logging.info(f"Found password field: {selector_type} = '{selector_value}'")
-                        break
-                except:
-                    continue
-            
+            password_field = self._find_password_field()
             if not password_field:
-                logging.error("Could not find password field")
                 return False
             
-            # Fill credentials
-            logging.info("Filling in credentials...")
-            username_field.clear()
-            username_field.send_keys(username)
-            password_field.clear()
-            password_field.send_keys(password)
+            self._fill_credentials(username_field, username, password_field, password)
             
-            # Find and click submit button
-            submit_selectors = [
-                (By.NAME, "sbm"),  # Working selector for Karaoke-Version.com
-                (By.XPATH, "//input[@type='submit']"),
-                (By.XPATH, "//button[@type='submit']")
-            ]
-            
-            submit_button = None
-            for selector_type, selector_value in submit_selectors:
-                try:
-                    submit_button = self.driver.find_element(selector_type, selector_value)
-                    if submit_button and submit_button.is_displayed():
-                        logging.info(f"Found submit button: {selector_type} = '{selector_value}'")
-                        break
-                except:
-                    continue
-            
+            submit_button = self._find_submit_button()
             if not submit_button:
-                logging.error("Could not find submit button")
                 return False
             
-            # Submit form
-            submit_button.click()
-            logging.info("Login form submitted")
-            time.sleep(5)  # Wait for login to process
-            
-            return True
+            return self._submit_form(submit_button)
             
         except Exception as e:
             logging.error(f"Error filling login form: {e}")
             return False
+    
+    def _find_username_field(self):
+        """Find and return the username field element"""
+        username_selectors = [
+            (By.NAME, "frm_login"),  # Working selector for Karaoke-Version.com
+            (By.NAME, "email"),
+            (By.NAME, "username"),
+            (By.ID, "email"),
+            (By.CSS_SELECTOR, "input[type='email']")
+        ]
+        
+        username_field = None
+        for selector_type, selector_value in username_selectors:
+            try:
+                username_field = self.wait.until(
+                    EC.presence_of_element_located((selector_type, selector_value))
+                )
+                if username_field and username_field.is_displayed():
+                    logging.info(f"Found username field: {selector_type} = '{selector_value}'")
+                    break
+            except (TimeoutException, NoSuchElementException, ElementNotInteractableException) as e:
+                logging.debug(f"Username selector failed: {e}")
+                continue
+        
+        if not username_field:
+            logging.error("Could not find username field")
+        
+        return username_field
+    
+    def _find_password_field(self):
+        """Find and return the password field element"""
+        password_selectors = [
+            (By.NAME, "frm_password"),  # Working selector for Karaoke-Version.com
+            (By.NAME, "password"),
+            (By.CSS_SELECTOR, "input[type='password']")
+        ]
+        
+        password_field = None
+        for selector_type, selector_value in password_selectors:
+            try:
+                password_field = self.driver.find_element(selector_type, selector_value)
+                if password_field and password_field.is_displayed():
+                    logging.info(f"Found password field: {selector_type} = '{selector_value}'")
+                    break
+            except (NoSuchElementException, ElementNotInteractableException) as e:
+                logging.debug(f"Password selector failed: {e}")
+                continue
+        
+        if not password_field:
+            logging.error("Could not find password field")
+        
+        return password_field
+    
+    def _fill_credentials(self, username_field, username, password_field, password):
+        """Fill username and password fields with credentials"""
+        logging.info("Filling in credentials...")
+        username_field.clear()
+        username_field.send_keys(username)
+        password_field.clear()
+        password_field.send_keys(password)
+    
+    def _find_submit_button(self):
+        """Find and return the submit button element"""
+        submit_selectors = [
+            (By.NAME, "sbm"),  # Working selector for Karaoke-Version.com
+            (By.XPATH, "//input[@type='submit']"),
+            (By.XPATH, "//button[@type='submit']")
+        ]
+        
+        submit_button = None
+        for selector_type, selector_value in submit_selectors:
+            try:
+                submit_button = self.driver.find_element(selector_type, selector_value)
+                if submit_button and submit_button.is_displayed():
+                    logging.info(f"Found submit button: {selector_type} = '{selector_value}'")
+                    break
+            except (NoSuchElementException, ElementNotInteractableException) as e:
+                logging.debug(f"Submit selector failed: {e}")
+                continue
+        
+        if not submit_button:
+            logging.error("Could not find submit button")
+        
+        return submit_button
+    
+    def _submit_form(self, submit_button):
+        """Submit the login form and wait for processing"""
+        submit_button.click()
+        logging.info("Login form submitted")
+        
+        try:
+            self.wait.until(
+                lambda driver: "login" not in driver.current_url.lower() or
+                               driver.find_elements(By.XPATH, "//*[contains(text(), 'My Account')]") or
+                               driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
+            )
+        except TimeoutException:
+            logging.debug("Login processing timeout, continuing")
+        
+        return True
     
     def login(self, username=None, password=None, force_relogin=False):
         """Complete login process with optimized login checking
@@ -245,7 +346,13 @@ class LoginManager:
         
         # Navigate to homepage to check current login status
         self.driver.get("https://www.karaoke-version.com")
-        time.sleep(3)
+        # Wait for homepage to load
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
         
         # Check if already logged in (unless forced)
         if not force_relogin and self.is_logged_in():
@@ -338,123 +445,170 @@ class LoginManager:
     def load_session(self):
         """Load and restore browser session data from file"""
         try:
-            if not self.session_file.exists():
-                logging.debug("No session file found")
+            session_data = self._load_and_validate_session_data()
+            if not session_data:
                 return False
             
-            # Load session data
-            with open(self.session_file, 'rb') as f:
-                session_data = pickle.load(f)
-            
-            # Check if session is not too old (24 hours max)
-            session_age = time.time() - session_data.get('timestamp', 0)
-            max_age = 24 * 60 * 60  # 24 hours in seconds
-            
-            if session_age > max_age:
-                logging.info(f"🕐 Saved session is {session_age/3600:.1f} hours old, too old to use")
-                self.clear_session()
-                return False
-            
-            logging.info(f"🔄 Loading session from {session_age/60:.1f} minutes ago")
-            
-            # Navigate to the saved URL first
-            saved_url = session_data.get('url', 'https://www.karaoke-version.com')
-            self.driver.get(saved_url)
-            time.sleep(2)
-            
-            # Restore cookies
-            cookies = session_data.get('cookies', [])
-            for cookie in cookies:
-                try:
-                    # Keep all cookie attributes, but handle expiry specially
-                    cookie_copy = cookie.copy()
-                    
-                    # Handle expiry - convert to int if present
-                    if 'expiry' in cookie_copy:
-                        try:
-                            cookie_copy['expiry'] = int(cookie_copy['expiry'])
-                        except:
-                            del cookie_copy['expiry']
-                    
-                    self.driver.add_cookie(cookie_copy)
-                    logging.debug(f"Restored cookie: {cookie.get('name', 'unknown')}")
-                except Exception as e:
-                    logging.debug(f"Could not restore cookie {cookie.get('name', 'unknown')}: {e}")
-                    # Try with minimal attributes as fallback
-                    try:
-                        minimal_cookie = {
-                            'name': cookie.get('name'),
-                            'value': cookie.get('value'),
-                            'domain': cookie.get('domain'),
-                            'path': cookie.get('path', '/'),
-                            'secure': cookie.get('secure', False)
-                        }
-                        self.driver.add_cookie(minimal_cookie)
-                        logging.debug(f"Restored cookie with minimal attributes: {cookie.get('name', 'unknown')}")
-                    except Exception as e2:
-                        logging.debug(f"Failed to restore cookie even with minimal attributes: {e2}")
-            
-            # Restore localStorage
-            local_storage = session_data.get('localStorage', {})
-            if local_storage and isinstance(local_storage, dict):
-                for key, value in local_storage.items():
-                    try:
-                        # Use JSON.stringify to safely encode the value
-                        self.driver.execute_script(
-                            "window.localStorage.setItem(arguments[0], arguments[1]);", 
-                            key, str(value)
-                        )
-                        logging.debug(f"Restored localStorage: {key}")
-                    except Exception as e:
-                        logging.debug(f"Could not restore localStorage item {key}: {e}")
-            
-            # Restore sessionStorage
-            session_storage = session_data.get('sessionStorage', {})
-            if session_storage and isinstance(session_storage, dict):
-                for key, value in session_storage.items():
-                    try:
-                        # Use arguments to safely pass values to avoid injection issues
-                        self.driver.execute_script(
-                            "window.sessionStorage.setItem(arguments[0], arguments[1]);", 
-                            key, str(value)
-                        )
-                        logging.debug(f"Restored sessionStorage: {key}")
-                    except Exception as e:
-                        logging.debug(f"Could not restore sessionStorage item {key}: {e}")
-            
-            # Refresh page to apply restored session
-            self.driver.refresh()
-            time.sleep(3)
-            
-            # Try accessing a protected area to trigger session validation
-            try:
-                # Navigate to account page which should validate session
-                self.driver.get("https://www.karaoke-version.com/my/index.html")
-                time.sleep(3)
-                
-                # Check if we were redirected to login page
-                current_url = self.driver.current_url
-                if "login" in current_url.lower() or "signin" in current_url.lower():
-                    logging.debug("Redirected to login page, session invalid")
-                    return False
-                    
-            except Exception as e:
-                logging.debug(f"Error accessing account page: {e}")
-            
-            # Go back to home page and verify login status
-            self.driver.get("https://www.karaoke-version.com")
-            time.sleep(3)
-            
-            # Verify the session restoration worked by checking login status
-            if self.is_logged_in():
-                logging.info("✅ Session data restored and login verified")
-                return True
-            else:
-                logging.warning("⚠️ Session data restored but login verification failed")
-                return False
+            self._restore_browser_state(session_data)
+            return self._verify_session_restoration()
             
         except Exception as e:
             logging.warning(f"⚠️ Could not load session data: {e}")
+            return False
+    
+    def _load_and_validate_session_data(self):
+        """Load session data from file and validate expiry"""
+        if not self.session_file.exists():
+            logging.debug("No session file found")
+            return None
+        
+        # Load session data
+        with open(self.session_file, 'rb') as f:
+            session_data = pickle.load(f)
+        
+        # Check if session is not too old (24 hours max)
+        session_age = time.time() - session_data.get('timestamp', 0)
+        max_age = 24 * 60 * 60  # 24 hours in seconds
+        
+        if session_age > max_age:
+            logging.info(f"🕐 Saved session is {session_age/3600:.1f} hours old, too old to use")
+            self.clear_session()
+            return None
+        
+        logging.info(f"🔄 Loading session from {session_age/60:.1f} minutes ago")
+        return session_data
+    
+    def _restore_browser_state(self, session_data):
+        """Restore browser cookies, localStorage, and sessionStorage"""
+        # Navigate to the saved URL first
+        saved_url = session_data.get('url', 'https://www.karaoke-version.com')
+        self.driver.get(saved_url)
+        # Wait for page to load before restoring session data
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
+        
+        self._restore_cookies(session_data.get('cookies', []))
+        self._restore_local_storage(session_data.get('localStorage', {}))
+        self._restore_session_storage(session_data.get('sessionStorage', {}))
+        
+        # Refresh page to apply restored session
+        self.driver.refresh()
+        # Wait for page to reload with restored session
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
+    
+    def _restore_cookies(self, cookies):
+        """Restore browser cookies with fallback handling"""
+        for cookie in cookies:
+            try:
+                # Keep all cookie attributes, but handle expiry specially
+                cookie_copy = cookie.copy()
+                
+                # Handle expiry - convert to int if present
+                if 'expiry' in cookie_copy:
+                    try:
+                        cookie_copy['expiry'] = int(cookie_copy['expiry'])
+                    except (ValueError, TypeError) as e:
+                        logging.debug(f"Could not convert expiry to int: {e}")
+                        del cookie_copy['expiry']
+                
+                self.driver.add_cookie(cookie_copy)
+                logging.debug(f"Restored cookie: {cookie.get('name', 'unknown')}")
+            except Exception as e:
+                logging.debug(f"Could not restore cookie {cookie.get('name', 'unknown')}: {e}")
+                self._restore_cookie_fallback(cookie)
+    
+    def _restore_cookie_fallback(self, cookie):
+        """Fallback cookie restoration with minimal attributes"""
+        try:
+            minimal_cookie = {
+                'name': cookie.get('name'),
+                'value': cookie.get('value'),
+                'domain': cookie.get('domain'),
+                'path': cookie.get('path', '/'),
+                'secure': cookie.get('secure', False)
+            }
+            self.driver.add_cookie(minimal_cookie)
+            logging.debug(f"Restored cookie with minimal attributes: {cookie.get('name', 'unknown')}")
+        except Exception as e:
+            logging.debug(f"Failed to restore cookie even with minimal attributes: {e}")
+    
+    def _restore_local_storage(self, local_storage):
+        """Restore browser localStorage data"""
+        if local_storage and isinstance(local_storage, dict):
+            for key, value in local_storage.items():
+                try:
+                    # Use JSON.stringify to safely encode the value
+                    self.driver.execute_script(
+                        "window.localStorage.setItem(arguments[0], arguments[1]);", 
+                        key, str(value)
+                    )
+                    logging.debug(f"Restored localStorage: {key}")
+                except Exception as e:
+                    logging.debug(f"Could not restore localStorage item {key}: {e}")
+    
+    def _restore_session_storage(self, session_storage):
+        """Restore browser sessionStorage data"""
+        if session_storage and isinstance(session_storage, dict):
+            for key, value in session_storage.items():
+                try:
+                    # Use arguments to safely pass values to avoid injection issues
+                    self.driver.execute_script(
+                        "window.sessionStorage.setItem(arguments[0], arguments[1]);", 
+                        key, str(value)
+                    )
+                    logging.debug(f"Restored sessionStorage: {key}")
+                except Exception as e:
+                    logging.debug(f"Could not restore sessionStorage item {key}: {e}")
+    
+    def _verify_session_restoration(self):
+        """Verify that session restoration was successful"""
+        # Try accessing a protected area to trigger session validation
+        try:
+            # Navigate to account page which should validate session
+            self.driver.get("https://www.karaoke-version.com/my/index.html")
+            # Wait for account page to load or redirect to login
+            try:
+                self.wait.until(
+                    lambda driver: driver.current_url != "https://www.karaoke-version.com/my/index.html" or
+                                   driver.find_elements(By.TAG_NAME, "body")
+                )
+            except TimeoutException:
+                pass
+            
+            # Check if we were redirected to login page
+            current_url = self.driver.current_url
+            if "login" in current_url.lower() or "signin" in current_url.lower():
+                logging.debug("Redirected to login page, session invalid")
+                return False
+                
+        except Exception as e:
+            logging.debug(f"Error accessing account page: {e}")
+        
+        # Go back to home page and verify login status
+        self.driver.get("https://www.karaoke-version.com")
+        # Wait for homepage to load for login verification
+        try:
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+        except TimeoutException:
+            pass
+        
+        # Verify the session restoration worked by checking login status
+        if self.is_logged_in():
+            logging.info("✅ Session data restored and login verified")
+            return True
+        else:
+            logging.warning("⚠️ Session data restored but login verification failed")
             return False
     
     def clear_session(self):
@@ -501,7 +655,13 @@ class LoginManager:
             
             # Navigate to homepage and check if already logged in via Chrome's persistent cookies
             self.driver.get("https://www.karaoke-version.com")
-            time.sleep(3)
+            # Wait for homepage to load for Chrome session check
+            try:
+                self.wait.until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except TimeoutException:
+                pass
             
             if self.is_logged_in():
                 logging.info("🎉 Already logged in via Chrome's persistent session!")

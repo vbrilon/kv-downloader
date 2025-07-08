@@ -1,8 +1,15 @@
 import pytest
 import os
-import yaml
 from unittest.mock import patch, mock_open
 import config
+
+# Import centralized YAML utilities
+from tests.yaml_test_helpers import (
+    YAMLTestHelper, 
+    StandardYAMLContent, 
+    YAMLTestDecorators,
+    YAMLConfigTester
+)
 
 class TestConfig:
     def test_config_loads_environment_variables(self):
@@ -44,22 +51,17 @@ class TestConfig:
     
     def test_load_songs_config_success(self):
         """Test successful loading of songs configuration"""
-        mock_yaml_content = {
-            'songs': [
-                {'url': 'http://example.com/song1', 'name': 'Song_One'},
-                {'url': 'http://example.com/song2', 'name': 'Song_Two'}
-            ]
-        }
+        mock_yaml_content = StandardYAMLContent.get_valid_songs_config()
         
-        with patch('builtins.open', mock_open(read_data=yaml.dump(mock_yaml_content))):
+        with patch('builtins.open', YAMLTestHelper.create_mock_yaml_file(mock_yaml_content)):
             with patch('yaml.safe_load', return_value=mock_yaml_content):
                 songs = config.load_songs_config()
                 
                 assert len(songs) == 2
-                assert songs[0]['url'] == 'http://example.com/song1'
-                assert songs[0]['name'] == 'Song_One'
-                assert songs[1]['url'] == 'http://example.com/song2'
-                assert songs[1]['name'] == 'Song_Two'
+                assert songs[0]['url'] == mock_yaml_content['songs'][0]['url']
+                assert songs[0]['name'] == mock_yaml_content['songs'][0]['name']
+                assert songs[1]['url'] == mock_yaml_content['songs'][1]['url']
+                assert songs[1]['name'] == mock_yaml_content['songs'][1]['name']
     
     def test_load_songs_config_file_not_found(self):
         """Test behavior when songs config file is not found"""
@@ -69,6 +71,7 @@ class TestConfig:
     
     def test_load_songs_config_yaml_error(self):
         """Test behavior when YAML file has syntax errors"""
+        import yaml
         with patch('builtins.open', mock_open(read_data="invalid: yaml: content:")):
             with patch('yaml.safe_load', side_effect=yaml.YAMLError("Invalid YAML")):
                 songs = config.load_songs_config()
@@ -76,9 +79,9 @@ class TestConfig:
     
     def test_load_songs_config_empty_songs(self):
         """Test behavior when config file has no songs"""
-        mock_yaml_content = {'other_data': 'value'}
+        mock_yaml_content = StandardYAMLContent.get_missing_songs_key_config()
         
-        with patch('builtins.open', mock_open(read_data=yaml.dump(mock_yaml_content))):
+        with patch('builtins.open', YAMLTestHelper.create_mock_yaml_file(mock_yaml_content)):
             with patch('yaml.safe_load', return_value=mock_yaml_content):
                 songs = config.load_songs_config()
                 assert songs == []

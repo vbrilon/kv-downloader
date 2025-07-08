@@ -12,7 +12,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 from karaoke_automator import KaraokeVersionAutomator
-import config
+from packages.configuration import DOWNLOAD_FOLDER
 
 def test_song_folder_extraction():
     """Test extracting song information from URLs"""
@@ -44,7 +44,7 @@ def test_song_folder_extraction():
         for i, test_case in enumerate(test_cases, 1):
             print(f"{i}️⃣ Testing URL: {test_case['url']}")
             
-            folder_name = automator.track_handler._extract_song_folder_name(test_case['url'])
+            folder_name = automator.download_manager.extract_song_folder_name(test_case['url'])
             print(f"   Generated folder: '{folder_name}'")
             
             # Check if expected elements are in the folder name
@@ -131,7 +131,7 @@ def test_song_folder_creation():
             return False
         
         # Check if song folder was created
-        base_download_folder = Path(config.DOWNLOAD_FOLDER)
+        base_download_folder = Path(DOWNLOAD_FOLDER)
         song_folders = [f for f in base_download_folder.iterdir() if f.is_dir()]
         
         print(f"\n📊 Song folder creation results:")
@@ -189,7 +189,7 @@ def test_folder_cleanup_integration():
     print("="*60)
     
     try:
-        base_download_folder = Path(config.DOWNLOAD_FOLDER)
+        base_download_folder = Path(DOWNLOAD_FOLDER)
         test_song_folder = base_download_folder / "Test Song Folder"
         test_song_folder.mkdir(exist_ok=True)
         

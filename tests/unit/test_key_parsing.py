@@ -95,48 +95,19 @@ def test_key_parsing_formats():
 
 def test_key_parsing_integration():
     """Test key parsing through the full configuration loading process"""
-    import tempfile
-    import yaml
     import os
+    
+    # Import centralized YAML utilities
+    from tests.yaml_test_helpers import YAMLTestHelper, StandardYAMLContent
     
     print("\n🔗 TESTING INTEGRATION WITH YAML LOADING")
     print("="*60)
     
-    # Create test YAML content with various key formats
-    test_yaml_content = {
-        'songs': [
-            {
-                'url': 'https://www.karaoke-version.com/custombackingtrack/test/song1.html',
-                'name': 'Song_With_Integer_Key',
-                'key': 2
-            },
-            {
-                'url': 'https://www.karaoke-version.com/custombackingtrack/test/song2.html',
-                'name': 'Song_With_Plus_String_Key',
-                'key': '+3'
-            },
-            {
-                'url': 'https://www.karaoke-version.com/custombackingtrack/test/song3.html',
-                'name': 'Song_With_Negative_String_Key',
-                'key': '-2'
-            },
-            {
-                'url': 'https://www.karaoke-version.com/custombackingtrack/test/song4.html',
-                'name': 'Song_With_No_Key'
-                # No key field - should default to 0
-            },
-            {
-                'url': 'https://www.karaoke-version.com/custombackingtrack/test/song5.html',
-                'name': 'Song_With_String_Number_Key',
-                'key': "5"
-            }
-        ]
-    }
+    # Get test YAML content with various key formats
+    test_yaml_content = StandardYAMLContent.get_key_format_test_config()
     
-    # Create temporary YAML file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
-        yaml.dump(test_yaml_content, temp_file)
-        temp_file_path = temp_file.name
+    # Create temporary YAML file using helper
+    temp_file_path = YAMLTestHelper.create_temp_yaml_file(test_yaml_content)
     
     try:
         # Test configuration loading
@@ -166,7 +137,7 @@ def test_key_parsing_integration():
         
     finally:
         # Clean up temporary file
-        os.unlink(temp_file_path)
+        YAMLTestHelper.cleanup_temp_file(temp_file_path)
 
 
 if __name__ == "__main__":

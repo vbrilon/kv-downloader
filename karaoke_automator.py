@@ -8,6 +8,9 @@ import time
 import os
 import logging
 import threading
+import signal
+import sys
+import glob
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -45,7 +48,7 @@ class KaraokeVersionAutomator:
         self.headless = headless
         self.show_progress = show_progress
         self.config_manager = ConfigurationManager(config_file)
-        self.progress = ProgressTracker() if show_progress else None
+        self.progress = ProgressTracker(show_display=show_progress) if show_progress else None
         self.stats = StatsReporter()  # Always track stats
         
         # Initialize browser manager
@@ -111,12 +114,9 @@ class KaraokeVersionAutomator:
     def run_automation(self):
         """Run complete automation workflow"""
         try:
-            # Step 1: Login
-            if not self.login():
-                logging.error("Login failed - cannot proceed")
+            if not self._setup_automation_session():
                 return False
             
-            # Step 2: Load songs
             songs = self.load_songs_config()
             if not songs:
                 logging.error("No songs configured")
@@ -124,105 +124,8 @@ class KaraokeVersionAutomator:
             
             logging.info(f"Processing {len(songs)} songs...")
             
-            # Step 3: Process each song
             for song in songs:
-                logging.info(f"Processing: {song['name']}")
-                song_key = song.get('key', 0)  # Get key adjustment value
-                
-                # Log song configuration
-                if song_key != 0:
-                    logging.info(f"🎵 Song configuration - Key: {song_key:+d} semitones")
-                else:
-                    logging.info(f"🎵 Song configuration - Key: no adjustment")
-                
-                # Verify login status
-                if not self.is_logged_in():
-                    logging.error("Login session expired")
-                    if not self.login():
-                        logging.error("Re-login failed")
-                        break
-                
-                # Get tracks
-                tracks = self.get_available_tracks(song['url'])
-                if tracks:
-                    logging.info(f"Found {len(tracks)} tracks for {song['name']}")
-                    
-                    # Start progress tracking for this song
-                    if self.progress:
-                        self.progress.start_song(song['name'], tracks)
-                    
-                    # Start stats tracking for this song
-                    self.stats.start_song(song['name'], song['url'], len(tracks))
-                    
-                    # Setup mixer controls once per song
-                    logging.info("🎛️ Setting up mixer controls...")
-                    
-                    # Ensure intro count is enabled
-                    intro_success = self.track_manager.ensure_intro_count_enabled(song['url'])
-                    if not intro_success:
-                        logging.warning("⚠️ Could not enable intro count - continuing anyway")
-                    
-                    # Adjust key if needed
-                    if song_key != 0:
-                        key_success = self.track_manager.adjust_key(song['url'], song_key)
-                        if not key_success:
-                            logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
-                    
-                    # Clear song folder once at the beginning of the song (not for each track)
-                    song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
-                    self.file_manager.clear_song_folder(song_folder_name)
-                    
-                    # Download each track individually
-                    for track in tracks:
-                        track_name = self.sanitize_filename(track['name'])
-                        
-                        # Start timing for this track
-                        if self.progress:
-                            self.progress.update_track_status(track['index'], 'isolating')
-                        
-                        # Record track start in stats
-                        self.stats.record_track_start(song['name'], track_name, track['index'])
-                        
-                        # Solo this track
-                        if self.solo_track(track, song['url']):
-                            # Download the soloed track (folder already cleared once per song)
-                            success = self.download_manager.download_current_mix(
-                                song['url'], 
-                                track_name,
-                                cleanup_existing=False,  # Don't clear folder for each track
-                                song_folder=song.get('name'),  # None if not specified, triggers URL extraction
-                                key_adjustment=song_key,
-                                track_index=track['index']  # Pass track index for accurate progress tracking
-                            )
-                            
-                            if not success:
-                                logging.error(f"Failed to download {track_name}")
-                        else:
-                            logging.error(f"Failed to solo track {track_name}")
-                            if self.progress:
-                                self.progress.update_track_status(track['index'], 'failed')
-                            # Record failure in stats
-                            self.stats.record_track_completion(song['name'], track_name, success=False, 
-                                                             error_message="Failed to solo track")
-                        
-                        # Brief pause between tracks
-                        time.sleep(2)
-                    
-                    # Clear all solos when done
-                    self.clear_all_solos(song['url'])
-                    
-                    # Finish progress tracking for this song
-                    if self.progress:
-                        self.progress.finish_song()
-                    
-                    # Finish stats tracking for this song
-                    self.stats.finish_song(song['name'])
-                        
-                else:
-                    logging.error(f"No tracks found for {song['name']}")
-                    # Still record the song in stats even if no tracks found
-                    self.stats.start_song(song['name'], song['url'], 0)
-                    self.stats.finish_song(song['name'])
+                self._process_single_song(song)
             
             logging.info("Automation completed")
             
@@ -233,46 +136,173 @@ class KaraokeVersionAutomator:
             except Exception as e:
                 logging.error(f"Error during final cleanup pass: {e}")
             
-            # Generate and display final stats report
-            try:
-                print("\n" + "="*80)
-                print("📊 GENERATING FINAL STATISTICS REPORT...")
-                print("="*80)
-                
-                final_report = self.stats.generate_final_report()
-                print(final_report)
-                
-                # Save detailed JSON report
-                stats_saved = self.stats.save_detailed_report("logs/automation_stats.json")
-                if stats_saved:
-                    print(f"\n📁 Detailed statistics saved to: logs/automation_stats.json")
-                
-            except Exception as e:
-                logging.error(f"Error generating final statistics report: {e}")
-            
+            self._generate_final_reports()
             return True
             
         except Exception as e:
             logging.error(f"Automation failed: {e}")
+            self._generate_final_reports(failed=True)
+            return False
+        finally:
+            # Cleanup is handled by chrome_manager.quit() in main finally block
+            pass
+    
+    def _setup_automation_session(self):
+        """Setup login and verify session is ready"""
+        if not self.login():
+            logging.error("Login failed - cannot proceed")
+            return False
+        return True
+    
+    def _process_single_song(self, song):
+        """Process a single song with all its tracks"""
+        logging.info(f"Processing: {song['name']}")
+        song_key = song.get('key', 0)
+        
+        self._log_song_configuration(song_key)
+        
+        if not self._verify_login_session():
+            return False
+        
+        tracks = self.get_available_tracks(song['url'])
+        if tracks:
+            self._process_song_with_tracks(song, tracks, song_key)
+        else:
+            self._handle_no_tracks_found(song)
+    
+    def _log_song_configuration(self, song_key):
+        """Log the current song configuration"""
+        if song_key != 0:
+            logging.info(f"🎵 Song configuration - Key: {song_key:+d} semitones")
+        else:
+            logging.info(f"🎵 Song configuration - Key: no adjustment")
+    
+    def _verify_login_session(self):
+        """Verify login session is still valid"""
+        if not self.is_logged_in():
+            logging.error("Login session expired")
+            if not self.login():
+                logging.error("Re-login failed")
+                return False
+        return True
+    
+    def _process_song_with_tracks(self, song, tracks, song_key):
+        """Process a song that has available tracks"""
+        logging.info(f"Found {len(tracks)} tracks for {song['name']}")
+        
+        self._start_song_tracking(song, tracks)
+        self._setup_mixer_controls(song, song_key)
+        self._prepare_song_folder(song)
+        self._download_all_tracks(song, tracks, song_key)
+        self._finish_song_processing(song)
+    
+    def _start_song_tracking(self, song, tracks):
+        """Initialize progress and statistics tracking for song"""
+        if self.progress:
+            self.progress.start_song(song['name'], tracks)
+        self.stats.start_song(song['name'], song['url'], len(tracks))
+    
+    def _setup_mixer_controls(self, song, song_key):
+        """Configure mixer controls for the song"""
+        logging.info("🎛️ Setting up mixer controls...")
+        
+        intro_success = self.track_manager.ensure_intro_count_enabled(song['url'])
+        if not intro_success:
+            logging.warning("⚠️ Could not enable intro count - continuing anyway")
+        
+        if song_key != 0:
+            key_success = self.track_manager.adjust_key(song['url'], song_key)
+            if not key_success:
+                logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
+    
+    def _prepare_song_folder(self, song):
+        """Clear and prepare the song folder for downloads"""
+        song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
+        self.file_manager.clear_song_folder(song_folder_name)
+    
+    def _download_all_tracks(self, song, tracks, song_key):
+        """Download all tracks for the song"""
+        for track in tracks:
+            self._download_single_track(song, track, song_key)
+            time.sleep(2)  # Brief pause between tracks
+    
+    def _download_single_track(self, song, track, song_key):
+        """Download a single track"""
+        track_name = self.sanitize_filename(track['name'])
+        
+        if self.progress:
+            self.progress.update_track_status(track['index'], 'isolating')
+        
+        self.stats.record_track_start(song['name'], track_name, track['index'])
+        
+        if self.solo_track(track, song['url']):
+            success = self.download_manager.download_current_mix(
+                song['url'], 
+                track_name,
+                cleanup_existing=False,
+                song_folder=song.get('name'),
+                key_adjustment=song_key,
+                track_index=track['index']
+            )
             
-            # Still generate stats report even if automation failed
-            try:
+            if not success:
+                logging.error(f"Failed to download {track_name}")
+        else:
+            logging.error(f"Failed to solo track {track_name}")
+            if self.progress:
+                self.progress.update_track_status(track['index'], 'failed')
+            self.stats.record_track_completion(song['name'], track_name, success=False, 
+                                             error_message="Failed to solo track")
+    
+    def _finish_song_processing(self, song):
+        """Complete song processing and cleanup"""
+        self.clear_all_solos(song['url'])
+        
+        if self.progress:
+            self.progress.finish_song()
+        
+        self.stats.finish_song(song['name'])
+    
+    def _handle_no_tracks_found(self, song):
+        """Handle case where no tracks are found for a song"""
+        logging.error(f"No tracks found for {song['name']}")
+        self.stats.start_song(song['name'], song['url'], 0)
+        self.stats.finish_song(song['name'])
+    
+    def _generate_final_reports(self, failed=False):
+        """Generate and display final statistics reports"""
+        try:
+            if self.show_progress:
                 print("\n" + "="*80)
-                print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
+                if failed:
+                    print("📊 GENERATING FINAL STATISTICS REPORT (AUTOMATION FAILED)")
+                else:
+                    print("📊 GENERATING FINAL STATISTICS REPORT...")
                 print("="*80)
                 
                 final_report = self.stats.generate_final_report()
                 print(final_report)
+            else:
+                # Use logging for non-display mode
+                if failed:
+                    logging.info("Generating final statistics report (automation failed)")
+                else:
+                    logging.info("Generating final statistics report")
                 
-                # Save detailed JSON report
-                self.stats.save_detailed_report("logs/automation_stats_failed.json")
-                
-            except Exception as stats_error:
-                logging.error(f"Error generating final statistics report: {stats_error}")
+                final_report = self.stats.generate_final_report()
+                logging.info(f"Final report:\n{final_report}")
             
-            return False
-        finally:
-            self.driver.quit()
+            filename = "logs/automation_stats_failed.json" if failed else "logs/automation_stats.json"
+            stats_saved = self.stats.save_detailed_report(filename)
+            
+            if stats_saved and not failed:
+                if self.show_progress:
+                    print(f"\n📁 Detailed statistics saved to: {filename}")
+                else:
+                    logging.info(f"Detailed statistics saved to: {filename}")
+            
+        except Exception as e:
+            logging.error(f"Error generating final statistics report: {e}")
 
 
 if __name__ == "__main__":
@@ -306,18 +336,90 @@ if __name__ == "__main__":
     headless_mode = not args.debug
     
     # Initialize automator with appropriate mode
-    automator = KaraokeVersionAutomator(headless=headless_mode)
+    automator = None
     
-    # Override login method if force login requested
-    if args.force_login:
-        logging.info("🔄 Force login requested via command line")
-        original_run = automator.run_automation
-        def run_with_force_login():
-            # Step 1: Login (force relogin)
-            if not automator.login(force_relogin=True):
-                logging.error("Login failed")
-                return False
-            return original_run()
-        automator.run_automation = run_with_force_login
+    # Setup signal handler for graceful shutdown
+    def signal_handler(signum, frame):
+        logging.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+        if automator:
+            try:
+                # Only use chrome_manager.quit() to avoid duplicate cleanup
+                if hasattr(automator, 'chrome_manager') and automator.chrome_manager:
+                    logging.info("🧹 Shutting down Chrome manager...")
+                    automator.chrome_manager.quit()
+                elif hasattr(automator, 'driver') and automator.driver:
+                    logging.info("🧹 Shutting down browser driver...")
+                    try:
+                        automator.driver.quit()
+                    except Exception as e:
+                        if "connection refused" not in str(e).lower():
+                            logging.debug(f"Signal cleanup error: {e}")
+            except Exception as e:
+                logging.error(f"⚠️ Error during signal cleanup: {e}")
+        sys.exit(0)
     
-    automator.run_automation()
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        automator = KaraokeVersionAutomator(headless=headless_mode, show_progress=args.debug)
+        
+        # Override login method if force login requested
+        if args.force_login:
+            logging.info("🔄 Force login requested via command line")
+            original_run = automator.run_automation
+            def run_with_force_login():
+                # Step 1: Login (force relogin)
+                if not automator.login(force_relogin=True):
+                    logging.error("Login failed")
+                    return False
+                return original_run()
+            automator.run_automation = run_with_force_login
+        
+        # Run the automation
+        automator.run_automation()
+        
+    except KeyboardInterrupt:
+        logging.info("🛑 Automation interrupted by user")
+    except Exception as e:
+        logging.error(f"💥 Fatal error during automation: {e}")
+        sys.exit(1)
+    finally:
+        # Comprehensive cleanup - ensure browser resources are properly closed
+        if automator:
+            try:
+                # Only use chrome_manager.quit() to avoid duplicate cleanup
+                if hasattr(automator, 'chrome_manager') and automator.chrome_manager:
+                    logging.info("🧹 Cleaning up Chrome manager...")
+                    automator.chrome_manager.quit()
+                elif hasattr(automator, 'driver') and automator.driver:
+                    # Fallback if chrome_manager is not available
+                    logging.info("🧹 Cleaning up browser driver...")
+                    try:
+                        automator.driver.quit()
+                    except Exception as e:
+                        if "connection refused" not in str(e).lower():
+                            logging.debug(f"Driver cleanup error: {e}")
+                
+                # Clean up any temporary files in download directory
+                if hasattr(automator, 'file_manager') and automator.file_manager:
+                    try:
+                        logging.info("🧹 Cleaning up temporary download files...")
+                        # Clean up .crdownload files that may be left behind
+                        from packages.configuration import DOWNLOAD_FOLDER
+                        temp_files = glob.glob(os.path.join(DOWNLOAD_FOLDER, "*.crdownload"))
+                        for temp_file in temp_files:
+                            try:
+                                os.remove(temp_file)
+                                logging.debug(f"Removed temporary file: {temp_file}")
+                            except Exception:
+                                pass  # Don't log failed temp file cleanup
+                    except Exception:
+                        pass  # Don't fail cleanup for temporary file issues
+                    
+                logging.info("✅ Resource cleanup completed successfully")
+                
+            except Exception as cleanup_error:
+                logging.error(f"⚠️ Error during resource cleanup: {cleanup_error}")
+                # Don't raise - we don't want cleanup errors to mask the original error

@@ -19,6 +19,9 @@ DELAY_BETWEEN_DOWNLOADS = 5  # seconds - increased for processing time
 MAX_RETRIES = 3
 DOWNLOAD_TIMEOUT = 30  # seconds to wait for download to complete
 
+# Track isolation timing settings
+SOLO_ACTIVATION_DELAY = 2.0  # seconds to wait after solo button activation for audio sync
+
 # Track types to attempt (used for validation)
 COMMON_TRACK_TYPES = [
     "Lead Vocal",
@@ -44,5 +47,3 @@ SONGS_CONFIG_FILE = "songs.yaml"
 MIN_KEY_ADJUSTMENT = -12
 MAX_KEY_ADJUSTMENT = 12
 
-# Backward compatibility - import from config_manager
-from .config_manager import load_songs_config
