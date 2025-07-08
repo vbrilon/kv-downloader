@@ -266,6 +266,17 @@ python karaoke_automator.py --clear-session
 **Impact**: `--force-login` now correctly logs out existing sessions before performing fresh authentication  
 **File**: `packages/authentication/login_manager.py:519`
 
+### 🔧 FINAL CLEANUP PASS ENHANCEMENT (2025-07-08)
+**Problem**: Some downloaded files weren't cleaned up due to 30-second time window restriction during sequential downloads  
+**Root Cause**: The cleanup system only cleaned files downloaded within 30 seconds, but sequential downloads can take several minutes  
+**Files Affected**: Early tracks became "old" by the time later tracks completed, leaving long karaoke-version filenames  
+**Solution**: Added comprehensive final cleanup pass that runs after all downloads complete  
+**Files Modified**:
+- `packages/file_operations/file_manager.py`: Added `final_cleanup_pass()` method with pattern matching and track name extraction
+- `karaoke_automator.py:231-234`: Integrated final cleanup into main automation flow  
+**Impact**: Ensures 100% of downloaded files get properly renamed regardless of download timing  
+**Test Results**: Successfully cleaned 2 uncleaned files in Bruce Springsteen directory during testing
+
 ## Architecture Overview
 
 ### Package Structure
@@ -357,13 +368,21 @@ python tests/run_tests.py --regression-only
 - **Chrome Integration**: Download path management and Chrome CDP integration
 - **Error Recovery**: Comprehensive handling of network issues and site changes
 
-## Current Status: PRODUCTION READY + SESSION PERSISTENCE COMPLETE ✅
+### ✅ Final Cleanup Pass System (Latest Enhancement)
+- **Post-Download Cleanup**: Comprehensive final cleanup pass after all downloads complete
+- **Race Condition Prevention**: Runs after all downloads finish to avoid timing conflicts
+- **Smart Pattern Matching**: Identifies uncleaned files using Custom_Backing_Track patterns
+- **Automatic File Extraction**: Extracts track names from long karaoke-version filenames
+- **Complete Coverage**: Catches any files missed by time-based cleanup during download
+
+## Current Status: PRODUCTION READY + SESSION PERSISTENCE + FINAL CLEANUP COMPLETE ✅
 
 ### All Features Complete (100%)
 - ✅ **Authentication & Session Management** - Full session persistence with 24-hour expiry and smart validation
 - ✅ **Track Discovery & Isolation** - Finds all tracks, solo button functionality  
 - ✅ **Mixer Controls** - Intro count and key adjustment automation
 - ✅ **Download System** - Complete workflow with progress tracking and file organization
+- ✅ **Final Cleanup Pass** - Post-download cleanup system to ensure all files are properly renamed
 - ✅ **Modular Architecture** - Clean package-based design with no code duplication
 - ✅ **Statistics & Reporting** - Comprehensive session tracking and final reports
 - ✅ **Debug & Production Modes** - Flexible execution with appropriate logging

@@ -226,6 +226,13 @@ class KaraokeVersionAutomator:
             
             logging.info("Automation completed")
             
+            # Run final cleanup pass to catch any files that weren't cleaned up
+            try:
+                logging.info("🧹 Running final cleanup pass...")
+                self.file_manager.final_cleanup_pass()
+            except Exception as e:
+                logging.error(f"Error during final cleanup pass: {e}")
+            
             # Generate and display final stats report
             try:
                 print("\n" + "="*80)

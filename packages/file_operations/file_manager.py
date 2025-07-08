@@ -395,3 +395,112 @@ class FileManager:
         except Exception as e:
             logging.warning(f"Could not clean filename for {file_path.name}: {e}")
             return file_path
+
+    def final_cleanup_pass(self, downloads_dir="downloads"):
+        """
+        Final cleanup pass after all downloads complete
+        
+        This method runs after all downloads are finished to catch any files
+        that weren't cleaned up during the normal process due to timing issues.
+        It looks for any remaining long-format filenames and renames them appropriately.
+        
+        Args:
+            downloads_dir (str): Path to downloads directory
+        """
+        try:
+            downloads_path = Path(downloads_dir)
+            if not downloads_path.exists():
+                logging.info("📁 No downloads directory found, skipping final cleanup")
+                return
+            
+            logging.info("🧹 Starting final cleanup pass...")
+            total_cleaned = 0
+            
+            # Process each song folder
+            for song_folder in downloads_path.iterdir():
+                if not song_folder.is_dir():
+                    continue
+                    
+                logging.info(f"🧹 Checking folder: {song_folder.name}")
+                folder_cleaned = 0
+                
+                # Look for files that need cleanup
+                for file_path in song_folder.glob("*.mp3"):
+                    filename = file_path.name
+                    
+                    # Check if this file needs cleanup (has long karaoke-version format)
+                    if self._needs_cleanup(filename):
+                        # Extract track name from filename
+                        track_name = self._extract_track_name(filename)
+                        
+                        if track_name:
+                            # Clean the filename
+                            cleaned_path = self.clean_downloaded_filename(file_path, track_name)
+                            if cleaned_path != file_path:
+                                folder_cleaned += 1
+                                total_cleaned += 1
+                                logging.info(f"✅ Final cleanup: {filename} → {cleaned_path.name}")
+                
+                if folder_cleaned > 0:
+                    logging.info(f"📁 Cleaned {folder_cleaned} files in {song_folder.name}")
+            
+            if total_cleaned > 0:
+                logging.info(f"🎉 Final cleanup complete: {total_cleaned} files cleaned")
+            else:
+                logging.info("✅ Final cleanup complete: no files needed cleaning")
+                
+        except Exception as e:
+            logging.error(f"Error during final cleanup pass: {e}")
+    
+    def _needs_cleanup(self, filename):
+        """Check if a filename needs cleanup based on karaoke-version patterns"""
+        # Look for the characteristic patterns of uncleaned files
+        patterns = [
+            'Custom_Backing_Track',
+            'custom_backing_track',
+            'Custom Backing Track',
+            'custom backing track'
+        ]
+        
+        filename_lower = filename.lower()
+        for pattern in patterns:
+            if pattern.lower() in filename_lower:
+                return True
+        
+        # Also check for very long filenames (likely uncleaned)
+        if len(filename) > 50:
+            return True
+            
+        return False
+    
+    def _extract_track_name(self, filename):
+        """Extract track name from karaoke-version filename"""
+        import re
+        
+        # Pattern to match: Artist_Song(Track_Name_Custom_Backing_Track).mp3
+        # We want to extract the Track_Name part
+        pattern = r'[^(]+\(([^)]+)_Custom_Backing_Track\)\.mp3'
+        match = re.search(pattern, filename, re.IGNORECASE)
+        
+        if match:
+            track_name = match.group(1)
+            # Clean up the track name
+            track_name = track_name.replace('_', ' ')
+            track_name = track_name.strip()
+            return track_name
+        
+        # Fallback: try to extract from other patterns
+        # Pattern for: Artist_Song(Track_Name).mp3
+        pattern = r'[^(]+\(([^)]+)\)\.mp3'
+        match = re.search(pattern, filename, re.IGNORECASE)
+        
+        if match:
+            track_name = match.group(1)
+            # Skip if it contains "Custom_Backing_Track" (already handled above)
+            if 'Custom_Backing_Track' not in track_name:
+                track_name = track_name.replace('_', ' ')
+                track_name = track_name.strip()
+                return track_name
+        
+        # If we can't extract a track name, return None
+        return None
