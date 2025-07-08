@@ -29,6 +29,7 @@ Create a `.env` file with your Karaoke-Version.com login:
 ```bash
 KV_USERNAME=your_email@example.com
 KV_PASSWORD=your_password
+DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 ```
 
 ⚠️ **Important**: You need a valid account with purchased songs.
@@ -170,15 +171,6 @@ python karaoke_automator.py --clear-session
 ```
 
 **Session Data**: Stored in `.cache/session_data.pkl` (cookies, localStorage, etc.) - safe to delete if needed.
-
-### Environment Variables
-
-```bash
-# .env file
-KV_USERNAME=your_email@example.com
-KV_PASSWORD=your_password
-DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
-```
 
 ---
 
