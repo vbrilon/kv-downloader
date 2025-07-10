@@ -107,15 +107,51 @@ class ConfigurationManager:
                 if path_part.endswith('.html'):
                     path_part = path_part[:-5]
                 
-                # Handle common apostrophe patterns in URLs (e.g., "don-t-stop" -> "dont-stop")
+                # Handle apostrophe patterns in URLs - General solution
+                # Transform patterns like "mama-i-m-coming-home" -> "mama-i'm-coming-home"
                 import re
-                name = re.sub(r'-([a-z])-', r'\1-', path_part)
+                
+                # General pattern: Replace single letters surrounded by hyphens with apostrophes
+                # This handles most English contractions where letters are separated by hyphens
+                # Examples: "don-t" -> "don't", "i-m" -> "i'm", "we-re" -> "we're"
+                
+                def restore_apostrophes(text):
+                    """Restore apostrophes in common English contractions from URL patterns"""
+                    # More precise pattern matching for common contractions
+                    
+                    # Handle specific contraction patterns that are commonly found in URLs
+                    # These patterns are more conservative and target actual contractions
+                    
+                    # Pattern 1: Common contractions ending in 't (don't, can't, won't, etc.)
+                    text = re.sub(r'\b(\w+)-t\b', r"\1't", text, flags=re.IGNORECASE)
+                    
+                    # Pattern 2: Common contractions ending in 'm (I'm, etc.)
+                    text = re.sub(r'\b(\w+)-m\b', r"\1'm", text, flags=re.IGNORECASE)
+                    
+                    # Pattern 3: Common contractions ending in 're (we're, you're, they're)
+                    text = re.sub(r'\b(\w+)-re\b', r"\1're", text, flags=re.IGNORECASE)
+                    
+                    # Pattern 4: Common contractions ending in 's (it's, that's, etc.)
+                    text = re.sub(r'\b(\w+)-s\b', r"\1's", text, flags=re.IGNORECASE)
+                    
+                    # Pattern 5: Common contractions ending in 'll (I'll, we'll, etc.)
+                    text = re.sub(r'\b(\w+)-ll\b', r"\1'll", text, flags=re.IGNORECASE)
+                    
+                    # Pattern 6: Common contractions ending in 've (I've, we've, etc.)
+                    text = re.sub(r'\b(\w+)-ve\b', r"\1've", text, flags=re.IGNORECASE)
+                    
+                    # Pattern 7: Common contractions ending in 'd (I'd, we'd, etc.)
+                    text = re.sub(r'\b(\w+)-d\b', r"\1'd", text, flags=re.IGNORECASE)
+                    
+                    return text
+                
+                path_part = restore_apostrophes(path_part)
                 
                 # Replace remaining hyphens with spaces and title case
-                name = name.replace('-', ' ').title()
+                name = path_part.replace('-', ' ').title()
                 
-                # Clean up any remaining invalid characters
-                invalid_chars = '<>:"/\\|?*\''
+                # Clean up invalid characters but preserve apostrophes
+                invalid_chars = '<>:"/\\|?*'  # Removed apostrophe from invalid chars
                 for char in invalid_chars:
                     name = name.replace(char, '_')
                 

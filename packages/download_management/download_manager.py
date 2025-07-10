@@ -358,8 +358,8 @@ class DownloadManager:
             return f"karaoke_download_{int(time.time())}"
     
     def sanitize_filesystem_name(self, name):
-        """Remove invalid filesystem characters"""
-        invalid_chars = '<>:"/\\|?*\''
+        """Remove invalid filesystem characters (preserve apostrophes)"""
+        invalid_chars = '<>:"/\\|?*'  # Removed apostrophe from invalid chars
         for char in invalid_chars:
             name = name.replace(char, '_')
         return name
