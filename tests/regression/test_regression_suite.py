@@ -96,8 +96,8 @@ def test_regression_core_functions():
         
         # Test 5: Mixer control functions
         try:
-            intro_method = getattr(automator.track_handler, 'ensure_intro_count_enabled', None)
-            key_method = getattr(automator.track_handler, 'adjust_key', None)
+            intro_method = getattr(automator.track_manager, 'ensure_intro_count_enabled', None)
+            key_method = getattr(automator.track_manager, 'adjust_key', None)
             
             if callable(intro_method) and callable(key_method):
                 print("✅ Mixer control functions available")
@@ -120,7 +120,7 @@ def test_regression_core_functions():
         
         # Test 7: Download setup
         try:
-            download_method = getattr(automator.track_handler, 'download_current_mix', None)
+            download_method = getattr(automator.download_manager, 'download_current_mix', None)
             if callable(download_method):
                 print("✅ Download function available")
                 regression_results['download_setup'] = True
