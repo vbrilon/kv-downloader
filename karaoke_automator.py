@@ -363,7 +363,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        automator = KaraokeVersionAutomator(headless=headless_mode, show_progress=args.debug)
+        automator = KaraokeVersionAutomator(headless=headless_mode, show_progress=True)
         
         # Override login method if force login requested
         if args.force_login:

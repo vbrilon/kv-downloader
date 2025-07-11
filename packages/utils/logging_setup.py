@@ -75,7 +75,7 @@ def setup_logging(debug_mode):
         
         # Console handler  
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.WARNING)
         console_handler.setFormatter(simple_formatter)
         logging.getLogger().addHandler(console_handler)
         
