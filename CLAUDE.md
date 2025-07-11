@@ -320,6 +320,8 @@ python karaoke_automator.py --debug
 tail -f logs/debug.log
 ```
 
+**Note**: Both production and debug modes now show identical progress UI. The only difference is browser visibility and log file detail level.
+
 ### Session Management
 ```bash
 # Force fresh login (bypass saved session)
@@ -527,10 +529,25 @@ python karaoke_automator.py --debug      # Debug mode with visible browser
 **Fix Applied**:
 - **packages/progress/progress_tracker.py**: Added `show_display` parameter to control visual output
 - **Modified methods**: `_update_display()`, `_display_track_progress()`, `_final_display()` now respect display mode
-- **karaoke_automator.py**: Pass `show_progress=args.debug` to only show progress in debug mode
+- **karaoke_automator.py**: Previously passed `show_progress=args.debug` to only show progress in debug mode
 - **Final reports**: Conditional display vs logging based on debug mode
 **Result**: Clean stdout in non-debug mode, detailed progress display preserved in debug mode ✅
 **Status**: ✅ **FIXED** - Non-debug mode now shows only essential logging messages
+
+### 🎨 UI Unification Enhancement (2025-07-11)
+**Issue**: Production mode had no progress UI while debug mode had beautiful visual progress tracking
+**Root Cause**: `show_progress` parameter was tied to debug mode, creating inconsistent user experience
+**Architecture Decision**: Separate UI behavior from debug mode - users should get consistent visual feedback regardless of browser visibility
+**Solution Applied**:
+- **karaoke_automator.py:366**: Changed `show_progress=args.debug` to `show_progress=True` (UI enabled for both modes)
+- **packages/utils/logging_setup.py:78**: Unified console logging to `WARNING+` for both modes (matches existing debug behavior)
+**Result**: Identical beautiful progress UI in both debug and production modes ✅
+**Architectural Benefits**:
+- **Consistent UX**: Users get same visual feedback regardless of browser visibility
+- **Clean Console**: No logging conflicts with progress UI screen clearing
+- **Information Preservation**: All INFO messages preserved in log files
+- **Maintainability**: Single code path for UI behavior reduces complexity
+**Status**: ✅ **ENHANCED** - UI behavior now unified across all modes
 
 ---
 
