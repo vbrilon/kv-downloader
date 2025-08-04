@@ -9,8 +9,8 @@ songs:
     
 #  - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
 
-# Test with a manageable song - Green Day has 8 tracks
   - url: "https://www.karaoke-version.com/custombackingtrack/journey/any-way-you-want-it.html"
+  - url: "https://www.karaoke-version.com/custombackingtrack/green-day/basket-case.html"
 
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com

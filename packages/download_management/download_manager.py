@@ -12,34 +12,25 @@ from selenium.common.exceptions import (
     TimeoutException
 )
 from ..utils import safe_click_with_scroll
+from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
 
 
 class DownloadManager:
     """Handles download orchestration, monitoring, and completion detection"""
     
-    def __init__(self, driver, wait):
-        """Initialize download manager with Selenium driver and wait objects"""
+    def __init__(self, 
+                 driver, 
+                 wait,
+                 progress_tracker: IProgressTracker,
+                 file_manager: IFileManager,
+                 chrome_manager: IChromeManager,
+                 stats_reporter: IStatsReporter):
+        """Initialize download manager with all required dependencies"""
         self.driver = driver
         self.wait = wait
-        self.progress_tracker = None
-        self.file_manager = None
-        self.chrome_manager = None
-        self.stats_reporter = None
-    
-    def set_progress_tracker(self, progress_tracker):
-        """Set the progress tracker for status updates"""
         self.progress_tracker = progress_tracker
-    
-    def set_file_manager(self, file_manager):
-        """Set the file manager for download operations"""
         self.file_manager = file_manager
-    
-    def set_chrome_manager(self, chrome_manager):
-        """Set the chrome manager for download path management"""
         self.chrome_manager = chrome_manager
-    
-    def set_stats_reporter(self, stats_reporter):
-        """Set the stats reporter for comprehensive tracking"""
         self.stats_reporter = stats_reporter
     
     def _setup_download_context(self, song_url, track_name, song_folder, track_index):
@@ -64,22 +55,21 @@ class DownloadManager:
         song_name = song_folder
         
         # Update progress tracker
-        if self.progress_tracker:
-            # Use provided track_index if available, otherwise try to find by name
-            if track_index is None:
-                # Find track by name to get index (fallback method)
-                for track in self.progress_tracker.tracks:
-                    if track_name.lower() in track['name'].lower() or track['name'].lower() in track_name.lower():
-                        track_index = track['index']
-                        logging.debug(f"Found track index {track_index} for {track_name}")
-                        break
-                
-                if track_index is None:
-                    logging.warning(f"Could not find track index for {track_name}")
+        # Use provided track_index if available, otherwise try to find by name
+        if track_index is None:
+            # Find track by name to get index (fallback method)
+            for track in self.progress_tracker.tracks:
+                if track_name.lower() in track['name'].lower() or track['name'].lower() in track_name.lower():
+                    track_index = track['index']
+                    logging.debug(f"Found track index {track_index} for {track_name}")
+                    break
             
-            if track_index is not None:
-                logging.debug(f"Updating progress for track {track_index}: {track_name}")
-                self.progress_tracker.update_track_status(track_index, 'downloading')
+            if track_index is None:
+                logging.warning(f"Could not find track index for {track_name}")
+        
+        if track_index is not None:
+            logging.debug(f"Updating progress for track {track_index}: {track_name}")
+            self.progress_tracker.update_track_status(track_index, 'downloading')
                 
         return song_folder, song_name, track_index
 
@@ -98,14 +88,7 @@ class DownloadManager:
         
         # Update Chrome download directory to song folder BEFORE clicking download
         try:
-            if self.chrome_manager:
-                self.chrome_manager.set_download_path(song_path.absolute())
-            else:
-                # Fallback to direct CDP command
-                self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
-                    'behavior': 'allow',
-                    'downloadPath': str(song_path.absolute())
-                })
+            self.chrome_manager.set_download_path(song_path.absolute())
             logging.info(f"✅ Updated Chrome download path to: {song_path}")
         except Exception as e:
             logging.warning(f"⚠️ Could not update Chrome download path: {e}")
@@ -279,9 +262,8 @@ class DownloadManager:
                 self.progress_tracker.update_track_status(track_index, 'failed')
             
             # Record failure in stats
-            if self.stats_reporter:
-                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                           error_message=str(e))
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                       error_message=str(e))
             
             return False
     
@@ -340,9 +322,8 @@ class DownloadManager:
                 self.progress_tracker.update_track_status(track_index, 'failed')
             
             # Record failure in stats
-            if self.stats_reporter:
-                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                           error_message="Solo verification failed")
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                       error_message="Solo verification failed")
             return False
         
         # Final verification before download
@@ -354,9 +335,8 @@ class DownloadManager:
                 self.progress_tracker.update_track_status(track_index, 'failed')
             
             # Record failure in stats
-            if self.stats_reporter:
-                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                           error_message="Final solo verification failed")
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                       error_message="Final solo verification failed")
             return False
         
         return True
@@ -417,9 +397,8 @@ class DownloadManager:
                 self.progress_tracker.update_track_status(track_index, 'failed')
             
             # Record failure in stats
-            if self.stats_reporter:
-                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                           error_message="Download not detected")
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                       error_message="Download not detected")
             return False
 
     def extract_song_folder_name(self, song_url):
@@ -553,8 +532,17 @@ class DownloadManager:
         files_needing_cleanup = self._identify_files_needing_cleanup(new_completed_files, context['track_name'])
         total_file_size = sum(f.stat().st_size for f in new_completed_files)
         
-        self._clean_downloaded_files(files_needing_cleanup, context['track_name'])
-        self._validate_downloaded_files(new_completed_files, context['track_name'])
+        # Clean files and get updated paths
+        updated_file_paths = self._clean_downloaded_files(files_needing_cleanup, context['track_name'])
+        
+        # Update the file list with cleaned paths
+        files_to_validate = []
+        for original_path in new_completed_files:
+            # Check if this file was cleaned (renamed)
+            updated_path = updated_file_paths.get(original_path, original_path)
+            files_to_validate.append(updated_path)
+        
+        self._validate_downloaded_files(files_to_validate, context['track_name'])
         self._update_completion_tracking(track_index, context['song_name'], context['track_name'], total_file_size)
     
     def _identify_files_needing_cleanup(self, new_completed_files, track_name):
@@ -576,14 +564,19 @@ class DownloadManager:
         return files_needing_cleanup
     
     def _clean_downloaded_files(self, files_needing_cleanup, track_name):
-        """Clean filenames for downloaded files"""
+        """Clean filenames for downloaded files and return path mapping"""
+        updated_file_paths = {}
+        
         for file_path in files_needing_cleanup:
-            self.file_manager.clean_downloaded_filename(file_path, track_name)
+            new_path = self.file_manager.clean_downloaded_filename(file_path, track_name)
+            updated_file_paths[file_path] = new_path
         
         if files_needing_cleanup:
             logging.info(f"✅ Cleaned {len(files_needing_cleanup)} files for {track_name}")
         else:
             logging.info(f"✅ All files already clean for {track_name}")
+        
+        return updated_file_paths
     
     def _validate_downloaded_files(self, new_completed_files, track_name):
         """Perform content validation on downloaded files"""
@@ -614,9 +607,8 @@ class DownloadManager:
         if self.progress_tracker and track_index:
             self.progress_tracker.update_track_status(track_index, 'completed', progress=100)
         
-        if self.stats_reporter:
-            self.stats_reporter.record_track_completion(song_name, track_name, success=True, 
-                                                       file_size=total_file_size)
+        self.stats_reporter.record_track_completion(song_name, track_name, success=True, 
+                                                   file_size=total_file_size)
     
     def _update_progress_if_needed(self, context, track_index):
         """Update progress periodically for ongoing downloads"""
@@ -633,9 +625,8 @@ class DownloadManager:
         if self.progress_tracker and track_index:
             self.progress_tracker.update_track_status(track_index, 'failed')
         
-        if self.stats_reporter:
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                       error_message="Download completion timeout")
+        self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                   error_message="Download completion timeout")
     
     def _handle_monitoring_error(self, error, song_name, track_name, track_index):
         """Handle errors during monitoring process"""
@@ -644,9 +635,8 @@ class DownloadManager:
         if self.progress_tracker and track_index:
             self.progress_tracker.update_track_status(track_index, 'failed')
         
-        if self.stats_reporter:
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                       error_message=f"Monitoring error: {str(error)}")
+        self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                   error_message=f"Monitoring error: {str(error)}")
     
     def _find_new_completed_files(self, song_path, track_name, initial_files):
         """Find newly completed files that weren't in the initial snapshot"""

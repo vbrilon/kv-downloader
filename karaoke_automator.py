@@ -24,6 +24,7 @@ from packages.file_operations import FileManager
 from packages.track_management import TrackManager
 from packages.download_management import DownloadManager
 from packages.utils import setup_logging
+from packages.di.factory import create_container_with_dependencies, create_download_manager_factory
 
 # Setup logging (will be reconfigured based on debug mode)
 logging.basicConfig(
@@ -60,19 +61,26 @@ class KaraokeVersionAutomator:
         self.driver = self.chrome_manager.driver
         self.wait = self.chrome_manager.wait
         
-        # Initialize all managers directly
+        # Initialize managers
         self.login_handler = LoginManager(self.driver, self.wait)
         self.file_manager = FileManager()
         self.track_manager = TrackManager(self.driver, self.wait)
-        self.download_manager = DownloadManager(self.driver, self.wait)
         
-        # Connect managers
+        # Set up dependency injection container
+        self.di_container = create_container_with_dependencies(
+            chrome_manager=self.chrome_manager,
+            file_manager=self.file_manager,
+            progress_tracker=self.progress,
+            stats_reporter=self.stats
+        )
+        
+        # Create download manager using dependency injection
+        download_manager_factory = create_download_manager_factory(self.di_container)
+        self.download_manager = download_manager_factory(self.driver, self.wait)
+        
+        # Connect track manager with progress tracker (still using setter for now)
         if self.progress:
             self.track_manager.set_progress_tracker(self.progress)
-            self.download_manager.set_progress_tracker(self.progress)
-        self.download_manager.set_file_manager(self.file_manager)
-        self.download_manager.set_chrome_manager(self.chrome_manager)
-        self.download_manager.set_stats_reporter(self.stats)  # Connect stats to download manager
     
     
     def login(self, force_relogin=False):

@@ -7,7 +7,7 @@ source bin/activate  # On macOS/Linux
 ```
 
 ## Overview
-Automated system for downloading isolated backing tracks from Karaoke-Version.com using Python and Selenium. Downloads all available tracks for specified songs into organized directories.
+Production-ready automated system for downloading isolated backing tracks from Karaoke-Version.com using Python and Selenium. Downloads all available tracks for specified songs into organized directories.
 
 ## Quick Start
 ```bash
@@ -25,8 +25,6 @@ songs:
     key: -1  # Optional: Pitch adjustment in semitones (-12 to +12)
 ```
 
-## Project Status: PRODUCTION READY ✅
-
 ## Architecture
 
 ### Package Structure
@@ -35,13 +33,31 @@ packages/
 ├── authentication/     # Login management and session handling
 ├── browser/           # Chrome setup and download path management
 ├── configuration/     # YAML config parsing and validation
+├── di/               # Dependency injection container and interfaces
 ├── download_management/  # Download orchestration and monitoring
 ├── file_operations/   # File management and cleanup
 ├── progress/         # Progress tracking and statistics reporting
 ├── track_management/ # Track discovery, isolation, mixer controls
-├── validation/       # Unified validation logic for track selection and audio state
-└── utils/           # Logging setup and cross-cutting utilities
+└── utils/           # Logging, error handling, and cross-cutting utilities
 ```
+
+### Dependency Injection System (packages/di/)
+- **DIContainer**: Lightweight dependency injection container for service management
+- **Interfaces**: Abstract base classes defining contracts for major components
+  - `IProgressTracker`: Progress tracking interface
+  - `IFileManager`: File operations interface  
+  - `IChromeManager`: Browser management interface
+  - `IStatsReporter`: Statistics reporting interface
+  - `IConfig`: Configuration management interface
+- **Adapters**: Bridge pattern implementations connecting existing classes to interfaces
+- **Factory**: Service creation and container setup utilities
+
+### Error Handling System (packages/utils/error_handling.py)
+- **@selenium_safe**: Decorator for Selenium operations with consistent error handling
+- **@validation_safe**: Decorator for validation methods returning boolean results
+- **@file_operation_safe**: Decorator for file system operations
+- **@retry_on_failure**: Decorator with exponential backoff retry logic
+- **ErrorContext**: Context manager for complex operation error handling
 
 ### Key Site Selectors (Verified Working)
 - **Login**: `name="frm_login"`, `name="frm_password"`, `name="sbm"`
@@ -51,26 +67,22 @@ packages/
 
 ### Track Management System
 - **Track Discovery**: Up to 15 tracks per song (data-index 0-14)
-- **Solo Isolation**: Mutually exclusive track isolation with 4-phase validation:
+- **Solo Isolation**: Mutually exclusive track isolation with simplified 2-phase validation:
   1. Solo button activation with retry logic
-  2. Audio server processing indicator monitoring
-  3. Multi-layer validation (mixer state + server response + track fingerprinting)
-  4. Persistent state verification before download
-
-### Validation System (packages/validation/)
-- **TrackValidator**: Unified validation supporting both strict (100%) and audio_mix (67%) modes
-- **AudioValidator**: JavaScript-based audio state validation with mixer analysis
-- **ValidationConfig**: Configurable validation behavior with predefined configs
-- **Solo Button Validation**: Consolidated logic for button state checking and exclusivity
-- **Track Element Validation**: Unified track discovery and name matching logic
+  2. Simple audio mix state validation (solo button active check)
 
 ### Download Management System
+- **Dependency Injection**: DownloadManager uses constructor injection for all dependencies
 - **Modular Download Flow**: `download_current_mix()` orchestrates 4 focused methods:
   - `_navigate_and_find_download_button()`: Page navigation and button finding
   - `_validate_pre_download_requirements()`: Pre-download validation with retry
   - `_execute_download_action()`: Download execution and progress tracking
   - `_monitor_download_completion()`: Download monitoring and completion handling
-- **Error Handling**: Specific error types (SONG_NOT_PURCHASED, DOWNLOAD_BUTTON_NOT_FOUND)
+- **File Processing Pipeline**: Coordinated sequence ensuring validation uses correct file paths:
+  1. Download completion detection
+  2. File cleanup/renaming with path mapping (`old_path → new_path`)
+  3. Validation using updated paths after renaming
+- **Error Handling**: Standardized error handling using decorators
 - **Progress Tracking**: Real-time status updates and background monitoring
 
 ### Session Management
@@ -91,5 +103,13 @@ python karaoke_automator.py --debug         # Debug mode
 python tests/run_tests.py                   # All tests
 python tests/run_tests.py --regression-only # Regression tests
 ```
+
+### File Operations System (packages/file_operations/)
+- **Download Path Management**: Automatic Chrome download path configuration per song
+- **File Cleanup**: Intelligent filename cleaning removing site-generated suffixes
+  - Removes `_Custom_Backing_Track` patterns and parenthetical content
+  - Simplifies to clean track names (e.g., `"Drum Kit.mp3"`)
+- **Content Validation**: Audio file validation with proper path tracking after renaming
+- **Error Recovery**: Fallback mechanisms for file system operations
 
 

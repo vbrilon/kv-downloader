@@ -23,6 +23,8 @@ except ImportError:
     USERNAME = None
     PASSWORD = None
 
+from packages.utils import selenium_safe, validation_safe
+
 
 class LoginManager:
     """Handles all login-related functionality for Karaoke-Version.com"""
@@ -43,39 +45,31 @@ class LoginManager:
         # Create session storage directory if it doesn't exist
         self.session_file.parent.mkdir(parents=True, exist_ok=True)
     
+    @validation_safe(return_value=False, operation_name="login status check")
     def is_logged_in(self):
         """Check if user is currently logged in"""
-        try:
-            # Primary check: Look for "My Account" in header
-            my_account_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'My Account')]")
-            if my_account_elements:
-                logging.info("✅ User is logged in: Found 'My Account' in header")
-                return True
-            
-            # Secondary check: No login links present
-            login_links = self.driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
-            if not login_links:
-                logging.info("✅ User appears logged in: No login links found")
-                return True
-            
-            logging.info("❌ User is not logged in")
-            return False
-            
-        except Exception as e:
-            logging.error(f"Error checking login status: {e}")
-            return False
+        # Primary check: Look for "My Account" in header
+        my_account_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'My Account')]")
+        if my_account_elements:
+            logging.info("✅ User is logged in: Found 'My Account' in header")
+            return True
+        
+        # Secondary check: No login links present
+        login_links = self.driver.find_elements(By.XPATH, "//a[contains(text(), 'Log in')]")
+        if not login_links:
+            logging.info("✅ User appears logged in: No login links found")
+            return True
+        
+        logging.info("❌ User is not logged in")
+        return False
     
+    @selenium_safe(return_value=False, operation_name="logout")
     def logout(self):
         """Logout from the current session"""
-        try:
-            if self._attempt_direct_logout():
-                return True
-            
-            return self._fallback_cookie_logout()
-            
-        except Exception as e:
-            logging.error(f"Error during logout: {e}")
-            return self._emergency_cookie_fallback()
+        if self._attempt_direct_logout():
+            return True
+        
+        return self._fallback_cookie_logout()
     
     def _attempt_direct_logout(self):
         """Attempt to logout using direct logout links"""
