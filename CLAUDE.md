@@ -39,6 +39,7 @@ packages/
 ├── file_operations/   # File management and cleanup
 ├── progress/         # Progress tracking and statistics reporting
 ├── track_management/ # Track discovery, isolation, mixer controls
+├── validation/       # Unified validation logic for track selection and audio state
 └── utils/           # Logging setup and cross-cutting utilities
 ```
 
@@ -55,13 +56,22 @@ packages/
   2. Audio server processing indicator monitoring
   3. Multi-layer validation (mixer state + server response + track fingerprinting)
   4. Persistent state verification before download
-- **Validation Score**: Requires 2/3 validation checks to pass (67% threshold)
 
-### Critical Bug Fix (2025-08-04)
-**Fixed**: `NameError: name 'track_index' is not defined` in `packages/track_management/track_manager.py`
-- **Root Cause**: Parameter not passed through method call chain (`_activate_solo_button`)
-- **Solution**: Updated method signature to accept and pass `track_index` parameter
-- **Impact**: Resolved 100% track isolation failures
+### Validation System (packages/validation/)
+- **TrackValidator**: Unified validation supporting both strict (100%) and audio_mix (67%) modes
+- **AudioValidator**: JavaScript-based audio state validation with mixer analysis
+- **ValidationConfig**: Configurable validation behavior with predefined configs
+- **Solo Button Validation**: Consolidated logic for button state checking and exclusivity
+- **Track Element Validation**: Unified track discovery and name matching logic
+
+### Download Management System
+- **Modular Download Flow**: `download_current_mix()` orchestrates 4 focused methods:
+  - `_navigate_and_find_download_button()`: Page navigation and button finding
+  - `_validate_pre_download_requirements()`: Pre-download validation with retry
+  - `_execute_download_action()`: Download execution and progress tracking
+  - `_monitor_download_completion()`: Download monitoring and completion handling
+- **Error Handling**: Specific error types (SONG_NOT_PURCHASED, DOWNLOAD_BUTTON_NOT_FOUND)
+- **Progress Tracking**: Real-time status updates and background monitoring
 
 ### Session Management
 - **Chrome Profile Reuse**: Persistent authentication via `chrome_profile/`
