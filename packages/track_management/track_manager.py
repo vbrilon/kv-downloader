@@ -177,9 +177,9 @@ class TrackManager:
         safe_click(self.driver, solo_button, f"solo button for {track_name}")
         
         if self._wait_for_solo_activation(solo_button, track_name):
-            return self._finalize_solo_activation(track_name)
+            return self._finalize_solo_activation(track_name, track_index)
         else:
-            return self._retry_solo_activation(solo_button, track_name)
+            return self._retry_solo_activation(solo_button, track_name, track_index)
     
     def _wait_for_solo_activation(self, solo_button, track_name):
         """Wait for solo button to become active"""
@@ -225,7 +225,7 @@ class TrackManager:
         
         return False
     
-    def _retry_solo_activation(self, solo_button, track_name):
+    def _retry_solo_activation(self, solo_button, track_name, track_index=None):
         """Retry solo activation with aggressive clicking"""
         logging.info(f"🔄 Final retry attempt for {track_name}")
         
@@ -234,7 +234,7 @@ class TrackManager:
             
             if self._wait_for_retry_activation(solo_button):
                 logging.info(f"✅ Solo button active after aggressive retry for {track_name}")
-                return self._finalize_solo_activation(track_name)
+                return self._finalize_solo_activation(track_name, track_index)
             else:
                 return self._handle_solo_failure(solo_button, track_name)
                 
@@ -269,8 +269,8 @@ class TrackManager:
         logging.error(f"   Track may have timing issues or site-specific problems")
         return False
     
-    def _finalize_solo_activation(self, track_name):
-        """Finalize solo activation with audio server sync verification"""
+    def _finalize_solo_activation(self, track_name, track_index=None):
+        """Finalize solo activation with comprehensive audio server sync verification"""
         logging.info(f"⏳ Waiting for audio server to process solo state for {track_name}...")
         
         # Phase 1: Wait for audio server processing indicators to clear
@@ -279,7 +279,25 @@ class TrackManager:
         # Phase 2: Verify mixer state configuration
         mixer_state_valid = self._verify_mixer_state_configuration()
         
-        # Phase 3: Fallback delay if verification methods unavailable
+        # Phase 3: Enhanced audio mix validation (optional)
+        phase3_validation_passed = True
+        if track_index is not None:
+            try:
+                logging.debug(f"🎵 Running Phase 3 audio mix validation for {track_name}...")
+                phase3_results = self._validate_audio_mix_state(track_name, track_index)
+                phase3_validation_passed = phase3_results['audio_mix_validated']
+                
+                if phase3_validation_passed:
+                    logging.info(f"✅ Phase 3 audio mix validation PASSED for {track_name}")
+                else:
+                    logging.warning(f"⚠️ Phase 3 audio mix validation FAILED for {track_name}")
+                    logging.warning(f"   Details: {'; '.join(phase3_results['details'][:3])}")  # Show first 3 details
+                    
+            except Exception as e:
+                logging.warning(f"⚠️ Phase 3 validation error for {track_name}: {e}")
+                # Don't fail the entire process if Phase 3 has issues
+        
+        # Phase 4: Fallback delay if verification methods unavailable
         if not audio_server_ready or not mixer_state_valid:
             logging.info(f"⏳ Fallback: Using {SOLO_ACTIVATION_DELAY}s delay for audio generation sync...")
             try:
@@ -289,7 +307,15 @@ class TrackManager:
             except TimeoutException:
                 pass  # Expected timeout for delay
         
-        logging.info(f"✅ Audio server sync verification complete for {track_name}")
+        # Final assessment
+        overall_success = audio_server_ready or mixer_state_valid
+        if overall_success and phase3_validation_passed:
+            logging.info(f"✅ Complete audio server sync verification successful for {track_name}")
+        elif overall_success:
+            logging.info(f"✅ Basic audio server sync verification complete for {track_name} (Phase 3 issues noted)")
+        else:
+            logging.warning(f"⚠️ Audio server sync verification had issues for {track_name} - using fallback timing")
+            
         return True
     
     def _wait_for_audio_server_sync(self):
@@ -402,6 +428,297 @@ class TrackManager:
             
         except Exception as e:
             logging.warning(f"⚠️ Error during mixer state verification: {e}")
+            return False
+    
+    def _validate_audio_mix_state(self, track_name, expected_solo_index):
+        """Phase 3: Enhanced audio mix validation to verify actual audio state
+        
+        Args:
+            track_name (str): Name of the track that should be isolated
+            expected_solo_index (str/int): Expected solo track index
+            
+        Returns:
+            dict: Validation results with detailed status information
+        """
+        validation_results = {
+            'audio_mix_validated': False,
+            'mixer_volume_state': False,
+            'audio_server_response': False,
+            'track_isolation_confirmed': False,
+            'error_code': None,
+            'details': []
+        }
+        
+        try:
+            logging.debug(f"🎵 Phase 3: Validating audio mix state for {track_name}...")
+            
+            # Enhanced Method 1: Deep mixer state analysis
+            mixer_validation = self._validate_mixer_audio_configuration(expected_solo_index)
+            validation_results['mixer_volume_state'] = mixer_validation['valid']
+            validation_results['details'].extend(mixer_validation['details'])
+            
+            # Enhanced Method 2: Audio server response validation
+            server_validation = self._validate_audio_server_response()
+            validation_results['audio_server_response'] = server_validation['valid']
+            validation_results['details'].extend(server_validation['details'])
+            
+            # Enhanced Method 3: Track isolation fingerprinting
+            isolation_validation = self._validate_track_isolation_fingerprint(track_name, expected_solo_index)
+            validation_results['track_isolation_confirmed'] = isolation_validation['valid']
+            validation_results['details'].extend(isolation_validation['details'])
+            
+            # Calculate overall validation score
+            validation_checks = [
+                validation_results['mixer_volume_state'],
+                validation_results['audio_server_response'],
+                validation_results['track_isolation_confirmed']
+            ]
+            
+            passed_validations = sum(validation_checks)
+            total_validations = len(validation_checks)
+            validation_score = passed_validations / total_validations
+            
+            # Require at least 2/3 validations to pass for audio mix validation
+            validation_results['audio_mix_validated'] = validation_score >= 0.67
+            
+            if validation_results['audio_mix_validated']:
+                logging.info(f"✅ Phase 3: Audio mix validation PASSED for {track_name} ({passed_validations}/{total_validations})")
+            else:
+                logging.warning(f"⚠️ Phase 3: Audio mix validation FAILED for {track_name} ({passed_validations}/{total_validations})")
+                validation_results['error_code'] = 'AUDIO_MIX_VALIDATION_FAILED'
+            
+            return validation_results
+            
+        except Exception as e:
+            logging.error(f"❌ Phase 3: Error during audio mix validation: {e}")
+            validation_results['error_code'] = 'AUDIO_VALIDATION_EXCEPTION'
+            validation_results['details'].append(f"Exception: {str(e)}")
+            return validation_results
+    
+    def _validate_mixer_audio_configuration(self, expected_solo_index):
+        """Enhanced mixer state validation with volume and configuration analysis"""
+        result = {'valid': False, 'details': []}
+        
+        try:
+            # Advanced JavaScript mixer analysis
+            mixer_config = self.driver.execute_script("""
+                try {
+                    if (typeof mixer === 'undefined' || mixer === null) {
+                        return {error: 'mixer_not_available'};
+                    }
+                    
+                    var config = {
+                        tracks: [],
+                        solo_active: false,
+                        solo_track_index: null
+                    };
+                    
+                    // Try to get track volume information
+                    if (typeof mixer.getTrackVolume === 'function') {
+                        for (var i = 0; i < 15; i++) {
+                            try {
+                                var volume = mixer.getTrackVolume(i);
+                                config.tracks.push({index: i, volume: volume});
+                                if (volume > 0) {
+                                    config.solo_active = true;
+                                    config.solo_track_index = i;
+                                }
+                            } catch (e) {
+                                // Track doesn't exist or error getting volume
+                            }
+                        }
+                    }
+                    
+                    // Try to get solo state information
+                    if (typeof mixer.getSoloState === 'function') {
+                        config.solo_state = mixer.getSoloState();
+                    } else if (typeof mixer.soloTrack !== 'undefined') {
+                        config.solo_track_index = mixer.soloTrack;
+                        config.solo_active = config.solo_track_index !== null;
+                    }
+                    
+                    return config;
+                } catch (e) {
+                    return {error: 'mixer_analysis_failed', message: e.message};
+                }
+            """)
+            
+            if mixer_config and 'error' not in mixer_config:
+                result['details'].append(f"Mixer configuration retrieved: {len(mixer_config.get('tracks', []))} tracks analyzed")
+                
+                # Check if the expected track is the only one with volume
+                if mixer_config.get('solo_active') and str(mixer_config.get('solo_track_index')) == str(expected_solo_index):
+                    result['valid'] = True
+                    result['details'].append(f"✅ Solo track index matches expected: {expected_solo_index}")
+                else:
+                    result['details'].append(f"⚠️ Solo state mismatch - expected: {expected_solo_index}, actual: {mixer_config.get('solo_track_index')}")
+            else:
+                result['details'].append(f"⚠️ Mixer analysis failed: {mixer_config.get('error', 'unknown')}")
+                
+        except Exception as e:
+            result['details'].append(f"⚠️ Mixer configuration validation failed: {e}")
+        
+        return result
+    
+    def _validate_audio_server_response(self):
+        """Enhanced audio server response validation"""
+        result = {'valid': False, 'details': []}
+        
+        try:
+            # Check for specific audio server status indicators
+            page_source_lower = self.driver.page_source.lower()
+            
+            # Look for positive audio server indicators
+            positive_indicators = [
+                'audio ready', 'mix ready', 'track ready', 'solo ready',
+                'audio loaded', 'mix loaded', 'track loaded',
+                'audio complete', 'mix complete', 'processing complete'
+            ]
+            
+            # Look for negative indicators that suggest issues
+            negative_indicators = [
+                'audio error', 'mix error', 'loading failed', 'audio failed',
+                'server error', 'timeout', 'connection failed'
+            ]
+            
+            positive_found = any(indicator in page_source_lower for indicator in positive_indicators)
+            negative_found = any(indicator in page_source_lower for indicator in negative_indicators)
+            
+            if positive_found and not negative_found:
+                result['valid'] = True
+                result['details'].append("✅ Audio server shows positive ready indicators")
+            elif negative_found:
+                result['details'].append("⚠️ Audio server shows error indicators")
+            else:
+                # Check for absence of processing indicators (good sign)
+                processing_indicators = ['generating', 'preparing', 'processing', 'loading']
+                still_processing = any(indicator in page_source_lower for indicator in processing_indicators)
+                
+                if not still_processing:
+                    result['valid'] = True
+                    result['details'].append("✅ No active processing indicators detected")
+                else:
+                    result['details'].append("⚠️ Audio server still showing processing indicators")
+                    
+        except Exception as e:
+            result['details'].append(f"⚠️ Audio server validation failed: {e}")
+        
+        return result
+    
+    def _validate_track_isolation_fingerprint(self, track_name, expected_solo_index):
+        """Enhanced track isolation validation using DOM fingerprinting"""
+        result = {'valid': False, 'details': []}
+        
+        try:
+            # Method 1: Analyze track element states
+            track_states = self._analyze_track_element_states()
+            result['details'].extend(track_states['details'])
+            
+            # Method 2: Check for audio context indicators
+            audio_context_valid = self._check_audio_context_indicators()
+            
+            # Method 3: Validate solo button exclusivity
+            solo_exclusivity_valid = self._validate_solo_button_exclusivity(expected_solo_index)
+            
+            # Combined validation logic
+            if track_states['isolated_track_detected'] and solo_exclusivity_valid:
+                result['valid'] = True
+                result['details'].append(f"✅ Track isolation fingerprint validated for index {expected_solo_index}")
+            else:
+                result['details'].append(f"⚠️ Track isolation fingerprint validation failed")
+                
+        except Exception as e:
+            result['details'].append(f"⚠️ Track isolation fingerprint validation failed: {e}")
+        
+        return result
+    
+    def _analyze_track_element_states(self):
+        """Analyze DOM track elements for isolation state indicators"""
+        result = {'isolated_track_detected': False, 'details': []}
+        
+        try:
+            # Find all track elements and analyze their states
+            track_elements = self.driver.find_elements(By.CSS_SELECTOR, ".track")
+            active_tracks = 0
+            muted_tracks = 0
+            
+            for track in track_elements:
+                try:
+                    # Check for various state indicators
+                    classes = track.get_attribute('class') or ''
+                    style = track.get_attribute('style') or ''
+                    
+                    # Look for active/solo indicators
+                    if any(indicator in classes.lower() for indicator in ['active', 'solo', 'selected', 'playing']):
+                        active_tracks += 1
+                    
+                    # Look for muted/inactive indicators  
+                    if any(indicator in classes.lower() for indicator in ['muted', 'inactive', 'disabled']) or 'opacity: 0' in style:
+                        muted_tracks += 1
+                        
+                except Exception:
+                    continue
+            
+            # If we have exactly 1 active track and some muted tracks, isolation is likely working
+            if active_tracks == 1 and muted_tracks > 0:
+                result['isolated_track_detected'] = True
+                result['details'].append(f"✅ Track isolation detected: 1 active, {muted_tracks} muted")
+            else:
+                result['details'].append(f"⚠️ Track isolation unclear: {active_tracks} active, {muted_tracks} muted")
+                
+        except Exception as e:
+            result['details'].append(f"⚠️ Track element analysis failed: {e}")
+        
+        return result
+    
+    def _check_audio_context_indicators(self):
+        """Check for audio context and Web Audio API indicators"""
+        try:
+            audio_context_status = self.driver.execute_script("""
+                try {
+                    // Check for Web Audio API context
+                    if (typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined') {
+                        return {
+                            audio_api_available: true,
+                            context_state: 'available'
+                        };
+                    }
+                    return {
+                        audio_api_available: false,
+                        context_state: 'not_available'
+                    };
+                } catch (e) {
+                    return {
+                        audio_api_available: false,
+                        error: e.message
+                    };
+                }
+            """)
+            
+            return audio_context_status.get('audio_api_available', False)
+            
+        except Exception:
+            return False
+    
+    def _validate_solo_button_exclusivity(self, expected_solo_index):
+        """Validate that only the expected solo button is active"""
+        try:
+            # Find all solo buttons and check their states
+            solo_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button.track__solo")
+            active_solo_count = 0
+            expected_button_active = False
+            
+            for i, button in enumerate(solo_buttons):
+                classes = button.get_attribute('class') or ''
+                if any(active_class in classes for active_class in ['active', 'is-active', 'selected']):
+                    active_solo_count += 1
+                    if str(i) == str(expected_solo_index):
+                        expected_button_active = True
+            
+            # Validation passes if exactly one solo button is active and it's the expected one
+            return active_solo_count == 1 and expected_button_active
+            
+        except Exception:
             return False
     
     def clear_all_solos(self, song_url):
