@@ -247,103 +247,33 @@ class DownloadManager:
         song_path = self._setup_file_management(song_folder, cleanup_existing)
         
         try:
-            # Navigate to song page if needed
-            if self.driver.current_url != song_url:
-                self.driver.get(song_url)
-                # Wait for song page to load and download button to be available
-                try:
-                    WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "a.download"))
-                    )
-                except TimeoutException:
-                    logging.warning("Timeout waiting for download button to load")
+            # Navigate to song page and find download button
+            download_button = self._navigate_and_find_download_button(song_url)
             
-            # Find and validate download button
-            download_button = self._find_download_button()
-            
-            if not download_button:
-                # Check if this is because the song hasn't been purchased
-                purchase_required = self._check_purchase_required()
-                if purchase_required:
-                    logging.error(f"❌ SONG NOT PURCHASED: '{track_name}' is not available for download")
-                    logging.error("   💳 Please purchase this song on Karaoke-Version.com to download it")
-                    logging.error("   ⏭️  Skipping to next song...")
-                    if self.progress_tracker and track_index:
-                        self.progress_tracker.update_track_status(track_index, 'failed')
-                    return False
-                else:
-                    logging.error("Could not find download button - unknown error")
-                    return False
-            
-            # Verify track selection state before download (with retry)
-            verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
-            if not verification_passed:
-                logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
-                if self.progress_tracker and track_index:
-                    self.progress_tracker.update_track_status(track_index, 'failed')
-                
-                # Record failure in stats
-                if self.stats_reporter:
-                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                               error_message="Solo verification failed")
+            # Perform pre-download validation checks
+            if not self._validate_pre_download_requirements(track_name, track_index, song_name):
                 return False
             
-            # Re-verify track selection state immediately before download
-            logging.info(f"🔍 Final verification before download for {track_name}")
-            final_verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
-            if not final_verification_passed:
-                logging.error(f"❌ Final track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
-                if self.progress_tracker and track_index:
-                    self.progress_tracker.update_track_status(track_index, 'failed')
-                
-                # Record failure in stats
-                if self.stats_reporter:
-                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                               error_message="Final solo verification failed")
+            # Execute download action
+            self._execute_download_action(download_button, track_index)
+            
+            # Monitor download completion
+            if not self._monitor_download_completion(song_path, track_name, track_index, song_name):
                 return False
-            
-            # Execute download click and handle any popups
-            self._execute_download_click(download_button)
-            
-            # Update progress tracker to indicate we're waiting for download to start
-            if self.progress_tracker and track_index:
-                self.progress_tracker.update_track_status(track_index, 'processing')
-            
-            # Wait for download to actually start (critical for proper sequencing)
-            logging.info(f"⏳ Waiting for download to start for: {track_name}")
-            download_started = self.file_manager.wait_for_download_to_start(track_name, song_path, track_index)
-            
-            if download_started:
-                logging.info(f"✅ Download started for: {track_name} - monitoring completion")
-                
-                # Start background monitoring for completion and file cleanup
-                monitor_thread = self.start_completion_monitoring(song_path, track_name, track_index)
-                
-                # Wait for completion monitoring to finish before returning
-                logging.info(f"⏳ Waiting for {track_name} completion monitoring to finish...")
-                monitor_thread.join()
-                logging.info(f"✅ Completion monitoring finished for {track_name}")
-                
-            else:
-                logging.warning(f"⚠️ Download not detected for: {track_name}")
-                
-                # Since we're only monitoring song folder, no download detected means failure
-                logging.error(f"❌ No download detected in song folder for: {track_name}")
-                if self.progress_tracker and track_index:
-                    self.progress_tracker.update_track_status(track_index, 'failed')
-                
-                # Record failure in stats
-                if self.stats_reporter:
-                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                               error_message="Download not detected")
-                return False
-            
-            # Don't mark as completed immediately since downloads continue in background
-            # Progress will be updated when we check for completion later or in next iteration
             
             return True
             
         except Exception as e:
+            # Handle specific error types
+            if str(e) == "SONG_NOT_PURCHASED":
+                logging.error(f"❌ SONG NOT PURCHASED: '{track_name}' is not available for download")
+                logging.error("   💳 Please purchase this song on Karaoke-Version.com to download it")
+                logging.error("   ⏭️  Skipping to next song...")
+            elif str(e) == "DOWNLOAD_BUTTON_NOT_FOUND":
+                logging.error("Could not find download button - unknown error")
+            else:
+                logging.error(f"Error downloading mix: {e}")
+            
             # Update progress tracker to failed
             if self.progress_tracker and track_index:
                 self.progress_tracker.update_track_status(track_index, 'failed')
@@ -353,9 +283,145 @@ class DownloadManager:
                 self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
                                                            error_message=str(e))
             
-            logging.error(f"Error downloading mix: {e}")
             return False
     
+    def _navigate_and_find_download_button(self, song_url):
+        """Navigate to song page and locate download button
+        
+        Args:
+            song_url (str): URL of the song page
+            
+        Returns:
+            download_button: WebElement if found
+            
+        Raises:
+            Exception: If navigation fails or button cannot be found
+        """
+        # Navigate to song page if needed
+        if self.driver.current_url != song_url:
+            self.driver.get(song_url)
+            # Wait for song page to load and download button to be available
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a.download"))
+                )
+            except TimeoutException:
+                logging.warning("Timeout waiting for download button to load")
+        
+        # Find and validate download button
+        download_button = self._find_download_button()
+        
+        if not download_button:
+            # Check if this is because the song hasn't been purchased
+            purchase_required = self._check_purchase_required()
+            if purchase_required:
+                raise Exception("SONG_NOT_PURCHASED")
+            else:
+                raise Exception("DOWNLOAD_BUTTON_NOT_FOUND")
+        
+        return download_button
+    
+    def _validate_pre_download_requirements(self, track_name, track_index, song_name):
+        """Perform pre-download validation checks with retry logic
+        
+        Args:
+            track_name (str): Name of the track being downloaded
+            track_index (int): Track index for progress tracking
+            song_name (str): Song name for stats recording
+            
+        Returns:
+            bool: True if validation passes, False if blocked
+        """
+        # Initial verification
+        verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
+        if not verification_passed:
+            logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
+            if self.progress_tracker and track_index:
+                self.progress_tracker.update_track_status(track_index, 'failed')
+            
+            # Record failure in stats
+            if self.stats_reporter:
+                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                           error_message="Solo verification failed")
+            return False
+        
+        # Final verification before download
+        logging.info(f"🔍 Final verification before download for {track_name}")
+        final_verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
+        if not final_verification_passed:
+            logging.error(f"❌ Final track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
+            if self.progress_tracker and track_index:
+                self.progress_tracker.update_track_status(track_index, 'failed')
+            
+            # Record failure in stats
+            if self.stats_reporter:
+                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                           error_message="Final solo verification failed")
+            return False
+        
+        return True
+    
+    def _execute_download_action(self, download_button, track_index):
+        """Execute download click and update progress tracking
+        
+        Args:
+            download_button: WebElement for the download button
+            track_index (int): Track index for progress tracking
+            
+        Returns:
+            bool: True if click executed successfully
+        """
+        # Execute download click and handle any popups
+        self._execute_download_click(download_button)
+        
+        # Update progress tracker to indicate we're waiting for download to start
+        if self.progress_tracker and track_index:
+            self.progress_tracker.update_track_status(track_index, 'processing')
+        
+        return True
+    
+    def _monitor_download_completion(self, song_path, track_name, track_index, song_name):
+        """Wait for download start and monitor completion
+        
+        Args:
+            song_path (str): Path to song directory
+            track_name (str): Name of the track being downloaded
+            track_index (int): Track index for progress tracking
+            song_name (str): Song name for stats recording
+            
+        Returns:
+            bool: True if download completes successfully, False if failed
+        """
+        # Wait for download to actually start (critical for proper sequencing)
+        logging.info(f"⏳ Waiting for download to start for: {track_name}")
+        download_started = self.file_manager.wait_for_download_to_start(track_name, song_path, track_index)
+        
+        if download_started:
+            logging.info(f"✅ Download started for: {track_name} - monitoring completion")
+            
+            # Start background monitoring for completion and file cleanup
+            monitor_thread = self.start_completion_monitoring(song_path, track_name, track_index)
+            
+            # Wait for completion monitoring to finish before returning
+            logging.info(f"⏳ Waiting for {track_name} completion monitoring to finish...")
+            monitor_thread.join()
+            logging.info(f"✅ Completion monitoring finished for {track_name}")
+            
+            return True
+        else:
+            logging.warning(f"⚠️ Download not detected for: {track_name}")
+            
+            # Since we're only monitoring song folder, no download detected means failure
+            logging.error(f"❌ No download detected in song folder for: {track_name}")
+            if self.progress_tracker and track_index:
+                self.progress_tracker.update_track_status(track_index, 'failed')
+            
+            # Record failure in stats
+            if self.stats_reporter:
+                self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                           error_message="Download not detected")
+            return False
+
     def extract_song_folder_name(self, song_url):
         """Extract song information from URL to create folder name"""
         try:
