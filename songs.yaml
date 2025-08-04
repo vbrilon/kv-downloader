@@ -9,7 +9,8 @@ songs:
     
 #  - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
 
-  - url: "https://www.karaoke-version.com/custombackingtrack/ozzy-osbourne/mama-i-m-coming-home.html"
+  - url: "https://www.karaoke-version.com/custombackingtrack/journey/any-way-you-want-it.html"
+
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com
 # - Name is optional - auto-extracted from URL as "Artist - Song" if omitted. 
