@@ -32,7 +32,7 @@ songs:
 packages/
 ├── authentication/     # Login management and session handling
 ├── browser/           # Chrome setup and download path management
-├── configuration/     # YAML config parsing and validation
+├── configuration/     # YAML config parsing, validation, and constants
 ├── di/               # Dependency injection container and interfaces
 ├── download_management/  # Download orchestration and monitoring
 ├── file_operations/   # File management and cleanup
@@ -40,6 +40,14 @@ packages/
 ├── track_management/ # Track discovery, isolation, mixer controls
 └── utils/           # Logging, error handling, and cross-cutting utilities
 ```
+
+### Configuration System (packages/configuration/)
+- **config.py**: Centralized constants for timeouts, delays, retries, and thresholds
+  - WebDriver timeouts (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, etc.)
+  - Sleep/delay intervals (PROGRESS_UPDATE_INTERVAL, CLICK_HANDLER_DELAY, etc.)
+  - Retry limits and polling intervals (TRACK_SELECTION_MAX_RETRIES, DOWNLOAD_MAX_WAIT, etc.)
+  - File matching ratios and UI constants
+- **config_manager.py**: Configuration parsing and validation logic
 
 ### Dependency Injection System (packages/di/)
 - **DIContainer**: Lightweight dependency injection container for service management
@@ -111,5 +119,6 @@ python tests/run_tests.py --regression-only # Regression tests
   - Simplifies to clean track names (e.g., `"Drum Kit.mp3"`)
 - **Content Validation**: Audio file validation with proper path tracking after renaming
 - **Error Recovery**: Fallback mechanisms for file system operations
+- **Configurable Thresholds**: Uses constants for file matching ratios and operation timeouts
 
 
