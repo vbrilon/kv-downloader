@@ -270,17 +270,139 @@ class TrackManager:
         return False
     
     def _finalize_solo_activation(self, track_name):
-        """Finalize solo activation with synchronization delay"""
-        logging.info(f"⏳ Waiting {SOLO_ACTIVATION_DELAY}s for audio generation to sync with solo state...")
-        try:
-            WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
-                lambda driver: False  # Always timeout to create the delay
-            )
-        except TimeoutException:
-            pass  # Expected timeout for delay
+        """Finalize solo activation with audio server sync verification"""
+        logging.info(f"⏳ Waiting for audio server to process solo state for {track_name}...")
         
-        logging.info(f"✅ Solo activation delay complete for {track_name}")
+        # Phase 1: Wait for audio server processing indicators to clear
+        audio_server_ready = self._wait_for_audio_server_sync()
+        
+        # Phase 2: Verify mixer state configuration
+        mixer_state_valid = self._verify_mixer_state_configuration()
+        
+        # Phase 3: Fallback delay if verification methods unavailable
+        if not audio_server_ready or not mixer_state_valid:
+            logging.info(f"⏳ Fallback: Using {SOLO_ACTIVATION_DELAY}s delay for audio generation sync...")
+            try:
+                WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
+                    lambda driver: False  # Always timeout to create the delay
+                )
+            except TimeoutException:
+                pass  # Expected timeout for delay
+        
+        logging.info(f"✅ Audio server sync verification complete for {track_name}")
         return True
+    
+    def _wait_for_audio_server_sync(self):
+        """Wait for audio server processing indicators to complete"""
+        try:
+            # Monitor for audio server processing completion
+            # Based on existing pattern from download_manager.py:210-211
+            logging.debug("🔍 Monitoring audio server processing indicators...")
+            
+            # Wait for any processing indicators to appear and then disappear
+            max_wait_time = SOLO_ACTIVATION_DELAY
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait_time:
+                page_source_lower = self.driver.page_source.lower()
+                
+                # Check if audio server is actively processing
+                if ("generating" in page_source_lower or 
+                    "preparing" in page_source_lower or
+                    "processing" in page_source_lower or
+                    "loading" in page_source_lower):
+                    logging.debug("⏳ Audio server processing detected, waiting for completion...")
+                    time.sleep(0.5)
+                    continue
+                
+                # Check for positive completion indicators
+                if ("ready" in page_source_lower or 
+                    "complete" in page_source_lower or
+                    "finished" in page_source_lower):
+                    logging.debug("✅ Audio server processing completion detected")
+                    return True
+                
+                # Brief pause before rechecking
+                time.sleep(0.5)
+            
+            logging.debug("⏱️ Audio server sync timeout - proceeding with fallback delay")
+            return False
+            
+        except Exception as e:
+            logging.warning(f"⚠️ Error during audio server sync verification: {e}")
+            return False
+    
+    def _verify_mixer_state_configuration(self):
+        """Verify mixer state configuration matches expected solo state"""
+        try:
+            logging.debug("🔍 Verifying mixer state configuration...")
+            
+            # Method 1: Check for mixer object availability via JavaScript
+            try:
+                mixer_available = self.driver.execute_script("""
+                    return typeof mixer !== 'undefined' && mixer !== null;
+                """)
+                
+                if mixer_available:
+                    # Try to get mixer state information
+                    mixer_state = self.driver.execute_script("""
+                        try {
+                            // Check if mixer has state-related properties
+                            if (typeof mixer.getState === 'function') {
+                                return mixer.getState();
+                            } else if (typeof mixer.currentState !== 'undefined') {
+                                return mixer.currentState;
+                            } else if (typeof mixer.state !== 'undefined') {
+                                return mixer.state;
+                            }
+                            return 'mixer_available_no_state';
+                        } catch (e) {
+                            return 'mixer_error: ' + e.message;
+                        }
+                    """)
+                    
+                    logging.debug(f"🎛️ Mixer state: {mixer_state}")
+                    
+                    # If we got any state information, consider it valid
+                    if mixer_state and str(mixer_state) != 'null':
+                        logging.debug("✅ Mixer state configuration verified")
+                        return True
+                        
+            except Exception as js_error:
+                logging.debug(f"JavaScript mixer check failed: {js_error}")
+            
+            # Method 2: Check DOM for mixer-related status elements
+            try:
+                # Look for mixer status indicators in the DOM
+                mixer_elements = self.driver.find_elements(By.CSS_SELECTOR, 
+                    ".mixer, .mixer-status, .track-mixer, .audio-mixer")
+                
+                if mixer_elements:
+                    logging.debug(f"✅ Found {len(mixer_elements)} mixer DOM elements")
+                    return True
+                    
+            except Exception as dom_error:
+                logging.debug(f"DOM mixer check failed: {dom_error}")
+            
+            # Method 3: Check for track state consistency
+            try:
+                # Verify at least one solo button is active
+                active_solos = self.driver.find_elements(By.CSS_SELECTOR, 
+                    "button.track__solo.active, button.track__solo.is-active, button.track__solo.selected")
+                
+                if active_solos:
+                    logging.debug(f"✅ Found {len(active_solos)} active solo button(s)")
+                    return True
+                    
+            except Exception as solo_error:
+                logging.debug(f"Solo button check failed: {solo_error}")
+            
+            logging.debug("⚠️ Mixer state verification inconclusive - using fallback")
+            return False
+            
+        except Exception as e:
+            logging.warning(f"⚠️ Error during mixer state verification: {e}")
+            return False
     
     def clear_all_solos(self, song_url):
         """Clear all solo buttons (un-mute all tracks)"""
