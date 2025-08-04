@@ -114,7 +114,7 @@ class TrackManager:
             if not solo_button:
                 return False
             
-            return self._activate_solo_button(solo_button, track_name)
+            return self._activate_solo_button(solo_button, track_name, track_index)
             
         except Exception as e:
             logging.error(f"Error soloing track {track_name}: {e}")
@@ -171,7 +171,7 @@ class TrackManager:
         logging.debug(f"Track element HTML: {track_element.get_attribute('outerHTML')[:200]}...")
         return None
     
-    def _activate_solo_button(self, solo_button, track_name):
+    def _activate_solo_button(self, solo_button, track_name, track_index):
         """Activate the solo button and verify success"""
         logging.info(f"Clicking solo button for {track_name}")
         safe_click(self.driver, solo_button, f"solo button for {track_name}")
