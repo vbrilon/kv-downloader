@@ -332,8 +332,17 @@ class TrackManager:
             # Wait for any processing indicators to appear and then disappear
             max_wait_time = SOLO_ACTIVATION_DELAY
             start_time = time.time()
+            processing_detected = False
             
             while time.time() - start_time < max_wait_time:
+                # Wait for DOM to be stable before checking page source
+                try:
+                    WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "body"))
+                    )
+                except TimeoutException:
+                    pass  # Continue if body check times out
+                
                 page_source_lower = self.driver.page_source.lower()
                 
                 # Check if audio server is actively processing
@@ -341,8 +350,11 @@ class TrackManager:
                     "preparing" in page_source_lower or
                     "processing" in page_source_lower or
                     "loading" in page_source_lower):
-                    logging.debug("⏳ Audio server processing detected, waiting for completion...")
-                    time.sleep(TRACK_INTERACTION_DELAY)
+                    if not processing_detected:
+                        logging.debug("⏳ Audio server processing detected, waiting for completion...")
+                        processing_detected = True
+                    # Use shorter sleep when actively detected processing
+                    time.sleep(WEBDRIVER_MICRO_TIMEOUT)
                     continue
                 
                 # Check for positive completion indicators
@@ -352,8 +364,13 @@ class TrackManager:
                     logging.debug("✅ Audio server processing completion detected")
                     return True
                 
-                # Brief pause before rechecking
-                time.sleep(TRACK_INTERACTION_DELAY)
+                # If we detected processing but no longer see indicators, likely complete
+                if processing_detected:
+                    logging.debug("✅ Audio server processing indicators cleared")
+                    return True
+                
+                # Brief pause before rechecking - use shorter interval for responsiveness
+                time.sleep(WEBDRIVER_MICRO_TIMEOUT)
             
             logging.debug("⏱️ Audio server sync timeout - proceeding with fallback delay")
             return False

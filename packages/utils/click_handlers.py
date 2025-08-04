@@ -7,9 +7,11 @@ across the track management and download management modules.
 
 import logging
 from selenium.webdriver.remote.webelement import WebElement
-from ..configuration.config import CLICK_HANDLER_DELAY
+from ..configuration.config import CLICK_HANDLER_DELAY, WEBDRIVER_BRIEF_TIMEOUT
 from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.common.exceptions import ElementClickInterceptedException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import ElementClickInterceptedException, TimeoutException
 
 
 def safe_click(driver: WebDriver, element: WebElement, element_description: str = "element") -> bool:
@@ -72,9 +74,14 @@ def safe_click_with_scroll(driver: WebDriver, element: WebElement, element_descr
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         logging.debug(f"Scrolled {element_description} into view")
         
-        # Small delay to allow scrolling to complete
-        import time
-        time.sleep(CLICK_HANDLER_DELAY)
+        # Wait for element to be clickable after scrolling
+        try:
+            WebDriverWait(driver, WEBDRIVER_BRIEF_TIMEOUT).until(
+                EC.element_to_be_clickable(element)
+            )
+            logging.debug(f"{element_description} is clickable after scroll")
+        except TimeoutException:
+            logging.debug(f"{element_description} clickable timeout - proceeding with click attempt")
         
         # Use safe_click for the actual clicking logic
         return safe_click(driver, element, element_description)
