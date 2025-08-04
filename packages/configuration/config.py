@@ -22,28 +22,9 @@ DOWNLOAD_TIMEOUT = 30  # seconds to wait for download to complete
 # Track isolation timing settings
 SOLO_ACTIVATION_DELAY = 5.0  # seconds to wait after solo button activation for audio sync
 
-# Track types to attempt (used for validation)
-COMMON_TRACK_TYPES = [
-    "Lead Vocal",
-    "Lead Electric Guitar", 
-    "Rhythm Electric Guitar",
-    "Acoustic Guitar",
-    "Bass Guitar",
-    "Electronic Drum Kit",
-    "Synthesizer",
-    "Piano",
-    "Strings",
-    "Brass",
-    "Intro count Click"
-]
-
 # URLs
 LOGIN_URL = os.getenv("KV_LOGIN_URL", "https://www.karaoke-version.com/login")
 
 # Configuration files
 SONGS_CONFIG_FILE = "songs.yaml"
-
-# Key adjustment limits
-MIN_KEY_ADJUSTMENT = -12
-MAX_KEY_ADJUSTMENT = 12
 
