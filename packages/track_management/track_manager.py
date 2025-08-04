@@ -469,8 +469,27 @@ class TrackManager:
             
             logging.info("🎼 Checking intro count checkbox...")
             
-            # Find the intro count checkbox by ID
-            intro_checkbox = self.driver.find_element(By.ID, "precount")
+            # Try multiple selector approaches for intro count checkbox
+            intro_checkbox = None
+            selectors_to_try = [
+                (By.ID, "precount"),
+                (By.CSS_SELECTOR, "#precount"),
+                (By.CSS_SELECTOR, "input[type='checkbox'][id='precount']"),
+                (By.XPATH, "//input[@id='precount']")
+            ]
+            
+            for selector_type, selector_value in selectors_to_try:
+                try:
+                    intro_checkbox = self.driver.find_element(selector_type, selector_value)
+                    logging.debug(f"✅ Found intro count checkbox using {selector_type}: {selector_value}")
+                    break
+                except NoSuchElementException:
+                    logging.debug(f"⚠️ Intro count checkbox not found with {selector_type}: {selector_value}")
+                    continue
+            
+            if not intro_checkbox:
+                logging.warning("⚠️ Intro count checkbox not found with any selector - continuing anyway")
+                return False
             
             # Check if it's already checked
             is_checked = intro_checkbox.is_selected()
@@ -502,6 +521,7 @@ class TrackManager:
             
         except Exception as e:
             logging.error(f"❌ Error enabling intro count checkbox: {e}")
+            logging.warning("⚠️ Could not enable intro count - continuing anyway")
             return False
     
     def adjust_key(self, song_url, target_key):

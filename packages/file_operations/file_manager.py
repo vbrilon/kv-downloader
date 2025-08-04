@@ -477,21 +477,23 @@ class FileManager:
         """Extract track name from karaoke-version filename"""
         import re
         
-        # Pattern to match: Artist_Song(Track_Name_Custom_Backing_Track).mp3
-        # We want to extract the Track_Name part
-        pattern = r'[^(]+\(([^)]+)_Custom_Backing_Track\)\.mp3'
-        match = re.search(pattern, filename, re.IGNORECASE)
-        
-        if match:
-            track_name = match.group(1)
-            # Clean up the track name
-            track_name = track_name.replace('_', ' ')
-            track_name = track_name.strip()
-            return track_name
+        # Handle nested parentheses by finding the last occurrence of "_Custom_Backing_Track)"
+        # Pattern: Artist_Song(Track_Name_Custom_Backing_Track).mp3
+        if '_Custom_Backing_Track)' in filename:
+            # Find the content between the first ( and _Custom_Backing_Track)
+            start_paren = filename.find('(')
+            end_pattern = filename.find('_Custom_Backing_Track)')
+            
+            if start_paren != -1 and end_pattern != -1 and start_paren < end_pattern:
+                track_name = filename[start_paren + 1:end_pattern]
+                # Clean up the track name
+                track_name = track_name.replace('_', ' ')
+                track_name = track_name.strip()
+                return track_name
         
         # Fallback: try to extract from other patterns
         # Pattern for: Artist_Song(Track_Name).mp3
-        pattern = r'[^(]+\(([^)]+)\)\.mp3'
+        pattern = r'[^(]+\((.+)\)\.mp3'
         match = re.search(pattern, filename, re.IGNORECASE)
         
         if match:
