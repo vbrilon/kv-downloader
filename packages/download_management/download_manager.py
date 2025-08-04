@@ -484,12 +484,20 @@ class DownloadManager:
         return context
     
     def _get_initial_file_snapshot(self, song_path):
-        """Get snapshot of existing files before download"""
+        """Get snapshot of existing files before download - optimized"""
         initial_files = set()
-        if song_path.exists():
-            for f in song_path.iterdir():
-                if f.is_file() and any(f.name.lower().endswith(ext) for ext in ['.mp3', '.aif', '.wav']):
-                    initial_files.add(f.name)
+        
+        # Use file manager's optimized methods to reduce file system calls
+        song_info = self.file_manager._get_file_info(song_path)
+        if song_info['exists']:
+            # Get audio files using optimized directory scan
+            audio_patterns = {'.mp3', '.aif', '.wav'}
+            files_info = self.file_manager._scan_directory_cached(song_path, audio_patterns)
+            
+            for file_info in files_info:
+                if file_info['is_file']:
+                    initial_files.add(file_info['name'])
+        
         return initial_files
     
     def _monitor_download_progress(self, context, track_index):
@@ -644,29 +652,38 @@ class DownloadManager:
                                                    error_message=f"Monitoring error: {str(error)}")
     
     def _find_new_completed_files(self, song_path, track_name, initial_files):
-        """Find newly completed files that weren't in the initial snapshot"""
+        """Find newly completed files that weren't in the initial snapshot - optimized"""
         try:
-            if not song_path.exists():
+            # Use file manager's optimized file info method
+            song_info = self.file_manager._get_file_info(song_path)
+            if not song_info['exists']:
                 return []
             
             new_files = []
             
-            for file_path in song_path.iterdir():
-                if file_path.is_file():
-                    filename = file_path.name
-                    filename_lower = filename.lower()
+            # Use optimized directory scan from file manager
+            current_files_info = self.file_manager._scan_directory_cached(song_path)
+            
+            for file_info in current_files_info:
+                if not file_info['is_file']:
+                    continue
                     
-                    # Check if it's an audio file (not .crdownload)
-                    is_audio = any(filename_lower.endswith(ext) for ext in ['.mp3', '.aif', '.wav', '.m4a'])
-                    is_recent = (time.time() - file_path.stat().st_mtime) < 300  # Less than 5 minutes old
-                    is_new = filename not in initial_files  # Wasn't there when we started monitoring
-                    
-                    if is_audio and is_recent and is_new:
-                        # Make sure there's no corresponding .crdownload file
-                        crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
-                        if not crdownload_path.exists():
-                            new_files.append(file_path)
-                            logging.info(f"✅ Found NEW completed download: {filename}")
+                filename = file_info['name']
+                filename_lower = file_info['name_lower']
+                
+                # Check if it's an audio file (not .crdownload) using file manager's method
+                is_audio = self.file_manager._is_audio_file(filename_lower)
+                is_recent = file_info['age'] < 300  # Less than 5 minutes old
+                is_new = filename not in initial_files  # Wasn't there when we started monitoring
+                
+                if is_audio and is_recent and is_new:
+                    file_path = file_info['path']
+                    # Make sure there's no corresponding .crdownload file (use cached check)
+                    crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
+                    crdownload_info = self.file_manager._get_file_info(crdownload_path)
+                    if not crdownload_info['exists']:
+                        new_files.append(file_path)
+                        logging.info(f"✅ Found NEW completed download: {filename}")
             
             return new_files
             

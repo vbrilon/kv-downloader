@@ -4,6 +4,7 @@ import time
 import logging
 import shutil
 from pathlib import Path
+from typing import Dict, Set, List, Optional, Tuple
 from ..configuration.config import (FILE_OPERATION_MAX_WAIT, LOG_INTERVAL_SECONDS, 
                                     FILE_MATCH_MIN_RATIO, FILE_MATCH_HIGH_RATIO)
 
@@ -18,8 +19,116 @@ class FileManager:
     """Handles file operations, folder management, and filename cleanup"""
     
     def __init__(self):
-        """Initialize file manager"""
-        pass
+        """Initialize file manager with caching for performance"""
+        # File system cache to reduce repeated stat calls
+        self._path_cache: Dict[str, Dict[str, any]] = {}
+        self._cache_timestamp = time.time()
+        self._cache_ttl = 2.0  # Cache valid for 2 seconds
+        
+        # Pre-compiled patterns for performance
+        self._audio_extensions = {'.mp3', '.aif', '.wav', '.m4a'}
+        self._karaoke_patterns = {
+            'custom_backing_track', 'backing_track', 'custom', 'backing', 
+            'track', 'karaoke', '(custom'
+        }
+        
+    def _invalidate_cache_if_expired(self):
+        """Clear cache if TTL has expired"""
+        current_time = time.time()
+        if current_time - self._cache_timestamp > self._cache_ttl:
+            self._path_cache.clear()
+            self._cache_timestamp = current_time
+    
+    def _get_cached_path_info(self, file_path: Path) -> Optional[Dict[str, any]]:
+        """Get cached file information or None if not cached/expired"""
+        self._invalidate_cache_if_expired()
+        path_str = str(file_path)
+        return self._path_cache.get(path_str)
+    
+    def _cache_path_info(self, file_path: Path, info: Dict[str, any]):
+        """Cache file information"""
+        self._invalidate_cache_if_expired()
+        path_str = str(file_path)
+        self._path_cache[path_str] = info
+    
+    def _get_file_info(self, file_path: Path) -> Optional[Dict[str, any]]:
+        """Get file information with caching to reduce stat calls"""
+        # Check cache first
+        cached_info = self._get_cached_path_info(file_path)
+        if cached_info is not None:
+            return cached_info
+        
+        try:
+            if not file_path.exists():
+                info = {'exists': False}
+            else:
+                stat_result = file_path.stat()
+                info = {
+                    'exists': True,
+                    'is_file': file_path.is_file(),
+                    'is_dir': file_path.is_dir(),
+                    'size': stat_result.st_size,
+                    'mtime': stat_result.st_mtime,
+                    'age': time.time() - stat_result.st_mtime,
+                    'name': file_path.name,
+                    'name_lower': file_path.name.lower()
+                }
+            
+            # Cache the result
+            self._cache_path_info(file_path, info)
+            return info
+            
+        except (OSError, FileNotFoundError):
+            info = {'exists': False}
+            self._cache_path_info(file_path, info)
+            return info
+    
+    def _is_audio_file(self, filename_lower: str) -> bool:
+        """Check if file is audio using pre-compiled patterns"""
+        return any(filename_lower.endswith(ext) for ext in self._audio_extensions)
+    
+    def _matches_karaoke_patterns(self, filename_lower: str) -> bool:
+        """Check if filename matches karaoke patterns using pre-compiled patterns"""
+        return (
+            any(pattern in filename_lower for pattern in self._karaoke_patterns) or
+            len(filename_lower) > 25  # Long filenames typically indicate karaoke tracks
+        )
+    
+    def _scan_directory_cached(self, directory: Path, file_patterns: Optional[Set[str]] = None) -> List[Dict[str, any]]:
+        """Scan directory with caching to reduce repeated iterdir calls"""
+        try:
+            if not directory.exists():
+                return []
+            
+            # Check if we have a recent scan cached
+            dir_cache_key = f"dir_scan_{directory}_{file_patterns}"
+            cached_scan = self._get_cached_path_info(Path(dir_cache_key))
+            if cached_scan is not None:
+                return cached_scan.get('files', [])
+            
+            # Perform directory scan
+            files_info = []
+            for file_path in directory.iterdir():
+                if file_patterns:
+                    # Check if file matches any of the requested patterns
+                    filename_lower = file_path.name.lower()
+                    if not any(filename_lower.endswith(pattern) for pattern in file_patterns):
+                        continue
+                
+                file_info = self._get_file_info(file_path)
+                if file_info and file_info['exists']:
+                    file_info['path'] = file_path
+                    files_info.append(file_info)
+            
+            # Cache the scan result
+            scan_result = {'files': files_info}
+            self._cache_path_info(Path(dir_cache_key), scan_result)
+            
+            return files_info
+            
+        except Exception as e:
+            logging.debug(f"Error scanning directory {directory}: {e}")
+            return []
     
     def clear_song_folder(self, song_folder_name):
         """Completely remove existing song folder and all its contents"""
@@ -27,18 +136,23 @@ class FileManager:
             base_download_folder = Path(DOWNLOAD_FOLDER)
             song_path = base_download_folder / song_folder_name
             
-            if song_path.exists() and song_path.is_dir():
+            # Use cached file info to reduce multiple exists/is_dir calls
+            song_info = self._get_file_info(song_path)
+            
+            if song_info['exists'] and song_info['is_dir']:
                 # Safety check: ensure we're only deleting song folders, not random directories
                 if song_path.parent == base_download_folder:
                     logging.info(f"🗑️ Clearing existing song folder: {song_path}")
                     
-                    # Count files before deletion for logging
+                    # Count files before deletion for logging (optimized)
                     file_count = len([f for f in song_path.rglob("*") if f.is_file()])
                     if file_count > 0:
                         logging.info(f"   Removing {file_count} existing files")
                     
                     # Remove the entire folder and its contents
                     shutil.rmtree(song_path)
+                    # Invalidate cache for this path since it no longer exists
+                    self._path_cache.pop(str(song_path), None)
                     logging.info(f"✅ Song folder cleared successfully")
                 else:
                     logging.warning(f"⚠️ Safety check failed: {song_path} is not a direct child of downloads folder")
@@ -125,34 +239,32 @@ class FileManager:
     def wait_for_download_to_start(self, track_name, song_path, track_index=None):
         """Wait for download to actually start by monitoring song folder for new files AND file modifications"""
         try:
-            if not song_path or not song_path.exists():
+            song_info = self._get_file_info(song_path)
+            if not song_path or not song_info['exists']:
                 logging.error(f"Song folder not available for monitoring: {song_path}")
                 return False
             
             paths_to_monitor = [song_path]
             logging.info(f"🔍 Monitoring song folder: {song_path}")
             
-            # Get initial file snapshots with names, sizes, and modification times
+            # Get initial file snapshots using optimized directory scan
             initial_file_snapshots = {}
             
             for path in paths_to_monitor:
-                path_snapshots = {}
-                if path.exists():
-                    initial_files = list(path.glob("*.mp3")) + list(path.glob("*.aif")) + list(path.glob("*.crdownload"))
-                    for file_path in initial_files:
-                        try:
-                            stat = file_path.stat()
-                            path_snapshots[file_path.name] = {
-                                'size': stat.st_size,
-                                'mtime': stat.st_mtime,
-                                'path': file_path
-                            }
-                        except (OSError, FileNotFoundError):
-                            # File might have been deleted/moved during enumeration
-                            continue
-                    
-                    logging.debug(f"Initial files in {path}: {len(path_snapshots)} (names: {list(path_snapshots.keys())})")
+                # Use cached directory scan to reduce repeated glob operations
+                audio_patterns = {'.mp3', '.aif', '.crdownload'}
+                initial_files_info = self._scan_directory_cached(path, audio_patterns)
                 
+                path_snapshots = {}
+                for file_info in initial_files_info:
+                    if file_info['exists']:
+                        path_snapshots[file_info['name']] = {
+                            'size': file_info['size'],
+                            'mtime': file_info['mtime'],
+                            'path': file_info['path']
+                        }
+                
+                logging.debug(f"Initial files in {path}: {len(path_snapshots)} (names: {list(path_snapshots.keys())})")
                 initial_file_snapshots[path] = path_snapshots
             
             max_wait = FILE_OPERATION_MAX_WAIT  # Reduced from 90s since we now detect overwrites quickly
@@ -165,68 +277,53 @@ class FileManager:
                 time.sleep(check_interval)
                 waited += check_interval
                 
-                # Check all monitored paths for new files AND modified files
+                # Check all monitored paths for new files AND modified files (optimized)
                 for path in paths_to_monitor:
-                    if not path.exists():
+                    path_info = self._get_file_info(path)
+                    if not path_info['exists']:
                         continue
                     
-                    current_files = list(path.glob("*.mp3")) + list(path.glob("*.aif")) + list(path.glob("*.crdownload"))
+                    # Use optimized directory scan instead of multiple glob calls
+                    audio_patterns = {'.mp3', '.aif', '.crdownload'}
+                    current_files_info = self._scan_directory_cached(path, audio_patterns)
                     initial_snapshots = initial_file_snapshots[path]
                     
                     new_or_modified_files = []
                     
-                    for file_path in current_files:
-                        try:
-                            filename = file_path.name
-                            stat = file_path.stat()
-                            current_size = stat.st_size
-                            current_mtime = stat.st_mtime
-                            
-                            # Check if this is a new file
-                            if filename not in initial_snapshots:
-                                new_or_modified_files.append(('new', filename, file_path))
-                                logging.debug(f"New file detected: {filename}")
-                            else:
-                                # Check if existing file was modified
-                                initial_snapshot = initial_snapshots[filename]
-                                
-                                # Consider file modified if size changed OR modification time is newer
-                                size_changed = current_size != initial_snapshot['size']
-                                time_changed = current_mtime > initial_snapshot['mtime']
-                                
-                                if size_changed or time_changed:
-                                    new_or_modified_files.append(('modified', filename, file_path))
-                                    logging.debug(f"Modified file detected: {filename} (size: {initial_snapshot['size']} → {current_size}, mtime: {initial_snapshot['mtime']:.1f} → {current_mtime:.1f})")
-                        
-                        except (OSError, FileNotFoundError):
-                            # File might have been deleted/moved during check
+                    for file_info in current_files_info:
+                        if not file_info['exists']:
                             continue
+                            
+                        filename = file_info['name']
+                        current_size = file_info['size']
+                        current_mtime = file_info['mtime']
+                        file_path = file_info['path']
+                        
+                        # Check if this is a new file
+                        if filename not in initial_snapshots:
+                            new_or_modified_files.append(('new', filename, file_path))
+                            logging.debug(f"New file detected: {filename}")
+                        else:
+                            # Check if existing file was modified
+                            initial_snapshot = initial_snapshots[filename]
+                            
+                            # Consider file modified if size changed OR modification time is newer
+                            size_changed = current_size != initial_snapshot['size']
+                            time_changed = current_mtime > initial_snapshot['mtime']
+                            
+                            if size_changed or time_changed:
+                                new_or_modified_files.append(('modified', filename, file_path))
+                                logging.debug(f"Modified file detected: {filename} (size: {initial_snapshot['size']} → {current_size}, mtime: {initial_snapshot['mtime']:.1f} → {current_mtime:.1f})")
                     
                     if new_or_modified_files:
-                        # Filter to those that look like karaoke downloads
+                        # Filter to those that look like karaoke downloads (optimized)
                         relevant_files = []
                         for change_type, filename, file_path in new_or_modified_files:
                             filename_lower = filename.lower()
                             
-                            # Check if it looks like a karaoke download
-                            is_audio_or_download = any(filename_lower.endswith(ext) for ext in ['.mp3', '.aif', '.crdownload'])
-                            
-                            # Improved karaoke detection - case insensitive and comprehensive patterns
-                            might_be_karaoke = (
-                                # Specific karaoke patterns (case-insensitive)
-                                'custom_backing_track' in filename_lower or
-                                'backing_track' in filename_lower or
-                                'custom' in filename_lower or
-                                'backing' in filename_lower or
-                                'track' in filename_lower or
-                                'karaoke' in filename_lower or
-                                # Parenthetical patterns like (Custom_Backing_Track)
-                                '(custom' in filename_lower or
-                                # Long filenames are often karaoke tracks
-                                len(filename) > 20 or
-                                # Since we're monitoring song folder during download, trust any audio file
-                                is_audio_or_download
-                            )
+                            # Check if it looks like a karaoke download using optimized pattern matching
+                            is_audio_or_download = self._is_audio_file(filename_lower) or filename_lower.endswith('.crdownload')
+                            might_be_karaoke = self._matches_karaoke_patterns(filename_lower) or len(filename) > 20
                             
                             if is_audio_or_download and might_be_karaoke:
                                 relevant_files.append((change_type, filename))
@@ -252,64 +349,59 @@ class FileManager:
             return False
     
     def check_for_completed_downloads(self, song_path, track_name):
-        """Check for files that have completed downloading (no more .crdownload)"""
+        """Check for files that have completed downloading (no more .crdownload) - optimized"""
         try:
-            if not song_path.exists():
+            song_info = self._get_file_info(song_path)
+            if not song_info['exists']:
                 return []
             
             completed_files = []
             
-            # Look for audio files that don't have .crdownload extension
-            for file_path in song_path.iterdir():
-                if file_path.is_file():
-                    filename = file_path.name.lower()
+            # Use optimized directory scan to get all files at once
+            all_files_info = self._scan_directory_cached(song_path)
+            
+            for file_info in all_files_info:
+                if not file_info['is_file']:
+                    continue
                     
-                    # Check if it's an audio file (not .crdownload)
-                    is_audio = any(filename.endswith(ext) for ext in ['.mp3', '.aif', '.wav', '.m4a'])
-                    is_recent = (time.time() - file_path.stat().st_mtime) < 300  # Less than 5 minutes old (more generous)
-                    
-                    # Check if it looks like a karaoke file - improved detection
-                    filename_lower = filename  # filename is already lowercased above
-                    might_be_karaoke = (
-                        # Specific karaoke patterns (case-insensitive)
-                        'custom_backing_track' in filename_lower or
-                        'backing_track' in filename_lower or
-                        'custom' in filename_lower or
-                        'backing' in filename_lower or
-                        'track' in filename_lower or
-                        'karaoke' in filename_lower or
-                        # Parenthetical patterns like (Custom_Backing_Track)
-                        '(custom' in filename_lower or
-                        # Long filenames typically indicate karaoke tracks
-                        len(file_path.name) > 25 or
-                        # Since we're in song folder during download window, trust any recent audio file
-                        True  # Accept any recent audio file in the song folder
-                    )
-                    
-                    # Enhanced logging for filename detection (INFO level to show in production)
-                    if is_audio and is_recent:
-                        logging.info(f"📁 Checking file: {file_path.name}")
-                        logging.info(f"   Audio: {is_audio}, Recent: {is_recent}, Karaoke-like: {might_be_karaoke}")
-                        if might_be_karaoke:
-                            # Check which patterns matched
-                            patterns_found = []
-                            if 'custom_backing_track' in filename_lower: patterns_found.append('custom_backing_track')
-                            if 'backing_track' in filename_lower: patterns_found.append('backing_track')
-                            if 'custom' in filename_lower: patterns_found.append('custom')
-                            if 'backing' in filename_lower: patterns_found.append('backing')
-                            if 'track' in filename_lower: patterns_found.append('track')
-                            if 'karaoke' in filename_lower: patterns_found.append('karaoke')
-                            if '(custom' in filename_lower: patterns_found.append('parenthetical_custom')
-                            if len(file_path.name) > 25: patterns_found.append('long_filename')
-                            if not patterns_found: patterns_found.append('recent_audio_in_song_folder')
-                            logging.info(f"   Patterns found: {patterns_found}")
-                    
-                    if is_audio and is_recent and might_be_karaoke:
-                        # Make sure there's no corresponding .crdownload file
-                        crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
-                        if not crdownload_path.exists():
-                            completed_files.append(file_path)
-                            logging.info(f"✅ Found completed download: {file_path.name}")
+                filename_lower = file_info['name_lower']
+                
+                # Check if it's an audio file (not .crdownload) using optimized patterns
+                is_audio = self._is_audio_file(filename_lower)
+                is_recent = file_info['age'] < 300  # Less than 5 minutes old (more generous)
+                
+                # Check if it looks like a karaoke file using optimized pattern matching
+                might_be_karaoke = (
+                    self._matches_karaoke_patterns(filename_lower) or
+                    len(file_info['name']) > 25 or
+                    True  # Accept any recent audio file in the song folder
+                )
+                
+                # Enhanced logging for filename detection (INFO level to show in production)
+                if is_audio and is_recent:
+                    file_path = file_info['path']
+                    logging.info(f"📁 Checking file: {file_info['name']}")
+                    logging.info(f"   Audio: {is_audio}, Recent: {is_recent}, Karaoke-like: {might_be_karaoke}")
+                    if might_be_karaoke:
+                        # Check which patterns matched using optimized pattern checking
+                        patterns_found = []
+                        for pattern in self._karaoke_patterns:
+                            if pattern in filename_lower:
+                                patterns_found.append(pattern)
+                        if len(file_info['name']) > 25:
+                            patterns_found.append('long_filename')
+                        if not patterns_found:
+                            patterns_found.append('recent_audio_in_song_folder')
+                        logging.info(f"   Patterns found: {patterns_found}")
+                
+                if is_audio and is_recent and might_be_karaoke:
+                    file_path = file_info['path']
+                    # Make sure there's no corresponding .crdownload file (use cached info)
+                    crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
+                    crdownload_info = self._get_file_info(crdownload_path)
+                    if not crdownload_info['exists']:
+                        completed_files.append(file_path)
+                        logging.info(f"✅ Found completed download: {file_info['name']}")
             
             return completed_files
             

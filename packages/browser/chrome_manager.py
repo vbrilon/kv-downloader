@@ -7,7 +7,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
-from .config import WEBDRIVER_DEFAULT_TIMEOUT, DOWNLOAD_COMPLETION_TIMEOUT, DOWNLOAD_CHECK_INTERVAL
+from ..configuration.config import WEBDRIVER_DEFAULT_TIMEOUT, DOWNLOAD_COMPLETION_TIMEOUT, DOWNLOAD_CHECK_INTERVAL
 from webdriver_manager.chrome import ChromeDriverManager
 
 try:
