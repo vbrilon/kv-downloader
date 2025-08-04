@@ -130,6 +130,18 @@
 - [ ] Test with real downloads to verify no more full-mix files
 - [ ] Add comprehensive monitoring and logging
 
+### Next Session Testing Guide
+**To validate Phase 1.2 implementation:**
+1. **Run with debug mode**: `python karaoke_automator.py --debug` to see detailed logging
+2. **Monitor log output for**: 
+   - `🔍 Monitoring audio server processing indicators...`
+   - `🔍 Verifying mixer state configuration...`
+   - `⏳ Audio server processing detected, waiting for completion...`
+   - `✅ Audio server processing completion detected` OR `⏱️ Audio server sync timeout`
+3. **Check downloaded files**: Each track should contain ONLY the isolated instrument (no full mix)
+4. **Verify track isolation**: Listen to downloaded files - click track should only have metronome, guitar track only guitar, etc.
+5. **Look for verification failures**: System should block downloads if solo verification fails
+
 ### Future
 - [ ] Implement Phase 3 (audio state validation)
 - [ ] Add comprehensive monitoring and alerting
