@@ -7,7 +7,7 @@ duplication and improve maintainability.
 
 import logging
 import functools
-from typing import Any, Callable, Optional, Union, Dict, Type
+from typing import Any, Callable, Optional, Type
 from selenium.common.exceptions import (
     TimeoutException, 
     NoSuchElementException, 

@@ -4,6 +4,8 @@ import time
 import logging
 import shutil
 from pathlib import Path
+from ..configuration.config import (FILE_OPERATION_MAX_WAIT, LOG_INTERVAL_SECONDS, 
+                                    FILE_MATCH_MIN_RATIO, FILE_MATCH_HIGH_RATIO)
 
 try:
     from packages.configuration import DOWNLOAD_FOLDER
@@ -153,7 +155,7 @@ class FileManager:
                 
                 initial_file_snapshots[path] = path_snapshots
             
-            max_wait = 30  # Reduced from 90s since we now detect overwrites quickly
+            max_wait = FILE_OPERATION_MAX_WAIT  # Reduced from 90s since we now detect overwrites quickly
             waited = 0
             check_interval = 1  # Check every 1 second for faster detection
             
@@ -238,7 +240,7 @@ class FileManager:
                             logging.debug(f"Files changed but don't appear to be karaoke downloads: {[f[1] for f in new_or_modified_files]}")
                 
                 # Update progress every 5 seconds
-                if waited % 5 == 0:
+                if waited % LOG_INTERVAL_SECONDS == 0:
                     logging.info(f"⏳ Still waiting for download to start... ({waited}s/{max_wait}s)")
             
             logging.warning(f"⚠️ Download detection timeout after {max_wait}s for {track_name}")
@@ -588,12 +590,12 @@ class FileManager:
                 matches = sum(1 for word in significant_track_words if word in filename_lower)
                 match_ratio = matches / len(significant_track_words)
                 
-                if match_ratio < 0.3:  # Less than 30% of words match
+                if match_ratio < FILE_MATCH_MIN_RATIO:  # Less than 30% of words match
                     validation_result['warnings'].append(
                         f"Filename may not match track name - only {matches}/{len(significant_track_words)} "
                         f"significant words found in filename"
                     )
-                elif match_ratio >= 0.7:  # 70% or more words match
+                elif match_ratio >= FILE_MATCH_HIGH_RATIO:  # 70% or more words match
                     validation_result['file_info']['name_correlation'] = 'good'
                 else:
                     validation_result['file_info']['name_correlation'] = 'partial'

@@ -2,7 +2,6 @@
 
 import time
 import logging
-import json
 import pickle
 from pathlib import Path
 from selenium.webdriver.common.by import By
@@ -24,6 +23,7 @@ except ImportError:
     PASSWORD = None
 
 from packages.utils import selenium_safe, validation_safe
+from packages.configuration.config import SESSION_MAX_AGE_SECONDS
 
 
 class LoginManager:
@@ -462,7 +462,7 @@ class LoginManager:
         
         # Check if session is not too old (24 hours max)
         session_age = time.time() - session_data.get('timestamp', 0)
-        max_age = 24 * 60 * 60  # 24 hours in seconds
+        max_age = SESSION_MAX_AGE_SECONDS  # 24 hours in seconds
         
         if session_age > max_age:
             logging.info(f"🕐 Saved session is {session_age/3600:.1f} hours old, too old to use")
@@ -627,7 +627,7 @@ class LoginManager:
             
             # Check age
             session_age = time.time() - session_data.get('timestamp', 0)
-            max_age = 24 * 60 * 60  # 24 hours
+            max_age = SESSION_MAX_AGE_SECONDS  # 24 hours
             
             return session_age <= max_age
             

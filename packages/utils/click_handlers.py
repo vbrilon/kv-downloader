@@ -7,6 +7,7 @@ across the track management and download management modules.
 
 import logging
 from selenium.webdriver.remote.webelement import WebElement
+from ..configuration.config import CLICK_HANDLER_DELAY
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.common.exceptions import ElementClickInterceptedException
 
@@ -73,7 +74,7 @@ def safe_click_with_scroll(driver: WebDriver, element: WebElement, element_descr
         
         # Small delay to allow scrolling to complete
         import time
-        time.sleep(0.5)
+        time.sleep(CLICK_HANDLER_DELAY)
         
         # Use safe_click for the actual clicking logic
         return safe_click(driver, element, element_description)

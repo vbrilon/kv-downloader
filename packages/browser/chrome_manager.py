@@ -7,6 +7,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
+from .config import WEBDRIVER_DEFAULT_TIMEOUT, DOWNLOAD_COMPLETION_TIMEOUT, DOWNLOAD_CHECK_INTERVAL
 from webdriver_manager.chrome import ChromeDriverManager
 
 try:
@@ -38,7 +39,7 @@ class ChromeManager:
         try:
             logging.info("⏳ Starting Chrome browser...")
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            self.wait = WebDriverWait(self.driver, 10)
+            self.wait = WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT)
             logging.info("✅ Chrome browser started successfully")
             
         except Exception as e:
@@ -158,7 +159,7 @@ class ChromeManager:
             })
             logging.debug(f"Updated download path to: {path}")
     
-    def wait_for_downloads_to_complete(self, download_path, timeout=60):
+    def wait_for_downloads_to_complete(self, download_path, timeout=DOWNLOAD_COMPLETION_TIMEOUT):
         """Wait for any active downloads to complete before quitting"""
         if not self.driver:
             return
@@ -177,7 +178,7 @@ class ChromeManager:
                 crdownload_files = list(download_folder.glob("**/*.crdownload"))
                 if crdownload_files:
                     logging.info(f"⏳ Waiting for {len(crdownload_files)} active downloads to complete...")
-                    time.sleep(2)
+                    time.sleep(DOWNLOAD_CHECK_INTERVAL)
                     continue
             
             # No active downloads found

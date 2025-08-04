@@ -7,7 +7,6 @@ Centralizes all automation logic into reusable components
 import time
 import os
 import logging
-import threading
 import signal
 import sys
 import glob
@@ -17,6 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from packages.configuration import ConfigurationManager
+from packages.configuration.config import BETWEEN_TRACKS_PAUSE
 from packages.browser import ChromeManager
 from packages.authentication import LoginManager
 from packages.progress import ProgressTracker, StatsReporter
@@ -232,7 +232,7 @@ class KaraokeVersionAutomator:
         """Download all tracks for the song"""
         for track in tracks:
             self._download_single_track(song, track, song_key)
-            time.sleep(2)  # Brief pause between tracks
+            time.sleep(BETWEEN_TRACKS_PAUSE)  # Brief pause between tracks
     
     def _download_single_track(self, song, track, song_key):
         """Download a single track"""

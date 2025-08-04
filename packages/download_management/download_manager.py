@@ -13,6 +13,11 @@ from selenium.common.exceptions import (
 )
 from ..utils import safe_click_with_scroll
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
+from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
+                                    WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
+                                    DOWNLOAD_CHECK_INTERVAL, TRACK_SELECTION_MAX_RETRIES, 
+                                    RETRY_VERIFICATION_DELAY, LOG_INTERVAL_SECONDS, 
+                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO)
 
 
 class DownloadManager:
@@ -174,7 +179,7 @@ class DownloadManager:
         # Wait for any immediate UI response or popup to appear
         try:
             # Wait briefly for any popups, new windows, or page changes
-            WebDriverWait(self.driver, 2).until(
+            WebDriverWait(self.driver, WEBDRIVER_BRIEF_TIMEOUT).until(
                 lambda driver: len(driver.window_handles) > 1 or
                                driver.current_url != self.driver.current_url
             )
@@ -188,7 +193,7 @@ class DownloadManager:
         # Wait for download initialization to complete
         try:
             # Wait for window changes or download-related indicators
-            WebDriverWait(self.driver, 3).until(
+            WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
                 lambda driver: len(driver.window_handles) != original_window_count or
                                "generating" in driver.page_source.lower() or
                                "preparing" in driver.page_source.lower()
@@ -284,7 +289,7 @@ class DownloadManager:
             self.driver.get(song_url)
             # Wait for song page to load and download button to be available
             try:
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "a.download"))
                 )
             except TimeoutException:
@@ -467,8 +472,8 @@ class DownloadManager:
             'song_name': song_path.name,
             'song_path': song_path,
             'track_name': track_name,
-            'max_wait': 300,  # 5 minutes
-            'check_interval': 2,  # Check every 2 seconds
+            'max_wait': DOWNLOAD_MAX_WAIT,  # 5 minutes
+            'check_interval': DOWNLOAD_CHECK_INTERVAL,  # Check every 2 seconds
             'waited': 0,
             'initial_files': self._get_initial_file_snapshot(song_path)
         }
@@ -520,7 +525,7 @@ class DownloadManager:
             context['song_path'], context['track_name'], context['initial_files']
         )
         
-        if not new_completed_files and context['waited'] % 10 == 0:  # Log every 10 seconds
+        if not new_completed_files and context['waited'] % LOG_INTERVAL_SECONDS == 0:  # Log every 10 seconds
             logging.info(f"   No new completed files found yet (waited {context['waited']}s)")
         
         return new_completed_files
@@ -612,7 +617,7 @@ class DownloadManager:
     
     def _update_progress_if_needed(self, context, track_index):
         """Update progress periodically for ongoing downloads"""
-        if context['waited'] % 20 == 0 and self.progress_tracker and track_index:  # Every 20 seconds
+        if context['waited'] % PROGRESS_UPDATE_LOG_INTERVAL == 0 and self.progress_tracker and track_index:  # Every 20 seconds
             crdownload_files = list(context['song_path'].glob("*.crdownload"))
             if crdownload_files:
                 progress = min(95, 25 + (context['waited'] / context['max_wait']) * 70)  # 25% to 95%
@@ -714,7 +719,7 @@ class DownloadManager:
                 is_match = matches >= 1  # Must have the one significant word
             else:
                 # For multi-word tracks, require at least 60% match
-                is_match = match_ratio >= 0.6
+                is_match = match_ratio >= TRACK_MATCH_MIN_RATIO
             
             logging.debug(f"Track matching for '{filename}' vs '{track_name}': {matches}/{len(significant_words)} significant words matched ({match_ratio:.1%}) -> {'MATCH' if is_match else 'NO MATCH'}")
             
@@ -751,7 +756,7 @@ class DownloadManager:
                         
                         # Wait a bit for download to initialize, then close popup
                         try:
-                            WebDriverWait(self.driver, 3).until(
+                            WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
                                 lambda driver: True  # Brief wait for initialization
                             )
                         except TimeoutException:
@@ -910,7 +915,7 @@ class DownloadManager:
             
             if attempt < max_retries - 1:  # Don't wait after the last attempt
                 logging.warning(f"⚠️ Verification failed, waiting 2s before retry {attempt + 2}...")
-                time.sleep(2)
+                time.sleep(RETRY_VERIFICATION_DELAY)
         
         logging.error(f"❌ All {max_retries} verification attempts failed for {track_name}")
         return False

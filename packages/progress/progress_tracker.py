@@ -4,6 +4,7 @@ import time
 import os
 import threading
 import logging
+from ..configuration.config import PROGRESS_UPDATE_INTERVAL, PROGRESS_BAR_WIDTH
 
 
 class ProgressTracker:
@@ -79,7 +80,7 @@ class ProgressTracker:
     def _display_loop(self):
         """Background thread to update display periodically"""
         while not self._stop_display:
-            time.sleep(0.5)  # Update every 500ms
+            time.sleep(PROGRESS_UPDATE_INTERVAL)  # Update every 500ms
             if not self._stop_display:
                 self._update_display()
     
@@ -138,15 +139,15 @@ class ProgressTracker:
         
         # Progress bar
         if status == 'downloading' and progress > 0:
-            bar_width = 20
+            bar_width = PROGRESS_BAR_WIDTH
             filled = int(bar_width * progress / 100)
             bar = "█" * filled + "░" * (bar_width - filled)
             progress_text = f"[{bar}] {progress:3.0f}%"
         elif status == 'completed':
-            bar = "█" * 20
+            bar = "█" * PROGRESS_BAR_WIDTH
             progress_text = f"[{bar}] 100%"
         else:
-            bar = "░" * 20
+            bar = "░" * PROGRESS_BAR_WIDTH
             progress_text = f"[{bar}]   - "
         
         # File size info

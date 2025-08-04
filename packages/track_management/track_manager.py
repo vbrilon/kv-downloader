@@ -12,6 +12,10 @@ from selenium.common.exceptions import (
 )
 from ..utils import safe_click, validation_safe
 from ..configuration import SOLO_ACTIVATION_DELAY
+from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
+                                    WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT, 
+                                    TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES, 
+                                    SOLO_ACTIVATION_MAX_WAIT, SOLO_CHECK_INTERVAL)
 
 
 class TrackManager:
@@ -34,7 +38,7 @@ class TrackManager:
         
         # Wait for page to load - either track elements appear or login form appears
         try:
-            WebDriverWait(self.driver, 10).until(
+            WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
                 lambda driver: driver.find_elements(By.CSS_SELECTOR, ".track") or 
                                "login" in driver.current_url.lower() or
                                driver.find_elements(By.NAME, "frm_login")
@@ -125,7 +129,7 @@ class TrackManager:
         if self.driver.current_url != song_url:
             self.driver.get(song_url)
             try:
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, ".track"))
                 )
             except TimeoutException:
@@ -244,7 +248,7 @@ class TrackManager:
     
     def _perform_aggressive_clicks(self, solo_button):
         """Perform multiple JavaScript clicks to ensure registration"""
-        for i in range(3):
+        for i in range(SOLO_BUTTON_MAX_RETRIES):
             self.driver.execute_script("arguments[0].click();", solo_button)
             try:
                 WebDriverWait(self.driver, 1).until(lambda driver: True)
@@ -254,7 +258,7 @@ class TrackManager:
     def _wait_for_retry_activation(self, solo_button):
         """Wait for solo button activation after retry"""
         try:
-            WebDriverWait(self.driver, 3).until(
+            WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
                 lambda driver: self._is_solo_button_active(solo_button)
             )
             return True
@@ -338,7 +342,7 @@ class TrackManager:
                     "processing" in page_source_lower or
                     "loading" in page_source_lower):
                     logging.debug("⏳ Audio server processing detected, waiting for completion...")
-                    time.sleep(0.5)
+                    time.sleep(TRACK_INTERACTION_DELAY)
                     continue
                 
                 # Check for positive completion indicators
@@ -349,7 +353,7 @@ class TrackManager:
                     return True
                 
                 # Brief pause before rechecking
-                time.sleep(0.5)
+                time.sleep(TRACK_INTERACTION_DELAY)
             
             logging.debug("⏱️ Audio server sync timeout - proceeding with fallback delay")
             return False
@@ -493,7 +497,7 @@ class TrackManager:
                 self.driver.get(song_url)
                 # Wait for solo buttons to be present
                 try:
-                    WebDriverWait(self.driver, 10).until(
+                    WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "button.track__solo"))
                     )
                 except TimeoutException:
@@ -512,7 +516,7 @@ class TrackManager:
                         active_solos += 1
                         # Brief wait for UI update
                         try:
-                            WebDriverWait(self.driver, 0.5).until(
+                            WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
                                 lambda driver: 'active' not in (button.get_attribute('class') or '').lower()
                             )
                         except TimeoutException:
@@ -540,7 +544,7 @@ class TrackManager:
                 self.driver.get(song_url)
                 # Wait for intro count checkbox to be present
                 try:
-                    WebDriverWait(self.driver, 10).until(
+                    WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
                         EC.presence_of_element_located((By.ID, "precount"))
                     )
                 except TimeoutException:
@@ -587,7 +591,7 @@ class TrackManager:
                 
                 # Wait for checkbox state change
                 try:
-                    WebDriverWait(self.driver, 2).until(
+                    WebDriverWait(self.driver, WEBDRIVER_BRIEF_TIMEOUT).until(
                         lambda driver: intro_checkbox.is_selected()
                     )
                 except TimeoutException:
@@ -616,7 +620,7 @@ class TrackManager:
                 self.driver.get(song_url)
                 # Wait for pitch controls to be present
                 try:
-                    WebDriverWait(self.driver, 10).until(
+                    WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, ".pitch"))
                     )
                 except TimeoutException:
