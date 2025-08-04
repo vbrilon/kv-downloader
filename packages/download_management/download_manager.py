@@ -275,10 +275,32 @@ class DownloadManager:
                     logging.error("Could not find download button - unknown error")
                     return False
             
-            # Verify track selection state before download
-            verification_passed = self._verify_track_selection_state(track_name, track_index)
+            # Verify track selection state before download (with retry)
+            verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
             if not verification_passed:
-                logging.warning(f"⚠️ Track selection verification failed for {track_name} - proceeding anyway")
+                logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
+                if self.progress_tracker and track_index:
+                    self.progress_tracker.update_track_status(track_index, 'failed')
+                
+                # Record failure in stats
+                if self.stats_reporter:
+                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                               error_message="Solo verification failed")
+                return False
+            
+            # Re-verify track selection state immediately before download
+            logging.info(f"🔍 Final verification before download for {track_name}")
+            final_verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
+            if not final_verification_passed:
+                logging.error(f"❌ Final track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
+                if self.progress_tracker and track_index:
+                    self.progress_tracker.update_track_status(track_index, 'failed')
+                
+                # Record failure in stats
+                if self.stats_reporter:
+                    self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+                                                               error_message="Final solo verification failed")
+                return False
             
             # Execute download click and handle any popups
             self._execute_download_click(download_button)
@@ -810,6 +832,33 @@ class DownloadManager:
             logging.debug(f"Error checking purchase status: {e}")
             return False  # Default to False if we can't determine
     
+    def _verify_track_selection_with_retry(self, track_name, track_index, max_retries=3):
+        """Verify track selection state with retry logic
+        
+        Args:
+            track_name (str): Name of the track that should be isolated
+            track_index (str/int): Data-index of the track that should be active
+            max_retries (int): Maximum number of retry attempts
+            
+        Returns:
+            bool: True if verification passes, False otherwise
+        """
+        for attempt in range(max_retries):
+            logging.info(f"🔄 Verification attempt {attempt + 1}/{max_retries} for {track_name}")
+            
+            verification_passed = self._verify_track_selection_state(track_name, track_index)
+            
+            if verification_passed:
+                logging.info(f"✅ Verification passed on attempt {attempt + 1}")
+                return True
+            
+            if attempt < max_retries - 1:  # Don't wait after the last attempt
+                logging.warning(f"⚠️ Verification failed, waiting 2s before retry {attempt + 2}...")
+                time.sleep(2)
+        
+        logging.error(f"❌ All {max_retries} verification attempts failed for {track_name}")
+        return False
+
     def _verify_track_selection_state(self, track_name, track_index):
         """Verify that the correct track is selected/isolated before download
         
@@ -937,8 +986,8 @@ class DownloadManager:
             
             logging.info(f"🔍 Track selection verification: {passed_checks}/{total_checks} checks passed ({verification_score:.1%})")
             
-            # Consider verification passed if at least 75% of checks pass
-            verification_passed = verification_score >= 0.75
+            # Require 100% pass rate for all verification checks
+            verification_passed = verification_score >= 1.0
             
             if verification_passed:
                 logging.info(f"✅ Track selection verification PASSED for {track_name}")
