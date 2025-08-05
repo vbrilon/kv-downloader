@@ -24,9 +24,20 @@ System is production-ready with comprehensive test coverage and performance base
 
 **Performance Impact**: Implemented optimizations target 12-17% overall workflow acceleration (102s → 85-90s) through adaptive timeouts, optimized polling intervals, and elimination of unnecessary monitoring delays.
 
-## Current Priority: System Performance Instrumentation
+**⚠️ CRITICAL PERFORMANCE REGRESSION**: After implementing the performance optimizations, downloads are now taking approximately **twice as long** as before. This suggests the optimizations may have introduced unintended side effects or the timing assumptions were incorrect. **Immediate investigation and fix required.**
+
+## Current Priority: Performance Regression Investigation & System Instrumentation
 
 ### 🔄 Active Tasks
+
+**URGENT - Performance Regression Investigation:**
+- [ ] **Investigate 2x Download Slowdown**: Critical regression after performance optimizations
+  - Analyze impact of increased SOLO_ACTIVATION_DELAY (5s → 12s, 15s, 21s)
+  - Review 30s initial wait in download monitoring - may be causing delays
+  - Check if adaptive timeouts are being applied incorrectly
+  - Compare actual vs expected timing in track isolation phase
+  - Identify which specific optimization is causing the slowdown
+  - **Priority**: Fix regression before further optimization work
 
 **High Priority - Performance Instrumentation:**
 - [ ] **System Performance Instrumentation**: Instrument the entire system for performance monitoring
@@ -54,8 +65,9 @@ System is production-ready with comprehensive test coverage and performance base
 ### 📊 Performance Status
 - **Initial Baseline**: 18.1s track isolation, 102s total workflow
 - **Phase 1 Optimizations**: ✅ Completed (Adaptive timeouts, optimized polling, monitoring delays)
-- **Target Achievement**: 85-90s total workflow (12-17% overall improvement)
-- **Next Phase**: Instrumentation-driven optimization based on real production bottleneck data
+- **⚠️ REGRESSION DETECTED**: Downloads now taking ~2x longer than baseline (URGENT FIX NEEDED)
+- **Root Cause Analysis Required**: Investigate which optimization caused the slowdown
+- **Target Achievement**: 85-90s total workflow (12-17% overall improvement) - **BLOCKED by regression**
 
 ## Future Enhancements (Optional)
 - **Monitoring & Alerting**: Production monitoring system
@@ -72,5 +84,5 @@ System is production-ready with comprehensive test coverage and performance base
 ---
 
 **Last Updated**: 2025-08-05  
-**Status**: ✅ PRODUCTION READY + PERFORMANCE OPTIMIZATIONS IMPLEMENTED  
-**Next Priority**: System Performance Instrumentation for bottleneck identification
+**Status**: ⚠️ CRITICAL PERFORMANCE REGRESSION - Downloads 2x slower after optimizations  
+**Next Priority**: **URGENT** - Investigate and fix performance regression before further work
