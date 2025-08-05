@@ -523,8 +523,11 @@ class DownloadManager:
         waited = 0
         check_interval = 1  # Check every second for responsive detection
         
-        # Patterns to look for in popup text indicating download is ready
-        readiness_patterns = [
+        # Primary pattern to look for - the exact text that triggers auto-download
+        primary_readiness_pattern = "you can also click on the link below to manually begin your download:"
+        
+        # Fallback patterns for download readiness
+        fallback_readiness_patterns = [
             "your download will begin in a moment",
             "download will begin",
             "download is ready", 
@@ -554,8 +557,14 @@ class DownloadManager:
                         self.driver.switch_to.window(window)
                         page_text = self.driver.page_source.lower()
                         
-                        # Check for download ready patterns
-                        for pattern in readiness_patterns:
+                        # Check for primary download ready pattern first
+                        if primary_readiness_pattern in page_text:
+                            logging.info(f"🎉 Download readiness detected in popup: PRIMARY PATTERN for {track_name}")
+                            self.driver.switch_to.window(main_window)  # Return to main
+                            return True
+                        
+                        # Check fallback patterns
+                        for pattern in fallback_readiness_patterns:
                             if pattern in page_text:
                                 logging.info(f"🎉 Download readiness detected in popup: '{pattern}' for {track_name}")
                                 self.driver.switch_to.window(main_window)  # Return to main
@@ -577,8 +586,13 @@ class DownloadManager:
                     self.driver.switch_to.window(main_window)
                     page_text = self.driver.page_source.lower()
                     
-                    # Check for download ready patterns in main window
-                    for pattern in readiness_patterns:
+                    # Check for primary download ready pattern first
+                    if primary_readiness_pattern in page_text:
+                        logging.info(f"🎉 Download readiness detected in main window: PRIMARY PATTERN for {track_name}")
+                        return True
+                    
+                    # Check fallback patterns in main window
+                    for pattern in fallback_readiness_patterns:
                         if pattern in page_text:
                             logging.info(f"🎉 Download readiness detected in main window: '{pattern}' for {track_name}")
                             return True
@@ -591,7 +605,14 @@ class DownloadManager:
                             for modal in modals:
                                 if modal.is_displayed():
                                     modal_text = modal.text.lower()
-                                    for pattern in readiness_patterns:
+                                    
+                                    # Check primary pattern first
+                                    if primary_readiness_pattern in modal_text:
+                                        logging.info(f"🎉 Download readiness detected in modal: PRIMARY PATTERN for {track_name}")
+                                        return True
+                                    
+                                    # Check fallback patterns
+                                    for pattern in fallback_readiness_patterns:
                                         if pattern in modal_text:
                                             logging.info(f"🎉 Download readiness detected in modal: '{pattern}' for {track_name}")
                                             return True
