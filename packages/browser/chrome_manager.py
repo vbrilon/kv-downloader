@@ -8,6 +8,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from ..configuration.config import WEBDRIVER_DEFAULT_TIMEOUT, DOWNLOAD_COMPLETION_TIMEOUT, DOWNLOAD_CHECK_INTERVAL
+from ..utils.performance_profiler import profile_timing, profile_selenium
 from webdriver_manager.chrome import ChromeDriverManager
 
 try:
@@ -31,6 +32,7 @@ class ChromeManager:
         self.driver = None
         self.wait = None
     
+    @profile_timing("setup_driver", "browser", "method")
     def setup_driver(self):
         """Initialize Chrome driver with configuration options"""
         chrome_options = self._configure_chrome_options()
@@ -159,6 +161,7 @@ class ChromeManager:
             })
             logging.debug(f"Updated download path to: {path}")
     
+    @profile_timing("wait_for_downloads_to_complete", "browser", "method")
     def wait_for_downloads_to_complete(self, download_path, timeout=DOWNLOAD_COMPLETION_TIMEOUT):
         """Wait for any active downloads to complete before quitting"""
         if not self.driver:

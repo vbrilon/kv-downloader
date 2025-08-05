@@ -5,6 +5,7 @@ import os
 import threading
 import logging
 from ..configuration.config import PROGRESS_UPDATE_INTERVAL, PROGRESS_BAR_WIDTH
+from ..utils.performance_profiler import profile_timing
 
 
 class ProgressTracker:
@@ -49,6 +50,7 @@ class ProgressTracker:
         
         self._update_display()
     
+    @profile_timing("update_track_status", "progress", "method")
     def update_track_status(self, track_index, status, progress=None, downloaded=None, file_size=None):
         """Update status of a specific track"""
         with self.lock:

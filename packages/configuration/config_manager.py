@@ -8,6 +8,7 @@ Separated from config.py to keep config file clean
 import os
 import yaml
 import logging
+from ..utils.performance_profiler import profile_timing
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -18,6 +19,7 @@ class ConfigurationManager:
         self.songs_config_file = songs_config_file
         self.logger = logging.getLogger(__name__)
     
+    @profile_timing("load_songs_config", "configuration", "method")
     def load_songs_config(self) -> List[Dict[str, Any]]:
         """Load and validate songs configuration from YAML file"""
         try:

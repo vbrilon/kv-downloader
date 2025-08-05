@@ -165,6 +165,7 @@ class FileManager:
             logging.warning(f"⚠️ Could not clear song folder {song_folder_name}: {e}")
             logging.info("Continuing with download - new files will be added to existing folder")
 
+    @profile_timing("setup_song_folder", "file_operations", "method")
     def setup_song_folder(self, song_folder_name, clear_existing=True):
         """Create song-specific folder in downloads directory
         
@@ -374,6 +375,7 @@ class FileManager:
             logging.error(f"Error monitoring for download start: {e}")
             return False
     
+    @profile_timing("check_for_completed_downloads", "file_operations", "method")
     def check_for_completed_downloads(self, song_path, track_name):
         """Check for files that have completed downloading (no more .crdownload) - optimized"""
         try:

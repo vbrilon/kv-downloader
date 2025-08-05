@@ -91,6 +91,7 @@ class KaraokeVersionAutomator:
             self.track_manager.set_progress_tracker(self.progress)
     
     
+    @profile_timing("login", "system", "method")
     def login(self, force_relogin=False):
         """Login using centralized login handler with session persistence"""
         return self.login_handler.login_with_session_persistence(force_relogin=force_relogin)
@@ -99,6 +100,7 @@ class KaraokeVersionAutomator:
         """Check login status using centralized handler"""
         return self.login_handler.is_logged_in()
     
+    @profile_timing("get_available_tracks", "system", "method")
     def get_available_tracks(self, song_url):
         """Get tracks using centralized track handler"""
         return self.track_manager.discover_tracks(song_url)

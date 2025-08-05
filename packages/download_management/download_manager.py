@@ -274,6 +274,7 @@ class DownloadManager:
             
             return False
     
+    @profile_timing("_navigate_and_find_download_button", "download_management", "method")
     def _navigate_and_find_download_button(self, song_url):
         """Navigate to song page and locate download button
         
@@ -310,6 +311,7 @@ class DownloadManager:
         
         return download_button
     
+    @profile_timing("_validate_pre_download_requirements", "download_management", "method")
     def _validate_pre_download_requirements(self, track_name, track_index, song_name):
         """Perform pre-download validation checks with retry logic
         

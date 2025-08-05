@@ -212,7 +212,10 @@ class PerformanceBaselineTester:
         
         with self.baseline_configuration(baseline_name) as config:
             # Import and run automator with current baseline
-            from ...karaoke_automator import KaraokeVersionAutomator
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+            from karaoke_automator import KaraokeVersionAutomator
             
             try:
                 # Create automator with profiling enabled
