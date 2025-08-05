@@ -20,7 +20,7 @@ MAX_RETRIES = 3
 DOWNLOAD_TIMEOUT = 30  # seconds to wait for download to complete
 
 # Track isolation timing settings
-SOLO_ACTIVATION_DELAY = 5.0  # seconds to wait after solo button activation for audio sync
+SOLO_ACTIVATION_DELAY = 12.0  # seconds to wait after solo button activation for audio sync
 
 # WebDriver Timeouts
 WEBDRIVER_DEFAULT_TIMEOUT = 10
@@ -40,11 +40,11 @@ TRACK_SELECTION_MAX_RETRIES = 3
 SOLO_BUTTON_MAX_RETRIES = 3
 SOLO_ACTIVATION_MAX_WAIT = 10
 FILE_OPERATION_MAX_WAIT = 30
-DOWNLOAD_MAX_WAIT = 300
+DOWNLOAD_MAX_WAIT = 90
 DOWNLOAD_COMPLETION_TIMEOUT = 60
 
 # Polling Intervals
-DOWNLOAD_CHECK_INTERVAL = 2
+DOWNLOAD_CHECK_INTERVAL = 5
 FILE_CHECK_INTERVAL = 1
 SOLO_CHECK_INTERVAL = 0.5
 

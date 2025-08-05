@@ -566,11 +566,9 @@ class DownloadManager:
             track_match = self._does_file_match_track(filename, track_name)
             has_custom_suffix = 'Custom_Backing_Track' in filename
             
-            if has_custom_suffix and track_match:
+            if has_custom_suffix:
                 files_needing_cleanup.append(file_path)
-                logging.info(f"📝 File needs cleanup (matches {track_name}): {filename}")
-            elif has_custom_suffix and not track_match:
-                logging.info(f"📝 Skipping file (doesn't match {track_name}): {filename}")
+                logging.info(f"📝 File needs cleanup (Custom_Backing_Track suffix): {filename}")
             else:
                 logging.debug(f"📝 File already clean: {filename}")
         

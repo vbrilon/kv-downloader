@@ -46,6 +46,9 @@ class TestDownloadDetectionRegression(TestCase):
         self.downloaded_filename = "Journey_Any_Way_You_Want_It(Intro_Count_(Click_+_Key)_Custom_Backing_Track).mp3"
         self.expected_clean_filename = "Intro Count (Click + Key).mp3"
         
+        # Generic backing track filename (the bug case)
+        self.generic_backing_track = "Journey_Any_Way_You_Want_It(Custom_Backing_Track).mp3"
+        
     def tearDown(self):
         """Clean up test files"""
         import shutil
@@ -187,6 +190,140 @@ class TestDownloadDetectionRegression(TestCase):
         test_filename = self.downloaded_filename.lower()
         self.assertTrue(file_manager_from_di._is_audio_file(test_filename))
         self.assertTrue(file_manager_from_di._matches_karaoke_patterns(test_filename))
+    
+    def test_generic_backing_track_file_renaming_bug_regression(self):
+        """
+        Regression test for the critical bug where generic backing track files
+        were not being renamed to specific track names.
+        
+        Bug scenario:
+        1. User solos track "Intro Count (Click + Key)"
+        2. Download produces generic file "Journey_Any_Way_You_Want_It(Custom_Backing_Track).mp3"
+        3. File cleanup logic skipped the file because it didn't match track name
+        4. File never got renamed to "Intro Count (Click + Key).mp3"
+        
+        Expected behavior after fix:
+        - ALL files with Custom_Backing_Track suffix should be renamed
+        - Track name matching should not be required for cleanup
+        """
+        from packages.download_management.download_manager import DownloadManager
+        
+        # Create mock dependencies
+        mock_driver = Mock()
+        mock_wait = Mock()
+        mock_chrome_manager = Mock()
+        mock_progress_tracker = Mock()
+        mock_stats_reporter = Mock()
+        
+        # Create download manager with real file manager
+        download_manager = DownloadManager(
+            driver=mock_driver,
+            wait=mock_wait,
+            progress_tracker=mock_progress_tracker,
+            file_manager=self.real_file_manager,
+            chrome_manager=mock_chrome_manager,
+            stats_reporter=mock_stats_reporter
+        )
+        
+        # Create the generic backing track file (the bug case)
+        generic_file = self.song_folder / self.generic_backing_track
+        generic_file.write_text("test audio content")
+        
+        # Verify file was created
+        self.assertTrue(generic_file.exists(), "Generic backing track file should exist")
+        
+        # Test the file cleanup identification logic (this was the bug)
+        files_to_check = [generic_file]
+        track_name = "Intro Count (Click + Key)"
+        
+        files_needing_cleanup = download_manager._identify_files_needing_cleanup(
+            files_to_check, track_name
+        )
+        
+        # CRITICAL: The generic backing track file should be identified for cleanup
+        # even though it doesn't match the track name
+        self.assertEqual(len(files_needing_cleanup), 1, 
+                        "Generic backing track file should be identified for cleanup")
+        self.assertEqual(files_needing_cleanup[0], generic_file,
+                        "The generic backing track file should be in cleanup list")
+        
+        # Test the actual cleanup process
+        cleaned_paths = download_manager._clean_downloaded_files(files_needing_cleanup, track_name)
+        
+        # Verify the file was renamed correctly
+        expected_renamed_file = self.song_folder / "Intro Count (Click + Key).mp3"
+        self.assertTrue(expected_renamed_file.exists(), 
+                       f"File should be renamed to '{expected_renamed_file.name}'")
+        self.assertFalse(generic_file.exists(), 
+                        "Original generic file should be removed after renaming")
+        
+        # Verify the path mapping was correct
+        self.assertIn(generic_file, cleaned_paths,
+                     "Original file path should be in cleaned paths mapping")
+        self.assertEqual(cleaned_paths[generic_file], expected_renamed_file,
+                        "Path mapping should point to renamed file")
+    
+    def test_track_name_mismatch_scenarios(self):
+        """
+        Test various scenarios where downloaded files don't match track names
+        but should still be renamed (all Custom_Backing_Track files should be cleaned)
+        """
+        from packages.download_management.download_manager import DownloadManager
+        
+        # Create mock dependencies  
+        mock_driver = Mock()
+        mock_wait = Mock()
+        mock_chrome_manager = Mock()
+        mock_progress_tracker = Mock()
+        mock_stats_reporter = Mock()
+        
+        download_manager = DownloadManager(
+            driver=mock_driver,
+            wait=mock_wait,
+            progress_tracker=mock_progress_tracker,
+            file_manager=self.real_file_manager,
+            chrome_manager=mock_chrome_manager,
+            stats_reporter=mock_stats_reporter
+        )
+        
+        # Test cases: (downloaded_filename, track_name, expected_renamed)
+        test_cases = [
+            ("Song_Name(Custom_Backing_Track).mp3", "Bass", "Bass.mp3"),
+            ("Artist_Track(Custom_Backing_Track-1).mp3", "Guitar", "Guitar.mp3"), 
+            ("Generic_Backing_Track_Custom_Backing_Track.mp3", "Vocals", "Vocals.mp3"),
+            ("Complex_Song_Name_Custom_Backing_Track_.mp3", "Drum Kit", "Drum Kit.mp3"),
+        ]
+        
+        for downloaded_filename, track_name, expected_renamed in test_cases:
+            with self.subTest(downloaded=downloaded_filename, track=track_name):
+                # Create test file  
+                test_file = self.song_folder / downloaded_filename
+                test_file.write_text("test content")
+                
+                # Test identification 
+                files_needing_cleanup = download_manager._identify_files_needing_cleanup(
+                    [test_file], track_name
+                )
+                
+                # Should always identify Custom_Backing_Track files for cleanup
+                self.assertEqual(len(files_needing_cleanup), 1,
+                               f"File {downloaded_filename} should be identified for cleanup")
+                
+                # Test cleanup
+                cleaned_paths = download_manager._clean_downloaded_files(
+                    files_needing_cleanup, track_name
+                )
+                
+                # Verify renaming
+                expected_file = self.song_folder / expected_renamed
+                self.assertTrue(expected_file.exists(),
+                               f"File should be renamed to {expected_renamed}")
+                self.assertFalse(test_file.exists(),
+                               f"Original file {downloaded_filename} should be removed")
+                
+                # Clean up for next iteration
+                if expected_file.exists():
+                    expected_file.unlink()
     
     def test_caching_behavior_during_detection(self):
         """Test that file caching doesn't interfere with download detection"""
