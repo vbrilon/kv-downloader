@@ -9,6 +9,13 @@ from .error_handling import (
     retry_on_failure, 
     ErrorContext
 )
+from .performance_profiler import (
+    PerformanceProfiler,
+    get_profiler,
+    initialize_profiler,
+    profile_timing,
+    profile_selenium
+)
 
 __all__ = [
     'setup_logging', 
@@ -18,5 +25,10 @@ __all__ = [
     'validation_safe', 
     'file_operation_safe',
     'retry_on_failure',
-    'ErrorContext'
+    'ErrorContext',
+    'PerformanceProfiler',
+    'get_profiler',
+    'initialize_profiler',
+    'profile_timing',
+    'profile_selenium'
 ]

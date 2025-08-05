@@ -23,7 +23,7 @@ from packages.progress import ProgressTracker, StatsReporter
 from packages.file_operations import FileManager
 from packages.track_management import TrackManager
 from packages.download_management import DownloadManager
-from packages.utils import setup_logging
+from packages.utils import setup_logging, initialize_profiler, get_profiler, profile_timing
 from packages.di.factory import create_container_with_dependencies, create_download_manager_factory
 
 # Setup logging (will be reconfigured based on debug mode)
@@ -37,7 +37,7 @@ logging.basicConfig(
 class KaraokeVersionAutomator:
     """Main automation class that coordinates all functionality"""
     
-    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml"):
+    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", enable_profiling=False):
         """
         Initialize automator
         
@@ -45,12 +45,20 @@ class KaraokeVersionAutomator:
             headless (bool): Run browser in headless mode (True) or visible mode (False)
             show_progress (bool): Show progress bar during downloads (True) or use simple logging (False)
             config_file (str): Path to songs configuration file
+            enable_profiling (bool): Enable performance profiling with detailed timing logs
         """
         self.headless = headless
         self.show_progress = show_progress
+        self.enable_profiling = enable_profiling
         self.config_manager = ConfigurationManager(config_file)
         self.progress = ProgressTracker(show_display=show_progress) if show_progress else None
         self.stats = StatsReporter()  # Always track stats
+        
+        # Initialize performance profiler if enabled
+        if self.enable_profiling:
+            self.profiler = initialize_profiler(enabled=True, enable_memory=True, enable_detailed_logging=True)
+        else:
+            self.profiler = get_profiler()  # Get disabled profiler
         
         # Initialize browser manager
         self.chrome_manager = ChromeManager(headless=headless)
@@ -119,6 +127,7 @@ class KaraokeVersionAutomator:
         """Clean filename for saving"""
         return self.download_manager.sanitize_filesystem_name(filename)
     
+    @profile_timing("run_automation", "system", "system")
     def run_automation(self):
         """Run complete automation workflow"""
         try:
@@ -162,6 +171,7 @@ class KaraokeVersionAutomator:
             return False
         return True
     
+    @profile_timing("_process_single_song", "system", "component")
     def _process_single_song(self, song):
         """Process a single song with all its tracks"""
         logging.info(f"Processing: {song['name']}")
@@ -234,6 +244,7 @@ class KaraokeVersionAutomator:
             self._download_single_track(song, track, song_key)
             time.sleep(BETWEEN_TRACKS_PAUSE)  # Brief pause between tracks
     
+    @profile_timing("_download_single_track", "system", "method")
     def _download_single_track(self, song, track, song_key):
         """Download a single track"""
         track_name = self.sanitize_filename(track['name'])
@@ -290,6 +301,15 @@ class KaraokeVersionAutomator:
                 
                 final_report = self.stats.generate_final_report()
                 print(final_report)
+                
+                # Generate performance report if profiling was enabled
+                if self.enable_profiling:
+                    print("\n" + "="*80)
+                    print("🔍 GENERATING PERFORMANCE PROFILING REPORT...")
+                    print("="*80)
+                    perf_report = self.profiler.generate_performance_report()
+                    print(perf_report)
+                
             else:
                 # Use logging for non-display mode
                 if failed:
@@ -299,6 +319,12 @@ class KaraokeVersionAutomator:
                 
                 final_report = self.stats.generate_final_report()
                 logging.info(f"Final report:\n{final_report}")
+                
+                # Generate performance report if profiling was enabled
+                if self.enable_profiling:
+                    logging.info("Generating performance profiling report...")
+                    perf_report = self.profiler.generate_performance_report()
+                    logging.info(f"Performance report:\n{perf_report}")
             
             filename = "logs/automation_stats_failed.json" if failed else "logs/automation_stats.json"
             stats_saved = self.stats.save_detailed_report(filename)
@@ -308,6 +334,15 @@ class KaraokeVersionAutomator:
                     print(f"\n📁 Detailed statistics saved to: {filename}")
                 else:
                     logging.info(f"Detailed statistics saved to: {filename}")
+            
+            # Save detailed performance report if profiling was enabled
+            if self.enable_profiling:
+                perf_filename = self.profiler.save_detailed_report()
+                if perf_filename:
+                    if self.show_progress:
+                        print(f"📁 Detailed performance report saved to: {perf_filename}")
+                    else:
+                        logging.info(f"Detailed performance report saved to: {perf_filename}")
             
         except Exception as e:
             logging.error(f"Error generating final statistics report: {e}")
@@ -324,6 +359,8 @@ if __name__ == "__main__":
                        help='Force fresh login instead of using saved session')
     parser.add_argument('--clear-session', action='store_true',
                        help='Clear saved session data and exit')
+    parser.add_argument('--profile', action='store_true',
+                       help='Enable performance profiling with detailed timing logs')
     args = parser.parse_args()
     
     # Handle session clearing
@@ -371,7 +408,11 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        automator = KaraokeVersionAutomator(headless=headless_mode, show_progress=True)
+        automator = KaraokeVersionAutomator(
+            headless=headless_mode, 
+            show_progress=True,
+            enable_profiling=args.profile
+        )
         
         # Override login method if force login requested
         if args.force_login:
