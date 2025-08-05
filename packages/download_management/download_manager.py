@@ -507,12 +507,12 @@ class DownloadManager:
         return initial_files
     
     @profile_timing("_wait_for_download_readiness", "download_management", "method")
-    def _wait_for_download_readiness(self, track_name, max_wait=30):
+    def _wait_for_download_readiness(self, track_name, max_wait=60):
         """Wait for DOM indication that download is ready using popup text monitoring
         
         Args:
             track_name (str): Name of track being downloaded (for logging)
-            max_wait (int): Maximum time to wait in seconds
+            max_wait (int): Maximum time to wait in seconds (default: 60s)
             
         Returns:
             bool: True if download readiness detected, False if timeout
