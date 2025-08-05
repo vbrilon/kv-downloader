@@ -1,19 +1,19 @@
 {
-  "timestamp": 1754398088.736337,
+  "timestamp": 1754398583.3266299,
   "core_functions": {
-    "automator_init": false,
-    "config_loading": false,
-    "login_function": false,
-    "track_discovery": false,
-    "mixer_controls": false,
-    "solo_function": false,
-    "download_setup": false
+    "automator_init": true,
+    "config_loading": true,
+    "login_function": true,
+    "track_discovery": true,
+    "mixer_controls": true,
+    "solo_function": true,
+    "download_setup": true
   },
   "edge_cases": {
     "valid_config": true,
     "key_validation": true,
     "missing_fields": true
   },
-  "total_score": 3,
+  "total_score": 10,
   "max_score": 10
 }

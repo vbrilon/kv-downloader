@@ -17,7 +17,8 @@ from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_T
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
                                     DOWNLOAD_CHECK_INTERVAL, TRACK_SELECTION_MAX_RETRIES, 
                                     RETRY_VERIFICATION_DELAY, LOG_INTERVAL_SECONDS, 
-                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO)
+                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO,
+                                    DOWNLOAD_MONITORING_INITIAL_WAIT)
 
 
 class DownloadManager:
@@ -501,7 +502,16 @@ class DownloadManager:
         return initial_files
     
     def _monitor_download_progress(self, context, track_index):
-        """Main monitoring loop for download progress"""
+        """Main monitoring loop for download progress with optimized initial wait"""
+        # Performance optimization: Add initial wait before monitoring starts
+        # Based on PERF.md analysis showing consistent 60s server generation time
+        logging.info(f"⏳ Initial {DOWNLOAD_MONITORING_INITIAL_WAIT}s wait before download monitoring for {context['track_name']} (server generation optimization)")
+        
+        self._wait_for_check_interval(DOWNLOAD_MONITORING_INITIAL_WAIT)
+        context['waited'] += DOWNLOAD_MONITORING_INITIAL_WAIT
+        
+        logging.info(f"✅ Initial wait complete, starting active monitoring for {context['track_name']}")
+        
         while context['waited'] < context['max_wait']:
             self._wait_for_check_interval(context['check_interval'])
             context['waited'] += context['check_interval']
