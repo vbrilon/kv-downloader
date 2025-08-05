@@ -7,7 +7,7 @@ source bin/activate  # On macOS/Linux
 ```
 
 ## Overview
-Production-ready automated system for downloading isolated backing tracks from Karaoke-Version.com using Python and Selenium. Downloads all available tracks for specified songs into organized directories.
+Production-ready automated system for downloading isolated backing tracks from Karaoke-Version.com using Python and Selenium. Downloads all available tracks for specified songs into organized directories. Features cross-browser mode compatibility with reliable operation in both headless (production) and visible (debug) modes.
 
 ## Quick Start
 ```bash
@@ -61,7 +61,6 @@ packages/
   - `IConfig`: Configuration management interface
 - **Adapters**: Bridge pattern implementations connecting existing classes to interfaces
 - **Factory**: Service creation and container setup utilities
-- **Test Coverage**: 33 unit tests validating DI container, factory functions, adapters, and interface compliance
 
 ### Error Handling System (packages/utils/error_handling.py)
 - **@selenium_safe**: Decorator for Selenium operations with consistent error handling
@@ -69,7 +68,6 @@ packages/
 - **@file_operation_safe**: Decorator for file system operations
 - **@retry_on_failure**: Decorator with exponential backoff retry logic
 - **ErrorContext**: Context manager for complex operation error handling
-- **Test Coverage**: 31 comprehensive unit tests preventing regression in error handling patterns used throughout codebase
 
 ### Key Site Selectors (Verified Working)
 - **Login**: `name="frm_login"`, `name="frm_password"`, `name="sbm"`
@@ -90,8 +88,11 @@ packages/
   - `_validate_pre_download_requirements()`: Pre-download validation with retry
   - `_execute_download_action()`: Download execution and progress tracking
   - `_monitor_download_completion()`: Download monitoring and completion handling
+- **Cross-Browser Mode Compatibility**: Handles timing differences between headless and visible modes:
+  - **Download Detection**: Pre-monitors for existing files before waiting for new downloads
+  - **Completion Monitoring**: Processes both new files (visible mode) and existing unprocessed files (headless mode)
 - **File Processing Pipeline**: Coordinated sequence ensuring validation uses correct file paths:
-  1. Download completion detection
+  1. Download completion detection (immediate for existing files, monitored for new files)
   2. File cleanup/renaming with path mapping (`old_path → new_path`)
   3. Validation using updated paths after renaming
 - **Error Handling**: Standardized error handling using decorators
@@ -101,24 +102,17 @@ packages/
 - **Chrome Profile Reuse**: Persistent authentication via `chrome_profile/`
 - **Session Storage**: `.cache/session_data.pkl` with 24-hour expiry
 - **Performance**: 85% faster subsequent runs (2-3s vs 4-14s)
-- **Test Coverage**: 24+ unit tests for login flows, session persistence, and logout fallbacks
 
 ### Click Handlers & Performance Optimizations (packages/utils/click_handlers.py)
 - **WebDriverWait Integration**: Replaced hardcoded time.sleep() with intelligent WebDriverWait patterns
 - **JavaScript Fallbacks**: Automatic interception detection and JavaScript click fallbacks
 - **Performance Gains**: 1.5+ seconds per track through optimized waiting strategies
-- **Test Coverage**: 17 unit tests validating click handling and performance optimizations
 
-### Commands
-```bash
-python karaoke_automator.py                 # Normal usage
-python karaoke_automator.py --force-login   # Force fresh login
-python karaoke_automator.py --clear-session # Clear session data
-python karaoke_automator.py --debug         # Debug mode
-```
 
 ### Testing & Regression Prevention
-- **Unit Test Coverage**: 105+ comprehensive tests across critical architectural components
+- **Unit Test Coverage**: 117+ comprehensive tests across critical architectural components
+- **Download Detection Regression Tests**: 7 tests in `test_download_detection_regression.py` preventing timeout issues
+- **Completion Monitoring Regression Tests**: 5 tests in `test_stuck_processing_regression.py` preventing infinite processing
 - **Regression Testing**: Automated baseline validation in `tests/regression/`
 - **Test Command**: `python tests/run_tests.py --regression-only` for system validation
 
@@ -128,11 +122,13 @@ python karaoke_automator.py --debug         # Debug mode
   - Optimized directory scanning with `_scan_directory_cached()` to reduce `iterdir()` operations
   - Pre-compiled pattern matching for audio files and karaoke detection
   - Batch file information processing instead of individual calls
+- **Cross-Mode Download Detection**: `wait_for_download_to_start()` handles both browser modes
+  - **Pre-monitoring check**: Scans for existing suitable files before starting monitoring loop
+  - **Monitoring loop**: Detects new files (visible mode) and modified files (visible mode)
+  - **Pattern matching**: Uses pre-compiled karaoke patterns for efficient file identification
 - **Download Path Management**: Automatic Chrome download path configuration per song
 - **File Cleanup**: Intelligent filename cleaning removing site-generated suffixes
   - Removes `_Custom_Backing_Track` patterns and parenthetical content
   - Simplifies to clean track names (e.g., `"Drum Kit.mp3"`)
 - **Content Validation**: Audio file validation with proper path tracking after renaming
 - **Error Recovery**: Fallback mechanisms for file system operations
-
-
