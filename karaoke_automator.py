@@ -15,16 +15,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from packages.configuration import ConfigurationManager
-from packages.configuration.config import BETWEEN_TRACKS_PAUSE
-from packages.browser import ChromeManager
-from packages.authentication import LoginManager
-from packages.progress import ProgressTracker, StatsReporter
-from packages.file_operations import FileManager
-from packages.track_management import TrackManager
-from packages.download_management import DownloadManager
+
+# CRITICAL: Initialize profiler BEFORE importing instrumented modules
+# This ensures decorators capture the correct profiler state
 from packages.utils import setup_logging, initialize_profiler, get_profiler, profile_timing
-from packages.di.factory import create_container_with_dependencies, create_download_manager_factory
 
 # Setup logging (will be reconfigured based on debug mode)
 logging.basicConfig(
@@ -37,7 +31,7 @@ logging.basicConfig(
 class KaraokeVersionAutomator:
     """Main automation class that coordinates all functionality"""
     
-    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", enable_profiling=False):
+    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", max_tracks_per_song=None):
         """
         Initialize automator
         
@@ -45,20 +39,17 @@ class KaraokeVersionAutomator:
             headless (bool): Run browser in headless mode (True) or visible mode (False)
             show_progress (bool): Show progress bar during downloads (True) or use simple logging (False)
             config_file (str): Path to songs configuration file
-            enable_profiling (bool): Enable performance profiling with detailed timing logs
+            max_tracks_per_song (int): Maximum tracks to process per song (None = all tracks)
         """
         self.headless = headless
         self.show_progress = show_progress
-        self.enable_profiling = enable_profiling
+        self.max_tracks_per_song = max_tracks_per_song
         self.config_manager = ConfigurationManager(config_file)
         self.progress = ProgressTracker(show_display=show_progress) if show_progress else None
         self.stats = StatsReporter()  # Always track stats
         
-        # Initialize performance profiler if enabled
-        if self.enable_profiling:
-            self.profiler = initialize_profiler(enabled=True, enable_memory=True, enable_detailed_logging=True)
-        else:
-            self.profiler = get_profiler()  # Get disabled profiler
+        # Get the global profiler (will be enabled if --profile flag was used)
+        self.profiler = get_profiler()
         
         # Initialize browser manager
         self.chrome_manager = ChromeManager(headless=headless)
@@ -241,8 +232,17 @@ class KaraokeVersionAutomator:
         self.file_manager.clear_song_folder(song_folder_name)
     
     def _download_all_tracks(self, song, tracks, song_key):
-        """Download all tracks for the song"""
-        for track in tracks:
+        """Download all tracks for the song (or limited by max_tracks_per_song)"""
+        # Limit tracks if max_tracks_per_song is specified
+        if self.max_tracks_per_song is not None:
+            limited_tracks = tracks[:self.max_tracks_per_song]
+            if len(limited_tracks) < len(tracks):
+                logging.info(f"📊 Limiting to {self.max_tracks_per_song} tracks (of {len(tracks)} available) for faster profiling")
+            tracks_to_process = limited_tracks
+        else:
+            tracks_to_process = tracks
+            
+        for track in tracks_to_process:
             self._download_single_track(song, track, song_key)
             time.sleep(BETWEEN_TRACKS_PAUSE)  # Brief pause between tracks
     
@@ -250,6 +250,7 @@ class KaraokeVersionAutomator:
     def _download_single_track(self, song, track, song_key):
         """Download a single track"""
         track_name = self.sanitize_filename(track['name'])
+        success = False  # Initialize success variable to prevent scope issues
         
         if self.progress:
             self.progress.update_track_status(track['index'], 'isolating')
@@ -257,14 +258,18 @@ class KaraokeVersionAutomator:
         self.stats.record_track_start(song['name'], track_name, track['index'])
         
         if self.solo_track(track, song['url']):
-            success = self.download_manager.download_current_mix(
-                song['url'], 
-                track_name,
-                cleanup_existing=False,
-                song_folder=song.get('name'),
-                key_adjustment=song_key,
-                track_index=track['index']
-            )
+            try:
+                success = self.download_manager.download_current_mix(
+                    song['url'], 
+                    track_name,
+                    cleanup_existing=False,
+                    song_folder=song.get('name'),
+                    key_adjustment=song_key,
+                    track_index=track['index']
+                )
+            except Exception as e:
+                logging.error(f"Exception during download for {track_name}: {e}")
+                success = False
             
             if not success:
                 logging.error(f"Failed to download {track_name}")
@@ -305,7 +310,7 @@ class KaraokeVersionAutomator:
                 print(final_report)
                 
                 # Generate performance report if profiling was enabled
-                if self.enable_profiling:
+                if self.profiler.enabled:
                     print("\n" + "="*80)
                     print("🔍 GENERATING PERFORMANCE PROFILING REPORT...")
                     print("="*80)
@@ -323,7 +328,7 @@ class KaraokeVersionAutomator:
                 logging.info(f"Final report:\n{final_report}")
                 
                 # Generate performance report if profiling was enabled
-                if self.enable_profiling:
+                if self.profiler.enabled:
                     logging.info("Generating performance profiling report...")
                     perf_report = self.profiler.generate_performance_report()
                     logging.info(f"Performance report:\n{perf_report}")
@@ -338,7 +343,7 @@ class KaraokeVersionAutomator:
                     logging.info(f"Detailed statistics saved to: {filename}")
             
             # Save detailed performance report if profiling was enabled
-            if self.enable_profiling:
+            if self.profiler.enabled:
                 perf_filename = self.profiler.save_detailed_report()
                 if perf_filename:
                     if self.show_progress:
@@ -369,9 +374,26 @@ if __name__ == "__main__":
                        help='Run A/B comparison between two baselines (e.g., --ab-test pre_optimization current)')
     parser.add_argument('--list-baselines', action='store_true',
                        help='List available baseline configurations and exit')
-    parser.add_argument('--max-tracks', type=int, default=3,
-                       help='Maximum tracks per song for baseline testing (default: 3)')
+    parser.add_argument('--max-tracks', type=int, default=None,
+                       help='Maximum tracks per song to process (default: all tracks)')
     args = parser.parse_args()
+    
+    # CRITICAL: Initialize profiler immediately after argument parsing
+    # This must happen BEFORE importing any instrumented modules
+    if args.profile:
+        initialize_profiler(enabled=True, enable_memory=True, enable_detailed_logging=True)
+        print("🔍 Performance profiling enabled")
+    
+    # Now import instrumented modules AFTER profiler initialization
+    from packages.configuration import ConfigurationManager
+    from packages.configuration.config import BETWEEN_TRACKS_PAUSE
+    from packages.browser import ChromeManager
+    from packages.authentication import LoginManager
+    from packages.progress import ProgressTracker, StatsReporter
+    from packages.file_operations import FileManager
+    from packages.track_management import TrackManager
+    from packages.download_management import DownloadManager
+    from packages.di.factory import create_container_with_dependencies, create_download_manager_factory
     
     # Handle baseline testing commands
     if args.list_baselines:
@@ -383,7 +405,7 @@ if __name__ == "__main__":
         from packages.utils import run_ab_test
         baseline_a, baseline_b = args.ab_test
         print(f"🔬 Running A/B test: {baseline_a} vs {baseline_b}")
-        result = run_ab_test(baseline_a, baseline_b, max_tracks=args.max_tracks)
+        result = run_ab_test(baseline_a, baseline_b, max_tracks=args.max_tracks or 3)
         print(result)
         exit(0)
         
@@ -391,7 +413,7 @@ if __name__ == "__main__":
         from packages.utils import PerformanceBaselineTester
         tester = PerformanceBaselineTester()
         print(f"🧪 Running baseline test: {args.baseline_test}")
-        result = tester.run_baseline_test(args.baseline_test, max_tracks_per_song=args.max_tracks)
+        result = tester.run_baseline_test(args.baseline_test, max_tracks_per_song=args.max_tracks or 3)
         if result:
             print(f"\n✅ Baseline test completed in {result['test_duration']:.2f}s")
             print(f"📁 Results saved to logs/performance/baselines/")
@@ -447,7 +469,7 @@ if __name__ == "__main__":
         automator = KaraokeVersionAutomator(
             headless=headless_mode, 
             show_progress=True,
-            enable_profiling=args.profile
+            max_tracks_per_song=args.max_tracks
         )
         
         # Override login method if force login requested

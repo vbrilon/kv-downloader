@@ -207,25 +207,35 @@ class TrackManager:
             return self._retry_solo_activation(solo_button, track_name, track_index)
     
     def _wait_for_solo_activation(self, solo_button, track_name):
-        """Wait for solo button to become active"""
-        max_wait = 10  # Maximum 10 seconds to wait for solo to activate
-        check_interval = 0.5  # Check every 500ms
+        """Wait for solo button to become active - optimized with deterministic detection"""
+        max_wait = 8  # Increased from 5s to 8s to allow for server processing
+        check_interval = 0.2  # Even faster polling - 200ms intervals for responsiveness
         waited = 0
         
-        logging.debug(f"Polling for solo activation for {track_name}...")
+        logging.debug(f"Polling for solo activation for {track_name}...") 
+        
+        # Brief initial delay to allow click to register
+        time.sleep(0.1)
         
         while waited < max_wait:
             try:
-                WebDriverWait(self.driver, check_interval).until(
-                    lambda driver: self._is_solo_button_active(solo_button)
-                )
-                logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
-                return True
-            except TimeoutException:
+                # Check immediately without waiting first
+                if self._is_solo_button_active(solo_button):
+                    logging.info(f"✅ Solo button became active for {track_name} (after {waited:.1f}s)")
+                    return True
+                
+                # Brief wait before next check
+                time.sleep(check_interval)
                 waited += check_interval
-            
-            if self._check_solo_activation_status(solo_button, track_name, waited):
-                return True
+                
+                # Log progress every 2s
+                if int(waited) > int(waited - check_interval) and waited >= 2.0 and int(waited) % 2 == 0:
+                    logging.debug(f"   Solo button activation check: {waited:.1f}s elapsed")
+                
+            except Exception as e:
+                logging.debug(f"Error checking solo button activation: {e}")
+                time.sleep(check_interval)
+                waited += check_interval
         
         logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name}")
         return False
@@ -300,7 +310,7 @@ class TrackManager:
         logging.info(f"⏳ Waiting for audio server to process solo state for {track_name}...")
         
         # Phase 1: Wait for audio server processing indicators to clear
-        audio_server_ready = self._wait_for_audio_server_sync()
+        audio_server_ready = self._wait_for_audio_server_sync(track_index) if track_index is not None else False
         
         # Phase 2: Verify mixer state configuration
         mixer_state_valid = self._verify_mixer_state_configuration()
@@ -323,16 +333,17 @@ class TrackManager:
                 logging.warning(f"⚠️ Phase 3 validation error for {track_name}: {e}")
                 # Don't fail the entire process if Phase 3 has issues
         
-        # Phase 4: Fallback delay if verification methods unavailable
-        if not audio_server_ready or not mixer_state_valid:
-            adaptive_timeout = self._get_adaptive_timeout()
-            logging.info(f"⏳ Fallback: Using {adaptive_timeout}s delay for audio generation sync ({self.track_complexity} complexity)...")
-            try:
-                WebDriverWait(self.driver, adaptive_timeout).until(
-                    lambda driver: False  # Always timeout to create the delay
-                )
-            except TimeoutException:
-                pass  # Expected timeout for delay
+        # Phase 4: Intelligent fallback - much shorter since we have deterministic detection
+        if not audio_server_ready and not mixer_state_valid:
+            # Use very short fallback since our deterministic method should have worked
+            fallback_timeout = 1.0  # Just 1 second safety buffer
+            logging.info(f"⏳ Fallback: Using {fallback_timeout}s safety buffer (deterministic detection may have missed edge case)...")
+            time.sleep(fallback_timeout)
+        elif audio_server_ready:
+            # If deterministic detection worked, just add tiny safety buffer
+            safety_buffer = 0.2
+            logging.debug(f"⏳ Deterministic detection succeeded, adding {safety_buffer}s safety buffer...")
+            time.sleep(safety_buffer)
         
         # Final assessment
         overall_success = audio_server_ready or mixer_state_valid
@@ -346,61 +357,64 @@ class TrackManager:
         return True
     
     @profile_timing("_wait_for_audio_server_sync", "track_management", "method")
-    def _wait_for_audio_server_sync(self):
-        """Wait for audio server processing indicators to complete"""
+    def _wait_for_audio_server_sync(self, expected_solo_index):
+        """Wait for solo button to achieve active state - deterministic DOM-based detection"""
         try:
-            # Monitor for audio server processing completion
-            # Based on existing pattern from download_manager.py:210-211
-            logging.debug("🔍 Monitoring audio server processing indicators...")
+            logging.debug(f"🔍 Waiting for solo button {expected_solo_index} to become active...")
             
-            # Wait for any processing indicators to appear and then disappear
-            max_wait_time = self._get_adaptive_timeout()
-            start_time = time.time()
-            processing_detected = False
+            # Brief initial delay to let server start processing
+            time.sleep(0.3)
             
-            while time.time() - start_time < max_wait_time:
-                # Wait for DOM to be stable before checking page source
+            # Active polling for solo button state - much faster than blind waiting
+            max_checks = 25  # 25 * 0.2s = 5s maximum wait (vs previous 10s)
+            
+            for check_num in range(max_checks):
                 try:
-                    WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                except TimeoutException:
-                    pass  # Continue if body check times out
-                
-                page_source_lower = self.driver.page_source.lower()
-                
-                # Check if audio server is actively processing
-                if ("generating" in page_source_lower or 
-                    "preparing" in page_source_lower or
-                    "processing" in page_source_lower or
-                    "loading" in page_source_lower):
-                    if not processing_detected:
-                        logging.debug("⏳ Audio server processing detected, waiting for completion...")
-                        processing_detected = True
-                    # Use shorter sleep when actively detected processing
-                    time.sleep(WEBDRIVER_MICRO_TIMEOUT)
+                    # Use the same reliable logic as Phase 3 validation
+                    if self._is_solo_button_active_for_index(expected_solo_index):
+                        elapsed_time = (check_num * 0.2) + 0.3
+                        logging.debug(f"✅ Solo button active after {elapsed_time:.1f}s - server sync complete")
+                        return True
+                    
+                    # Short poll interval for responsiveness
+                    time.sleep(0.2)
+                    
+                except Exception as e:
+                    # Don't fail on individual check errors - keep trying
+                    logging.debug(f"Solo button check {check_num} failed: {e}")
+                    time.sleep(0.2)
                     continue
-                
-                # Check for positive completion indicators
-                if ("ready" in page_source_lower or 
-                    "complete" in page_source_lower or
-                    "finished" in page_source_lower):
-                    logging.debug("✅ Audio server processing completion detected")
-                    return True
-                
-                # If we detected processing but no longer see indicators, likely complete
-                if processing_detected:
-                    logging.debug("✅ Audio server processing indicators cleared")
-                    return True
-                
-                # Brief pause before rechecking - use shorter interval for responsiveness
-                time.sleep(WEBDRIVER_MICRO_TIMEOUT)
             
-            logging.debug("⏱️ Audio server sync timeout - proceeding with fallback delay")
+            # If we get here, we timed out - but this is much faster than before
+            total_wait_time = (max_checks * 0.2) + 0.3
+            logging.debug(f"⚠️ Solo button state timeout after {total_wait_time:.1f}s - proceeding anyway")
             return False
             
         except Exception as e:
             logging.warning(f"⚠️ Error during audio server sync verification: {e}")
+            return False
+    
+    def _is_solo_button_active_for_index(self, expected_solo_index):
+        """Fast check if solo button is active for specific track index"""
+        try:
+            track_selector = f".track[data-index='{expected_solo_index}']"
+            track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
+            
+            if not track_elements:
+                return False
+                
+            track_element = track_elements[0]
+            solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
+            button_classes = solo_button.get_attribute('class') or ''
+            
+            # Check if this button has active state classes
+            is_active = any(active_class in button_classes.lower() 
+                          for active_class in ['is-active', 'active', 'selected'])
+            
+            return is_active
+            
+        except Exception as e:
+            # Return False on any error - don't crash the polling loop
             return False
     
     def _verify_mixer_state_configuration(self):

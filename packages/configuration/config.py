@@ -20,9 +20,9 @@ MAX_RETRIES = 3
 DOWNLOAD_TIMEOUT = 30  # seconds to wait for download to complete
 
 # Track isolation timing settings
-SOLO_ACTIVATION_DELAY = 12.0  # seconds to wait after solo button activation for audio sync
-SOLO_ACTIVATION_DELAY_SIMPLE = 15.0  # seconds for simple arrangements (8 tracks or fewer)
-SOLO_ACTIVATION_DELAY_COMPLEX = 21.0  # seconds for complex arrangements (9+ tracks)
+SOLO_ACTIVATION_DELAY = 5.0   # seconds to wait after solo button activation for audio sync (restored from pre-optimization)
+SOLO_ACTIVATION_DELAY_SIMPLE = 7.0   # seconds for simple arrangements (8 tracks or fewer) - optimized from 15.0s
+SOLO_ACTIVATION_DELAY_COMPLEX = 10.0  # seconds for complex arrangements (9+ tracks) - optimized from 21.0s
 
 # WebDriver Timeouts
 WEBDRIVER_DEFAULT_TIMEOUT = 10
@@ -49,7 +49,7 @@ DOWNLOAD_COMPLETION_TIMEOUT = 60
 DOWNLOAD_CHECK_INTERVAL = 5
 FILE_CHECK_INTERVAL = 1
 SOLO_CHECK_INTERVAL = 0.5
-DOWNLOAD_MONITORING_INITIAL_WAIT = 30  # Performance optimization: wait before monitoring starts
+DOWNLOAD_MONITORING_INITIAL_WAIT = 15  # Performance optimization: reduced from 30s - wait before monitoring starts
 
 # Session Constants
 SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours

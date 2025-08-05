@@ -33,6 +33,10 @@ class PerformanceProfiler:
         self.enable_memory = enable_memory and PSUTIL_AVAILABLE  # Disable memory tracking if psutil unavailable
         self.enable_detailed_logging = enable_detailed_logging
         
+        # DEBUG: Print profiler initialization state
+        print(f"🔍 PROFILER INIT: enabled={enabled}, detailed_logging={enable_detailed_logging}")
+        logging.info(f"🔍 PROFILER INIT: enabled={enabled}, detailed_logging={enable_detailed_logging}")
+        
         # Performance data storage
         self.timing_data = {}
         self.operation_counts = {}
@@ -281,6 +285,11 @@ class PerformanceProfiler:
             
             status = "SUCCESS" if success else f"FAILED: {error}"
             self.perf_logger.info(f"{tier.upper()}: {operation_key} - {duration:.4f}s - {status}{memory_info}")
+        
+        # DEBUG: Also print to console to verify timing is being recorded
+        if self.enabled:
+            print(f"🔍 PERF DEBUG: {operation_key} - {duration:.4f}s - {'SUCCESS' if success else 'FAILED'}")
+            logging.info(f"🔍 PERF DEBUG: {operation_key} - {duration:.4f}s - {'SUCCESS' if success else 'FAILED'}")
     
     def _record_selenium_timing(self, operation_key: str, duration: float, 
                                success: bool, error: str, context: Dict):
