@@ -11,7 +11,7 @@ from selenium.common.exceptions import (
     WebDriverException,
     TimeoutException
 )
-from ..utils import safe_click_with_scroll
+from ..utils import safe_click_with_scroll, profile_timing, profile_selenium
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
@@ -217,6 +217,7 @@ class DownloadManager:
         
         return True
 
+    @profile_timing("download_current_mix", "download_management", "method")
     def download_current_mix(self, song_url, track_name="current_mix", cleanup_existing=True, song_folder=None, key_adjustment=0, track_index=None):
         """Download the current track mix (after soloing)
         
@@ -347,6 +348,7 @@ class DownloadManager:
         
         return True
     
+    @profile_timing("_execute_download_action", "download_management", "method")
     def _execute_download_action(self, download_button, track_index):
         """Execute download click and update progress tracking
         
@@ -366,6 +368,7 @@ class DownloadManager:
         
         return True
     
+    @profile_timing("_monitor_download_completion", "download_management", "method")
     def _monitor_download_completion(self, song_path, track_name, track_index, song_name):
         """Wait for download start and monitor completion
         

@@ -10,7 +10,7 @@ from selenium.common.exceptions import (
     ElementClickInterceptedException,
     TimeoutException
 )
-from ..utils import safe_click, validation_safe
+from ..utils import safe_click, validation_safe, profile_timing, profile_selenium
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT, 
@@ -63,6 +63,7 @@ class TrackManager:
         logging.info(f"✅ Access verified - found {len(track_elements)} tracks")
         return True
     
+    @profile_timing("discover_tracks", "track_management", "method")
     def discover_tracks(self, song_url):
         """Discover all available tracks for a song"""
         if not self.verify_song_access(song_url):
@@ -116,6 +117,7 @@ class TrackManager:
         else:
             return SOLO_ACTIVATION_DELAY_COMPLEX
     
+    @profile_timing("solo_track", "track_management", "method") 
     def solo_track(self, track_info, song_url):
         """Solo a specific track (mutes all others)"""
         track_name = track_info['name']
@@ -193,6 +195,7 @@ class TrackManager:
         logging.debug(f"Track element HTML: {track_element.get_attribute('outerHTML')[:200]}...")
         return None
     
+    @profile_timing("_activate_solo_button", "track_management", "method")
     def _activate_solo_button(self, solo_button, track_name, track_index):
         """Activate the solo button and verify success"""
         logging.info(f"Clicking solo button for {track_name}")
@@ -291,6 +294,7 @@ class TrackManager:
         logging.error(f"   Track may have timing issues or site-specific problems")
         return False
     
+    @profile_timing("_finalize_solo_activation", "track_management", "method")
     def _finalize_solo_activation(self, track_name, track_index=None):
         """Finalize solo activation with comprehensive audio server sync verification"""
         logging.info(f"⏳ Waiting for audio server to process solo state for {track_name}...")
@@ -341,6 +345,7 @@ class TrackManager:
             
         return True
     
+    @profile_timing("_wait_for_audio_server_sync", "track_management", "method")
     def _wait_for_audio_server_sync(self):
         """Wait for audio server processing indicators to complete"""
         try:

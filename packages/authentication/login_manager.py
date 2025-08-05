@@ -22,7 +22,7 @@ except ImportError:
     USERNAME = None
     PASSWORD = None
 
-from packages.utils import selenium_safe, validation_safe
+from packages.utils import selenium_safe, validation_safe, profile_timing, profile_selenium
 from packages.configuration.config import SESSION_MAX_AGE_SECONDS
 
 
@@ -634,6 +634,7 @@ class LoginManager:
         except Exception:
             return False
     
+    @profile_timing("login_with_session_persistence", "authentication", "method")
     def login_with_session_persistence(self, username=None, password=None, force_relogin=False):
         """Enhanced login with session persistence - checks Chrome's native session first"""
         username = username or USERNAME

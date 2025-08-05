@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, Set, List, Optional, Tuple
 from ..configuration.config import (FILE_OPERATION_MAX_WAIT, LOG_INTERVAL_SECONDS, 
                                     FILE_MATCH_MIN_RATIO, FILE_MATCH_HIGH_RATIO)
+from ..utils import profile_timing
 
 try:
     from packages.configuration import DOWNLOAD_FOLDER
@@ -130,6 +131,7 @@ class FileManager:
             logging.debug(f"Error scanning directory {directory}: {e}")
             return []
     
+    @profile_timing("clear_song_folder", "file_operations", "method")
     def clear_song_folder(self, song_folder_name):
         """Completely remove existing song folder and all its contents"""
         try:
@@ -514,6 +516,7 @@ class FileManager:
             logging.warning(f"Could not clean filename for {file_path.name}: {e}")
             return file_path
 
+    @profile_timing("final_cleanup_pass", "file_operations", "method")
     def final_cleanup_pass(self, downloads_dir="downloads"):
         """
         Final cleanup pass after all downloads complete
