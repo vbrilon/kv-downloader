@@ -34,6 +34,10 @@ System is production-ready with comprehensive test coverage and performance base
 ### 📋 Planned Tasks
 
 **Medium Impact, Medium Risk:**
+- [ ] **Console UI Status Accuracy**: Fix progress tracking to accurately reflect download states
+  - Currently jumps from "downloading" to "processing" immediately when download starts
+  - Should show "Downloading" during file download, "Processing" during rename/cleanup
+  - Improve user experience with accurate real-time status updates
 - [ ] **Solo Button Flow Streamlining**: Merge Phase 1-2 verification in track_manager.py:277-323
 - [ ] **Adaptive Polling**: Replace fixed delays with event-driven detection
 
