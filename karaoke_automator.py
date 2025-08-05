@@ -361,7 +361,41 @@ if __name__ == "__main__":
                        help='Clear saved session data and exit')
     parser.add_argument('--profile', action='store_true',
                        help='Enable performance profiling with detailed timing logs')
+    parser.add_argument('--baseline-test', type=str, choices=['current', 'pre_optimization', 'solo_only', 'download_only'],
+                       help='Run baseline performance test with specified configuration')
+    parser.add_argument('--ab-test', nargs=2, metavar=('BASELINE_A', 'BASELINE_B'),
+                       help='Run A/B comparison between two baselines (e.g., --ab-test pre_optimization current)')
+    parser.add_argument('--list-baselines', action='store_true',
+                       help='List available baseline configurations and exit')
+    parser.add_argument('--max-tracks', type=int, default=3,
+                       help='Maximum tracks per song for baseline testing (default: 3)')
     args = parser.parse_args()
+    
+    # Handle baseline testing commands
+    if args.list_baselines:
+        from packages.utils import list_baselines
+        list_baselines()
+        exit(0)
+        
+    if args.ab_test:
+        from packages.utils import run_ab_test
+        baseline_a, baseline_b = args.ab_test
+        print(f"🔬 Running A/B test: {baseline_a} vs {baseline_b}")
+        result = run_ab_test(baseline_a, baseline_b, max_tracks=args.max_tracks)
+        print(result)
+        exit(0)
+        
+    if args.baseline_test:
+        from packages.utils import PerformanceBaselineTester
+        tester = PerformanceBaselineTester()
+        print(f"🧪 Running baseline test: {args.baseline_test}")
+        result = tester.run_baseline_test(args.baseline_test, max_tracks_per_song=args.max_tracks)
+        if result:
+            print(f"\n✅ Baseline test completed in {result['test_duration']:.2f}s")
+            print(f"📁 Results saved to logs/performance/baselines/")
+        else:
+            print("❌ Baseline test failed - check logs for details")
+        exit(0)
     
     # Handle session clearing
     if args.clear_session:

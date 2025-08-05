@@ -16,6 +16,13 @@ from .performance_profiler import (
     profile_timing,
     profile_selenium
 )
+from .baseline_tester import (
+    PerformanceBaselineTester,
+    BASELINE_CONFIGURATIONS,
+    run_ab_test,
+    list_baselines,
+    quick_regression_test
+)
 
 __all__ = [
     'setup_logging', 
@@ -30,5 +37,10 @@ __all__ = [
     'get_profiler',
     'initialize_profiler',
     'profile_timing',
-    'profile_selenium'
+    'profile_selenium',
+    'PerformanceBaselineTester',
+    'BASELINE_CONFIGURATIONS', 
+    'run_ab_test',
+    'list_baselines',
+    'quick_regression_test'
 ]
