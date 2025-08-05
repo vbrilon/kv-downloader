@@ -14,6 +14,8 @@ Production-ready automated system for downloading isolated backing tracks from K
 source bin/activate
 python karaoke_automator.py              # Production mode
 python karaoke_automator.py --debug      # Debug mode with visible browser
+python karaoke_automator.py --force-login   # Force fresh login
+python karaoke_automator.py --clear-session # Clear session data
 ```
 
 ## Songs Configuration (songs.yaml)
@@ -59,6 +61,7 @@ packages/
   - `IConfig`: Configuration management interface
 - **Adapters**: Bridge pattern implementations connecting existing classes to interfaces
 - **Factory**: Service creation and container setup utilities
+- **Test Coverage**: 33 unit tests validating DI container, factory functions, adapters, and interface compliance
 
 ### Error Handling System (packages/utils/error_handling.py)
 - **@selenium_safe**: Decorator for Selenium operations with consistent error handling
@@ -66,6 +69,7 @@ packages/
 - **@file_operation_safe**: Decorator for file system operations
 - **@retry_on_failure**: Decorator with exponential backoff retry logic
 - **ErrorContext**: Context manager for complex operation error handling
+- **Test Coverage**: 31 comprehensive unit tests preventing regression in error handling patterns used throughout codebase
 
 ### Key Site Selectors (Verified Working)
 - **Login**: `name="frm_login"`, `name="frm_password"`, `name="sbm"`
@@ -93,10 +97,17 @@ packages/
 - **Error Handling**: Standardized error handling using decorators
 - **Progress Tracking**: Real-time status updates and background monitoring
 
-### Session Management
+### Session Management & Authentication
 - **Chrome Profile Reuse**: Persistent authentication via `chrome_profile/`
 - **Session Storage**: `.cache/session_data.pkl` with 24-hour expiry
 - **Performance**: 85% faster subsequent runs (2-3s vs 4-14s)
+- **Test Coverage**: 24+ unit tests for login flows, session persistence, and logout fallbacks
+
+### Click Handlers & Performance Optimizations (packages/utils/click_handlers.py)
+- **WebDriverWait Integration**: Replaced hardcoded time.sleep() with intelligent WebDriverWait patterns
+- **JavaScript Fallbacks**: Automatic interception detection and JavaScript click fallbacks
+- **Performance Gains**: 1.5+ seconds per track through optimized waiting strategies
+- **Test Coverage**: 17 unit tests validating click handling and performance optimizations
 
 ### Commands
 ```bash
@@ -105,6 +116,11 @@ python karaoke_automator.py --force-login   # Force fresh login
 python karaoke_automator.py --clear-session # Clear session data
 python karaoke_automator.py --debug         # Debug mode
 ```
+
+### Testing & Regression Prevention
+- **Unit Test Coverage**: 105+ comprehensive tests across critical architectural components
+- **Regression Testing**: Automated baseline validation in `tests/regression/`
+- **Test Command**: `python tests/run_tests.py --regression-only` for system validation
 
 ### File Operations System (packages/file_operations/)
 - **Performance-Optimized Architecture**: 60-80% reduction in file system calls through intelligent caching

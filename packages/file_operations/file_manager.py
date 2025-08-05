@@ -273,6 +273,30 @@ class FileManager:
             
             logging.info(f"⏳ Waiting for download to start for: {track_name}")
             
+            # Check if there are already suitable files present (before waiting)
+            for path in paths_to_monitor:
+                path_info = self._get_file_info(path)
+                if path_info['exists']:
+                    audio_patterns = {'.mp3', '.aif', '.crdownload'}
+                    existing_files_info = self._scan_directory_cached(path, audio_patterns)
+                    
+                    for file_info in existing_files_info:
+                        if not file_info['exists']:
+                            continue
+                            
+                        filename = file_info['name']
+                        filename_lower = filename.lower()
+                        file_path = file_info['path']
+                        
+                        # Check if it looks like a karaoke download
+                        is_audio_or_download = self._is_audio_file(filename_lower) or filename_lower.endswith('.crdownload')
+                        might_be_karaoke = self._matches_karaoke_patterns(filename_lower) or len(filename) > 20
+                        
+                        if is_audio_or_download and might_be_karaoke:
+                            logging.info(f"✅ Found existing download file: {filename}")
+                            logging.info(f"📁 Location: {path}")
+                            return True
+            
             while waited < max_wait:
                 time.sleep(check_interval)
                 waited += check_interval

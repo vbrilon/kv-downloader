@@ -652,14 +652,14 @@ class DownloadManager:
                                                    error_message=f"Monitoring error: {str(error)}")
     
     def _find_new_completed_files(self, song_path, track_name, initial_files):
-        """Find newly completed files that weren't in the initial snapshot - optimized"""
+        """Find completed files that need processing (both new and existing unprocessed files) - optimized"""
         try:
             # Use file manager's optimized file info method
             song_info = self.file_manager._get_file_info(song_path)
             if not song_info['exists']:
                 return []
             
-            new_files = []
+            completed_files = []
             
             # Use optimized directory scan from file manager
             current_files_info = self.file_manager._scan_directory_cached(song_path)
@@ -676,19 +676,31 @@ class DownloadManager:
                 is_recent = file_info['age'] < 300  # Less than 5 minutes old
                 is_new = filename not in initial_files  # Wasn't there when we started monitoring
                 
-                if is_audio and is_recent and is_new:
+                # Check if existing file needs processing (has custom backing track suffix)
+                needs_processing = 'Custom_Backing_Track' in filename or 'custom_backing_track' in filename
+                is_existing_unprocessed = filename in initial_files and needs_processing
+                
+                # Process files that are either:
+                # 1. New (normal case for visible mode)
+                # 2. Existing but unprocessed (headless mode case)
+                should_process = is_audio and is_recent and (is_new or is_existing_unprocessed)
+                
+                if should_process:
                     file_path = file_info['path']
                     # Make sure there's no corresponding .crdownload file (use cached check)
                     crdownload_path = file_path.with_suffix(file_path.suffix + '.crdownload')
                     crdownload_info = self.file_manager._get_file_info(crdownload_path)
                     if not crdownload_info['exists']:
-                        new_files.append(file_path)
-                        logging.info(f"✅ Found NEW completed download: {filename}")
+                        completed_files.append(file_path)
+                        if is_new:
+                            logging.info(f"✅ Found NEW completed download: {filename}")
+                        else:
+                            logging.info(f"✅ Found EXISTING unprocessed download: {filename}")
             
-            return new_files
+            return completed_files
             
         except Exception as e:
-            logging.debug(f"Error finding new completed files: {e}")
+            logging.debug(f"Error finding completed files: {e}")
             return []
     
     def _does_file_match_track(self, filename, track_name):

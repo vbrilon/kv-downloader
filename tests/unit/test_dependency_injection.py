@@ -585,6 +585,171 @@ class TestDependencyInjectionIntegration(TestCase):
             self.assertIsInstance(adapter, interface)
 
 
+class TestFileManagerAdapterMethodCoverage(TestCase):
+    """Test FileManagerAdapter has all required methods called by DownloadManager"""
+    
+    def setUp(self):
+        """Set up mock file manager and adapter"""
+        self.mock_file_manager = Mock()
+        self.adapter = FileManagerAdapter(self.mock_file_manager)
+    
+    def test_adapter_has_get_file_info_method(self):
+        """Test FileManagerAdapter has _get_file_info method - prevents regression from missing method"""
+        # This test prevents the regression where DownloadManager calls
+        # self.file_manager._get_file_info() but FileManagerAdapter doesn't have it
+        
+        # Verify the method exists
+        self.assertTrue(hasattr(self.adapter, '_get_file_info'))
+        
+        # Test it forwards to wrapped file manager
+        test_path = "/test/path.mp3"
+        expected_result = {"size": 1024, "modified": "2023-01-01"}
+        self.mock_file_manager._get_file_info.return_value = expected_result
+        
+        result = self.adapter._get_file_info(test_path)
+        
+        self.assertEqual(result, expected_result)
+        self.mock_file_manager._get_file_info.assert_called_once_with(test_path)
+    
+    def test_adapter_handles_missing_methods_gracefully(self):
+        """Test adapter handles case where wrapped file manager doesn't have required methods"""
+        # Test missing _get_file_info
+        del self.mock_file_manager._get_file_info
+        result = self.adapter._get_file_info("/test/path.mp3")
+        self.assertIsNone(result)  # Should return None fallback
+        
+        # Test missing wait_for_download_to_start  
+        mock_file_manager_minimal = Mock()
+        del mock_file_manager_minimal.wait_for_download_to_start
+        adapter_minimal = FileManagerAdapter(mock_file_manager_minimal)
+        result = adapter_minimal.wait_for_download_to_start("Track", "/path")
+        self.assertTrue(result)  # Should return True fallback
+        
+        # Test missing clean_downloaded_filename
+        del mock_file_manager_minimal.clean_downloaded_filename
+        result = adapter_minimal.clean_downloaded_filename("/test/file.mp3", "Track")
+        self.assertEqual(result, "/test/file.mp3")  # Should return original path
+        
+        # Test missing _scan_directory_cached
+        del mock_file_manager_minimal._scan_directory_cached
+        result = adapter_minimal._scan_directory_cached("/path/to/dir")
+        self.assertEqual(result, [])  # Should return empty list fallback
+        
+        # Test missing _is_audio_file
+        del mock_file_manager_minimal._is_audio_file
+        result = adapter_minimal._is_audio_file("test.mp3")
+        self.assertTrue(result)  # Should detect .mp3 as audio file
+        result = adapter_minimal._is_audio_file("test.txt")
+        self.assertFalse(result)  # Should not detect .txt as audio file
+        
+        # Test missing _matches_karaoke_patterns
+        del mock_file_manager_minimal._matches_karaoke_patterns  
+        result = adapter_minimal._matches_karaoke_patterns("custom_backing_track.mp3")
+        self.assertTrue(result)  # Should match "custom" keyword
+        result = adapter_minimal._matches_karaoke_patterns("random_file.mp3")
+        self.assertFalse(result)  # Should not match
+    
+    def test_adapter_has_all_critical_methods_used_by_download_manager(self):
+        """Test that FileManagerAdapter has all methods that DownloadManager calls"""
+        # These are the critical methods that DownloadManager calls on file_manager
+        critical_methods = [
+            '_get_file_info',  # The method that was missing and caused the regression
+            '_scan_directory_cached',  # Missing method causing current failure
+            '_is_audio_file',  # Missing method for audio file detection
+            '_matches_karaoke_patterns',  # Missing method for karaoke pattern detection
+            'wait_for_download_to_start',
+            'clean_downloaded_filename', 
+            'validate_audio_content',
+            'setup_song_folder',
+            'cleanup_partial_downloads',
+            'verify_download_completion'
+        ]
+        
+        for method_name in critical_methods:
+            with self.subTest(method=method_name):
+                self.assertTrue(
+                    hasattr(self.adapter, method_name),
+                    f"FileManagerAdapter missing critical method: {method_name}"
+                )
+                
+                # Verify it's callable
+                method = getattr(self.adapter, method_name)
+                self.assertTrue(
+                    callable(method),
+                    f"FileManagerAdapter.{method_name} is not callable"
+                )
+    
+    def test_adapter_forwards_all_critical_methods(self):
+        """Test that adapter forwards all critical methods to wrapped file manager"""
+        # Test each critical method individually with proper parameter handling
+        
+        # Test _get_file_info
+        mock_method = Mock(return_value={"size": 1024})
+        self.mock_file_manager._get_file_info = mock_method
+        result = self.adapter._get_file_info('/test/file.mp3')
+        mock_method.assert_called_once_with('/test/file.mp3')
+        self.assertEqual(result, {"size": 1024})
+        
+        # Test wait_for_download_to_start - note: track_index passed as positional arg
+        mock_method = Mock(return_value=True)
+        self.mock_file_manager.wait_for_download_to_start = mock_method
+        result = self.adapter.wait_for_download_to_start('Track Name', '/path', 1)
+        mock_method.assert_called_once_with('Track Name', '/path', 1)
+        self.assertTrue(result)
+        
+        # Test clean_downloaded_filename
+        mock_method = Mock(return_value='/cleaned/file.mp3')
+        self.mock_file_manager.clean_downloaded_filename = mock_method
+        result = self.adapter.clean_downloaded_filename('/file.mp3', 'Track Name')
+        mock_method.assert_called_once_with('/file.mp3', 'Track Name')
+        self.assertEqual(result, '/cleaned/file.mp3')
+        
+        # Test validate_audio_content
+        mock_method = Mock(return_value=True)
+        self.mock_file_manager.validate_audio_content = mock_method
+        result = self.adapter.validate_audio_content('/file.mp3', 'Track Name')
+        mock_method.assert_called_once_with('/file.mp3', 'Track Name')
+        
+        # Test setup_song_folder
+        mock_method = Mock(return_value='/song/folder')
+        self.mock_file_manager.setup_song_folder = mock_method
+        result = self.adapter.setup_song_folder('Song Folder', clear_existing=True)
+        mock_method.assert_called_once_with('Song Folder', True)
+        
+        # Test cleanup_partial_downloads
+        mock_method = Mock()
+        self.mock_file_manager.cleanup_partial_downloads = mock_method
+        self.adapter.cleanup_partial_downloads('Song Folder')
+        mock_method.assert_called_once_with('Song Folder')
+        
+        # Test verify_download_completion
+        mock_method = Mock(return_value=True)
+        self.mock_file_manager.verify_download_completion = mock_method
+        result = self.adapter.verify_download_completion('file.mp3', 'Song Folder')
+        mock_method.assert_called_once_with('file.mp3', 'Song Folder')
+        
+        # Test _scan_directory_cached
+        mock_method = Mock(return_value=[{'name': 'file1.mp3'}, {'name': 'file2.mp3'}])
+        self.mock_file_manager._scan_directory_cached = mock_method
+        result = self.adapter._scan_directory_cached('/path/to/dir', {'*.mp3'})
+        mock_method.assert_called_once_with('/path/to/dir', {'*.mp3'})
+        self.assertEqual(result, [{'name': 'file1.mp3'}, {'name': 'file2.mp3'}])
+        
+        # Test _is_audio_file
+        mock_method = Mock(return_value=True)
+        self.mock_file_manager._is_audio_file = mock_method
+        result = self.adapter._is_audio_file('test.mp3')
+        mock_method.assert_called_once_with('test.mp3')
+        self.assertTrue(result)
+        
+        # Test _matches_karaoke_patterns
+        mock_method = Mock(return_value=True)
+        self.mock_file_manager._matches_karaoke_patterns = mock_method
+        result = self.adapter._matches_karaoke_patterns('custom_backing_track.mp3')
+        mock_method.assert_called_once_with('custom_backing_track.mp3')
+        self.assertTrue(result)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
