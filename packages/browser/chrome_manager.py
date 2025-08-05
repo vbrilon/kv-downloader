@@ -119,14 +119,24 @@ class ChromeManager:
         for path in local_paths:
             if os.path.exists(path):
                 logging.info(f"✅ Using local ChromeDriver at: {path}")
-                service = Service(path)
+                try:
+                    # Try with a specific port to avoid binding issues
+                    service = Service(path, port=9515)
+                except Exception as e:
+                    logging.debug(f"Port 9515 failed, trying default: {e}")
+                    service = Service(path)
                 break
         
         # Fallback to webdriver-manager if no local version found
         if not service:
             logging.info("⏳ No local ChromeDriver found, downloading...")
             try:
-                service = Service(ChromeDriverManager().install())
+                driver_path = ChromeDriverManager().install()
+                try:
+                    service = Service(driver_path, port=9515)
+                except Exception as e:
+                    logging.debug(f"Port 9515 failed, trying default: {e}")
+                    service = Service(driver_path)
                 logging.info("✅ ChromeDriver downloaded successfully")
             except Exception as e:
                 logging.error(f"❌ ChromeDriver download failed: {e}")

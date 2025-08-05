@@ -46,10 +46,10 @@ DOWNLOAD_MAX_WAIT = 90
 DOWNLOAD_COMPLETION_TIMEOUT = 60
 
 # Polling Intervals
-DOWNLOAD_CHECK_INTERVAL = 5
+DOWNLOAD_CHECK_INTERVAL = 3  # Reduced from 5s - faster polling for quicker completion detection
 FILE_CHECK_INTERVAL = 1
 SOLO_CHECK_INTERVAL = 0.5
-DOWNLOAD_MONITORING_INITIAL_WAIT = 15  # Performance optimization: reduced from 30s - wait before monitoring starts
+DOWNLOAD_MONITORING_INITIAL_WAIT = 10  # Performance optimization: reduced from 15s - test server generation reliability
 
 # Session Constants
 SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours

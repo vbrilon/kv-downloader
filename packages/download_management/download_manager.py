@@ -507,27 +507,53 @@ class DownloadManager:
         return initial_files
     
     def _monitor_download_progress(self, context, track_index):
-        """Main monitoring loop for download progress with optimized initial wait"""
+        """Main monitoring loop for download progress with intelligent optimization"""
         # Performance optimization: Add initial wait before monitoring starts
-        # Based on PERF.md analysis showing consistent 60s server generation time
+        # Based on PERF.md analysis showing consistent server generation time
         logging.info(f"⏳ Initial {DOWNLOAD_MONITORING_INITIAL_WAIT}s wait before download monitoring for {context['track_name']} (server generation optimization)")
         
         self._wait_for_check_interval(DOWNLOAD_MONITORING_INITIAL_WAIT)
         context['waited'] += DOWNLOAD_MONITORING_INITIAL_WAIT
         
-        logging.info(f"✅ Initial wait complete, starting active monitoring for {context['track_name']}")
+        logging.info(f"✅ Initial wait complete, starting intelligent monitoring for {context['track_name']}")
+        
+        # Intelligent progress detection variables
+        download_detected = False
+        in_progress_detected = False
+        adaptive_interval = context['check_interval']
         
         while context['waited'] < context['max_wait']:
-            self._wait_for_check_interval(context['check_interval'])
-            context['waited'] += context['check_interval']
+            self._wait_for_check_interval(adaptive_interval)
+            context['waited'] += adaptive_interval
             
+            # Check for in-progress downloads (.crdownload files) for intelligent timing
+            in_progress_files = self._check_for_in_progress_downloads(context['song_path'])
             new_completed_files = self._check_for_new_downloads(context)
+            
+            # Intelligent progress detection logic
+            if in_progress_files and not in_progress_detected:
+                in_progress_detected = True
+                download_detected = True
+                adaptive_interval = 2  # Faster polling when download is active
+                logging.info(f"🚀 Download in progress detected for {context['track_name']}, switching to fast polling (2s)")
+            elif in_progress_detected and not in_progress_files:
+                # Download was in progress but .crdownload files disappeared - likely completed
+                adaptive_interval = 1  # Very fast polling for completion detection
+                logging.info(f"⚡ Download completion imminent for {context['track_name']}, switching to rapid polling (1s)")
             
             if new_completed_files:
                 self._handle_completed_download(new_completed_files, context, track_index)
                 break
             
-            self._update_progress_if_needed(context, track_index)
+            # Adaptive logging based on detection state
+            if download_detected:
+                # More frequent updates when we know download is active
+                if context['waited'] % 5 == 0:  # Every 5 seconds when active
+                    progress_status = "in progress" if in_progress_files else "completing"
+                    logging.info(f"   📊 Download {progress_status} for {context['track_name']} (waited {context['waited']}s)")
+            else:
+                # Standard progress updates when waiting for server generation
+                self._update_progress_if_needed(context, track_index)
         
         if context['waited'] >= context['max_wait']:
             self._handle_timeout(context['track_name'], track_index, context['song_name'])
@@ -540,6 +566,19 @@ class DownloadManager:
             )
         except TimeoutException:
             pass  # Expected timeout for delay
+    
+    def _check_for_in_progress_downloads(self, song_path):
+        """Check for in-progress download files (.crdownload) for intelligent timing"""
+        try:
+            in_progress_files = []
+            if song_path.exists():
+                for file_path in song_path.iterdir():
+                    if file_path.is_file() and file_path.suffix == '.crdownload':
+                        in_progress_files.append(file_path)
+            return in_progress_files
+        except Exception as e:
+            logging.debug(f"Error checking for in-progress downloads: {e}")
+            return []
     
     def _check_for_new_downloads(self, context):
         """Check for newly completed download files"""
