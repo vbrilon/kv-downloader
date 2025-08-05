@@ -21,6 +21,8 @@ DOWNLOAD_TIMEOUT = 30  # seconds to wait for download to complete
 
 # Track isolation timing settings
 SOLO_ACTIVATION_DELAY = 12.0  # seconds to wait after solo button activation for audio sync
+SOLO_ACTIVATION_DELAY_SIMPLE = 15.0  # seconds for simple arrangements (8 tracks or fewer)
+SOLO_ACTIVATION_DELAY_COMPLEX = 21.0  # seconds for complex arrangements (9+ tracks)
 
 # WebDriver Timeouts
 WEBDRIVER_DEFAULT_TIMEOUT = 10

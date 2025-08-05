@@ -15,7 +15,8 @@ from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT, 
                                     TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES, 
-                                    SOLO_ACTIVATION_MAX_WAIT, SOLO_CHECK_INTERVAL)
+                                    SOLO_ACTIVATION_MAX_WAIT, SOLO_CHECK_INTERVAL,
+                                    SOLO_ACTIVATION_DELAY_SIMPLE, SOLO_ACTIVATION_DELAY_COMPLEX)
 
 
 class TrackManager:
@@ -26,6 +27,7 @@ class TrackManager:
         self.driver = driver
         self.wait = wait
         self.progress_tracker = None
+        self.track_complexity = "simple"  # Default to simple complexity
     
     def set_progress_tracker(self, progress_tracker):
         """Set the progress tracker for status updates"""
@@ -94,9 +96,25 @@ class TrackManager:
                 logging.debug(f"Error processing track element {i}: {e}")
                 continue
         
-        logging.info(f"Discovered {len(tracks)} tracks")
+        # Detect track complexity for adaptive timeouts
+        self.track_complexity = self._detect_track_complexity(len(tracks))
+        logging.info(f"Discovered {len(tracks)} tracks - {self.track_complexity} complexity")
         logging.debug(f"Track discovery complete for: {song_url}")
         return tracks
+    
+    def _detect_track_complexity(self, track_count):
+        """Detect track complexity based on track count"""
+        if track_count <= 8:
+            return "simple"
+        else:
+            return "complex"
+    
+    def _get_adaptive_timeout(self):
+        """Get adaptive timeout based on track complexity"""
+        if self.track_complexity == "simple":
+            return SOLO_ACTIVATION_DELAY_SIMPLE
+        else:
+            return SOLO_ACTIVATION_DELAY_COMPLEX
     
     def solo_track(self, track_info, song_url):
         """Solo a specific track (mutes all others)"""
@@ -303,9 +321,10 @@ class TrackManager:
         
         # Phase 4: Fallback delay if verification methods unavailable
         if not audio_server_ready or not mixer_state_valid:
-            logging.info(f"⏳ Fallback: Using {SOLO_ACTIVATION_DELAY}s delay for audio generation sync...")
+            adaptive_timeout = self._get_adaptive_timeout()
+            logging.info(f"⏳ Fallback: Using {adaptive_timeout}s delay for audio generation sync ({self.track_complexity} complexity)...")
             try:
-                WebDriverWait(self.driver, SOLO_ACTIVATION_DELAY).until(
+                WebDriverWait(self.driver, adaptive_timeout).until(
                     lambda driver: False  # Always timeout to create the delay
                 )
             except TimeoutException:
@@ -330,7 +349,7 @@ class TrackManager:
             logging.debug("🔍 Monitoring audio server processing indicators...")
             
             # Wait for any processing indicators to appear and then disappear
-            max_wait_time = SOLO_ACTIVATION_DELAY
+            max_wait_time = self._get_adaptive_timeout()
             start_time = time.time()
             processing_detected = False
             
