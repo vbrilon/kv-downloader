@@ -101,12 +101,12 @@ packages/
 ### Session Management & Authentication
 - **Chrome Profile Reuse**: Persistent authentication via `chrome_profile/`
 - **Session Storage**: `.cache/session_data.pkl` with 24-hour expiry
-- **Performance**: 85% faster subsequent runs (2-3s vs 4-14s)
+- **Performance**: Optimized login flow with session persistence
 
 ### Click Handlers & Performance Optimizations (packages/utils/click_handlers.py)
 - **WebDriverWait Integration**: Replaced hardcoded time.sleep() with intelligent WebDriverWait patterns
 - **JavaScript Fallbacks**: Automatic interception detection and JavaScript click fallbacks
-- **Performance Gains**: 1.5+ seconds per track through optimized waiting strategies
+- **Performance**: Optimized waiting strategies with real-world baseline established via Playwright MCP profiling
 
 
 ### Testing & Regression Prevention
@@ -132,3 +132,16 @@ packages/
   - Simplifies to clean track names (e.g., `"Drum Kit.mp3"`)
 - **Content Validation**: Audio file validation with proper path tracking after renaming
 - **Error Recovery**: Fallback mechanisms for file system operations
+
+### Performance Characteristics (Based on PERF.md Analysis)
+- **Page Load**: 3.9s average across different song complexities
+- **Track Isolation**: 18.1s average (15.3s simple arrangements, 20.9s complex arrangements)
+- **Server Generation**: 60s consistent server-side processing regardless of track complexity
+- **Total Workflow**: 102s average end-to-end process
+- **Optimization Target**: 12-17% overall acceleration through client-side improvements
+
+### Performance Configuration Constants (packages/configuration/config.py)
+- **SOLO_ACTIVATION_DELAY**: 5.0s (identified for optimization to 12s based on real-world timing)
+- **DOWNLOAD_CHECK_INTERVAL**: 2s (identified for optimization to 5s for 60s server processing)
+- **DOWNLOAD_MAX_WAIT**: 300s (identified for reduction to 90s based on consistent server patterns)
+- **Track Complexity Impact**: 8-track vs 12-track mixers show minimal performance difference in server generation
