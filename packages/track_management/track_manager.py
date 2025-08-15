@@ -110,12 +110,71 @@ class TrackManager:
         else:
             return "complex"
     
+    def _detect_track_type(self, track_name):
+        """Detect track type based on track name for adaptive timeout strategies
+        
+        Args:
+            track_name (str): Name of the track to classify
+            
+        Returns:
+            str: Track type classification ('click', 'bass', 'drums', 'standard')
+        """
+        if not track_name:
+            return "standard"
+            
+        track_name_lower = track_name.lower()
+        
+        # Click track detection (most problematic type)
+        if any(keyword in track_name_lower for keyword in ['click', 'metronome', 'count']):
+            return "click"
+        
+        # Bass track detection
+        if any(keyword in track_name_lower for keyword in ['bass', 'low', 'sub']):
+            return "bass"
+            
+        # Drum track detection  
+        if any(keyword in track_name_lower for keyword in ['drum', 'kick', 'snare', 'hihat', 'cymbal', 'perc']):
+            return "drums"
+            
+        # Vocal track detection
+        if any(keyword in track_name_lower for keyword in ['vocal', 'voice', 'lead', 'backing', 'harmony']):
+            return "vocal"
+            
+        # Default to standard for unrecognized types
+        return "standard"
+    
     def _get_adaptive_timeout(self):
         """Get adaptive timeout based on track complexity"""
         if self.track_complexity == "simple":
             return SOLO_ACTIVATION_DELAY_SIMPLE
         else:
             return SOLO_ACTIVATION_DELAY_COMPLEX
+    
+    def _get_track_type_timeout(self, track_name):
+        """Get timeout based on track type for enhanced reliability
+        
+        Args:
+            track_name (str): Name of the track
+            
+        Returns:
+            float: Timeout value in seconds based on track type
+        """
+        track_type = self._detect_track_type(track_name)
+        
+        # Import track-specific timeouts (will be added to config.py)
+        from packages.configuration.config import (
+            SOLO_ACTIVATION_DELAY_CLICK, 
+            SOLO_ACTIVATION_DELAY_SPECIAL,
+            SOLO_ACTIVATION_DELAY
+        )
+        
+        if track_type == "click":
+            return SOLO_ACTIVATION_DELAY_CLICK  # Extended timeout for click tracks
+        elif track_type in ["bass", "drums"]:
+            return SOLO_ACTIVATION_DELAY_SPECIAL  # Special timeout for bass/drums
+        else:
+            # Use existing adaptive timeout for standard tracks
+            return self._get_adaptive_timeout()
     
     @profile_timing("solo_track", "track_management", "method") 
     def solo_track(self, track_info, song_url):
@@ -207,12 +266,21 @@ class TrackManager:
             return self._retry_solo_activation(solo_button, track_name, track_index)
     
     def _wait_for_solo_activation(self, solo_button, track_name):
-        """Wait for solo button to become active - optimized with deterministic detection"""
-        max_wait = 8  # Increased from 5s to 8s to allow for server processing
-        check_interval = 0.2  # Even faster polling - 200ms intervals for responsiveness
+        """Wait for solo button to become active - track-type-aware timeout with enhanced detection"""
+        # Use track-type-specific timeout for better reliability
+        track_type_timeout = self._get_track_type_timeout(track_name)
+        max_wait = max(8, track_type_timeout)  # Ensure minimum 8s for backward compatibility
+        
+        # Track type-specific polling intervals
+        track_type = self._detect_track_type(track_name)
+        if track_type == "click":
+            check_interval = 0.3  # Slightly slower polling for click tracks to avoid missing brief states
+        else:
+            check_interval = 0.2  # Standard polling for other tracks
+            
         waited = 0
         
-        logging.debug(f"Polling for solo activation for {track_name}...") 
+        logging.info(f"Polling for solo activation for {track_name} (type: {track_type}, timeout: {max_wait}s)...") 
         
         # Brief initial delay to allow click to register
         time.sleep(0.1)
@@ -237,13 +305,63 @@ class TrackManager:
                 time.sleep(check_interval)
                 waited += check_interval
         
-        logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name}")
+        track_type = self._detect_track_type(track_name)
+        logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name} (type: {track_type})")
+        logging.warning(f"   Track-specific timeout was {track_type_timeout}s, actual timeout used: {max_wait}s")
         return False
     
     def _is_solo_button_active(self, solo_button):
-        """Check if solo button has active state"""
-        button_classes = (solo_button.get_attribute('class') or '').lower()
-        return any(state in button_classes for state in ['is-active', 'active', 'selected'])
+        """Enhanced solo button active state detection with multiple approaches
+        
+        Args:
+            solo_button: WebElement representing the solo button
+            
+        Returns:
+            bool: True if button is in active state
+        """
+        try:
+            # Method 1: CSS class detection (existing approach)
+            button_classes = (solo_button.get_attribute('class') or '').lower()
+            class_active = any(state in button_classes for state in ['is-active', 'active', 'selected', 'on'])
+            
+            # Method 2: ARIA attribute detection
+            aria_pressed = solo_button.get_attribute('aria-pressed')
+            aria_active = aria_pressed == 'true' if aria_pressed else False
+            
+            # Method 3: Data attribute detection
+            data_state = (solo_button.get_attribute('data-state') or '').lower()
+            data_active = data_state in ['active', 'on', 'selected']
+            
+            # Method 4: Visual state detection (background color, border changes)
+            try:
+                button_style = solo_button.get_attribute('style') or ''
+                visual_indicators = ['background-color', 'border-color', 'color']
+                visual_active = any(indicator in button_style.lower() for indicator in visual_indicators)
+            except:
+                visual_active = False
+            
+            # Combined detection result
+            is_active = class_active or aria_active or data_active
+            
+            # Enhanced logging for debugging click track issues
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                logging.debug(f"Solo button state detection:")
+                logging.debug(f"  Classes: '{button_classes}' -> Active: {class_active}")
+                logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
+                logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
+                logging.debug(f"  Visual indicators: {visual_active}")
+                logging.debug(f"  Final result: {is_active}")
+            
+            return is_active
+            
+        except Exception as e:
+            logging.debug(f"Error in enhanced solo button detection: {e}")
+            # Fallback to simple class detection
+            try:
+                button_classes = (solo_button.get_attribute('class') or '').lower()
+                return any(state in button_classes for state in ['is-active', 'active', 'selected'])
+            except:
+                return False
     
     def _check_solo_activation_status(self, solo_button, track_name, waited):
         """Check and log solo activation status"""

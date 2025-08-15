@@ -7,9 +7,8 @@ songs:
 #    description: "Artist - Song Title"  # Optional: for documentation
 #    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
     
-  - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/journey/any-way-you-want-it.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/green-day/basket-case.html"
+  #- url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
+  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/n-i-b.html"
 
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com

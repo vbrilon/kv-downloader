@@ -1169,12 +1169,15 @@ class DownloadManager:
                     
                     # Find solo button within this track
                     solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-                    button_classes = solo_button.get_attribute('class') or ''
                     
-                    if 'is-active' in button_classes.lower() or 'active' in button_classes.lower():
+                    # Use enhanced solo button detection (same logic as track_manager.py)
+                    is_solo_active = self._is_solo_button_active_enhanced(solo_button)
+                    
+                    if is_solo_active:
                         verification_results['solo_button_active'] = True
                         logging.debug(f"✅ Solo button is active for track {track_index}")
                     else:
+                        button_classes = solo_button.get_attribute('class') or ''
                         logging.warning(f"⚠️ Solo button not active for track {track_index} - classes: {button_classes}")
                     
                     # Check track name matches
@@ -1279,3 +1282,59 @@ class DownloadManager:
         except Exception as e:
             logging.error(f"❌ Error during track selection verification: {e}")
             return False  # Fail safely
+    
+    def _is_solo_button_active_enhanced(self, solo_button):
+        """Enhanced solo button active state detection with multiple approaches
+        
+        This method mirrors the enhanced detection logic from track_manager.py
+        to ensure consistent detection across both solo activation and download verification.
+        
+        Args:
+            solo_button: WebElement representing the solo button
+            
+        Returns:
+            bool: True if button is in active state
+        """
+        try:
+            # Method 1: CSS class detection (existing approach + expanded patterns)
+            button_classes = (solo_button.get_attribute('class') or '').lower()
+            class_active = any(state in button_classes for state in ['is-active', 'active', 'selected', 'on'])
+            
+            # Method 2: ARIA attribute detection
+            aria_pressed = solo_button.get_attribute('aria-pressed')
+            aria_active = aria_pressed == 'true' if aria_pressed else False
+            
+            # Method 3: Data attribute detection
+            data_state = (solo_button.get_attribute('data-state') or '').lower()
+            data_active = data_state in ['active', 'on', 'selected']
+            
+            # Method 4: Visual state detection (background color, border changes)
+            try:
+                button_style = solo_button.get_attribute('style') or ''
+                visual_indicators = ['background-color', 'border-color', 'color']
+                visual_active = any(indicator in button_style.lower() for indicator in visual_indicators)
+            except:
+                visual_active = False
+            
+            # Combined detection result
+            is_active = class_active or aria_active or data_active
+            
+            # Enhanced logging for debugging download verification issues
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                logging.debug(f"Download verification - Solo button state detection:")
+                logging.debug(f"  Classes: '{button_classes}' -> Active: {class_active}")
+                logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
+                logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
+                logging.debug(f"  Visual indicators: {visual_active}")
+                logging.debug(f"  Final result: {is_active}")
+            
+            return is_active
+            
+        except Exception as e:
+            logging.debug(f"Error in enhanced solo button detection (download verification): {e}")
+            # Fallback to simple class detection
+            try:
+                button_classes = (solo_button.get_attribute('class') or '').lower()
+                return any(state in button_classes for state in ['is-active', 'active', 'selected'])
+            except:
+                return False

@@ -24,6 +24,10 @@ SOLO_ACTIVATION_DELAY = 5.0   # seconds to wait after solo button activation for
 SOLO_ACTIVATION_DELAY_SIMPLE = 7.0   # seconds for simple arrangements (8 tracks or fewer) - optimized from 15.0s
 SOLO_ACTIVATION_DELAY_COMPLEX = 10.0  # seconds for complex arrangements (9+ tracks) - optimized from 21.0s
 
+# Track-type-specific timeout settings (Bug Fix: Click track isolation failures)
+SOLO_ACTIVATION_DELAY_CLICK = 12.0   # seconds for click tracks (extended timeout due to server processing differences)
+SOLO_ACTIVATION_DELAY_SPECIAL = 10.0  # seconds for bass/drums tracks (moderate extension for reliability)
+
 # WebDriver Timeouts
 WEBDRIVER_DEFAULT_TIMEOUT = 10
 WEBDRIVER_SHORT_TIMEOUT = 3
