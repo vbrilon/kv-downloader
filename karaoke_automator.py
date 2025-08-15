@@ -104,6 +104,10 @@ class KaraokeVersionAutomator:
         """Clear all solo buttons using centralized track handler"""
         return self.track_manager.clear_all_solos(song_url)
     
+    def ensure_only_track_active(self, target_index, song_url):
+        """Smart solo management - only deactivate conflicting tracks"""
+        return self.track_manager.ensure_only_track_active(target_index, song_url)
+    
     def load_songs_config(self):
         """Load songs from configuration"""
         return self.config_manager.load_songs_config()
@@ -257,9 +261,9 @@ class KaraokeVersionAutomator:
         
         self.stats.record_track_start(song['name'], track_name, track['index'])
         
-        # Clear all solo buttons before activating target track (critical for headless mode)
-        logging.debug(f"Clearing all solos before isolating {track_name}")
-        self.clear_all_solos(song['url'])
+        # Smart solo management - only clear conflicting tracks (performance optimized)
+        logging.debug(f"Ensuring clean solo state for {track_name} (track {track['index']})")
+        self.ensure_only_track_active(track['index'], song['url'])
         
         if self.solo_track(track, song['url']):
             try:

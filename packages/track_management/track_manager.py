@@ -709,6 +709,107 @@ class TrackManager:
             logging.error(f"Error clearing solo buttons: {e}")
             return False
     
+    def ensure_only_track_active(self, target_index, song_url):
+        """Intelligent solo management - only deactivate conflicting tracks, then activate target
+        
+        This replaces the inefficient clear_all_solos() approach that was causing 2x performance regression.
+        Only deactivates tracks that are actually active, then activates the target track.
+        
+        Args:
+            target_index (int): Index of track that should be the only active track
+            song_url (str): URL to navigate to if needed
+            
+        Returns:
+            bool: True if successful, False on error
+        """
+        try:
+            # Navigate to song page if needed
+            if self.driver.current_url != song_url:
+                self.driver.get(song_url)
+                
+            logging.debug(f"Ensuring only track {target_index} is active (smart clearing)")
+            
+            # Find all solo buttons
+            solo_buttons = self.driver.find_elements(By.CSS_SELECTOR, "button.track__solo")
+            if not solo_buttons:
+                logging.warning("No solo buttons found for smart clearing")
+                return False
+                
+            active_tracks = []
+            target_button = None
+            
+            # Scan for currently active tracks using enhanced detection
+            for i, button in enumerate(solo_buttons):
+                try:
+                    if self._is_solo_button_active(button):
+                        active_tracks.append(i)
+                        logging.debug(f"Found active track: {i}")
+                    
+                    # Remember target button for later activation
+                    if i == target_index:
+                        target_button = button
+                        
+                except Exception as e:
+                    logging.debug(f"Error checking button {i}: {e}")
+                    continue
+            
+            # Check if target is already the only active track
+            if len(active_tracks) == 1 and active_tracks[0] == target_index:
+                logging.debug(f"Track {target_index} is already the only active track - no clearing needed")
+                return True
+            
+            # Deactivate only the conflicting tracks (not target)
+            conflicting_tracks = [track for track in active_tracks if track != target_index]
+            
+            if conflicting_tracks:
+                logging.info(f"Deactivating {len(conflicting_tracks)} conflicting tracks: {conflicting_tracks}")
+                
+                for track_index in conflicting_tracks:
+                    try:
+                        button = solo_buttons[track_index]
+                        logging.debug(f"Deactivating track {track_index}")
+                        button.click()
+                        
+                        # Brief wait for deactivation with enhanced detection
+                        try:
+                            WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
+                                lambda driver: not self._is_solo_button_active(button)
+                            )
+                        except TimeoutException:
+                            pass  # Continue even if state change not detected immediately
+                            
+                    except Exception as e:
+                        logging.debug(f"Error deactivating track {track_index}: {e}")
+                        continue
+            else:
+                logging.debug("No conflicting tracks to deactivate")
+            
+            # Activate target track if it's not already active
+            if target_index not in active_tracks:
+                if target_button:
+                    logging.debug(f"Activating target track {target_index}")
+                    target_button.click()
+                    
+                    # Brief wait for activation
+                    try:
+                        WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
+                            lambda driver: self._is_solo_button_active(target_button)
+                        )
+                    except TimeoutException:
+                        pass  # Continue even if state change not detected immediately
+                else:
+                    logging.warning(f"Could not find target button for track {target_index}")
+                    return False
+            else:
+                logging.debug(f"Target track {target_index} already active")
+            
+            logging.debug(f"Smart clearing completed for track {target_index}")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error in smart solo management: {e}")
+            return False
+    
     def ensure_intro_count_enabled(self, song_url):
         """Ensure the intro count checkbox is enabled"""
         try:
