@@ -682,15 +682,15 @@ class TrackManager:
             active_solos = 0
             for button in solo_buttons:
                 try:
-                    button_classes = button.get_attribute('class') or ''
-                    if 'active' in button_classes.lower() or 'selected' in button_classes.lower():
+                    # Use enhanced detection to identify active solo buttons
+                    if self._is_solo_button_active(button):
                         logging.info("Clicking to deactivate active solo button")
                         button.click()
                         active_solos += 1
-                        # Brief wait for UI update
+                        # Brief wait for UI update with enhanced detection
                         try:
                             WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                                lambda driver: 'active' not in (button.get_attribute('class') or '').lower()
+                                lambda driver: not self._is_solo_button_active(button)
                             )
                         except TimeoutException:
                             pass  # Continue even if state change not detected

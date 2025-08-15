@@ -257,6 +257,10 @@ class KaraokeVersionAutomator:
         
         self.stats.record_track_start(song['name'], track_name, track['index'])
         
+        # Clear all solo buttons before activating target track (critical for headless mode)
+        logging.debug(f"Clearing all solos before isolating {track_name}")
+        self.clear_all_solos(song['url'])
+        
         if self.solo_track(track, song['url']):
             try:
                 success = self.download_manager.download_current_mix(
