@@ -1,29 +1,5 @@
 # Karaoke-Version.com Track Automation - Architecture Guide
 
-## IMPORTANT: Environment Setup
-```bash
-source bin/activate  # ALWAYS activate virtual environment first
-python karaoke_automator.py --debug      # Debug mode (visible browser)
-python karaoke_automator.py              # Production mode (headless)
-python karaoke_automator.py --profile    # Performance profiling mode (with timing logs)
-```
-
-## Performance Profiling & Analysis Commands
-```bash
-# A/B regression testing
-python karaoke_automator.py --ab-test pre_optimization current --max-tracks 2
-
-# Isolate specific bottlenecks  
-python karaoke_automator.py --ab-test current solo_only --max-tracks 2
-python karaoke_automator.py --ab-test current download_only --max-tracks 2
-
-# List available baseline configurations
-python karaoke_automator.py --list-baselines
-
-# Performance regression analysis workflow
-python analyze_performance_regression.py
-```
-
 ## Songs Configuration (songs.yaml)
 ```yaml
 songs:
@@ -183,45 +159,22 @@ packages/
 - **Click Track Reliability**: Specialized handling for problematic track types
 - **Performance Optimization**: ~20s per track with enhanced reliability across all track types
 
-## 📋 LATEST SESSION HANDOFF - August 15, 2025
+## Logging System Architecture (packages/utils/)
 
-### **🎯 Session Summary - Bug Fix Implementation**
+### **Multi-Tier Logging System**
+- **Production Logs** (`logs/automation.log`): Operational tracking with emoji-based visual scanning
+- **Debug Logs** (`logs/debug.log`): Detailed debug information when `--debug` flag used
+- **Performance Logs** (`logs/performance/*.log`): Specialized timing analysis with method-level instrumentation
+- **Stats JSON** (`logs/automation_stats.json`): Structured operational metrics and success rates
 
-**MAJOR ACHIEVEMENT**: Resolved click track isolation failures and performance regression through enhanced detection system.
+### **Logging Effectiveness Assessment**
+- **Overall Rating**: 8.5/10 for operational insights
+- **Strengths**: Rich contextual information, clear success/failure tracking, performance correlation
+- **Minor Issue**: "Could not find target button" warnings are harmless noise (should be DEBUG level)
+- **Operational Value**: Enables quick issue identification, performance regression detection, detailed troubleshooting
 
-### **🚀 Key Achievements**
-- **Click Track Reliability**: Fixed click track isolation failures through track-type-aware timeouts and enhanced detection
-- **Performance Restoration**: Resolved 2x performance regression (40s → 20s per track) via smart solo clearing
-- **Enhanced Detection**: Implemented 4-method detection system (CSS, ARIA, data attributes, visual state)
-- **Headless Mode Reliability**: Fixed race conditions in production mode through intelligent solo state management
-
-### **🔧 Technical Architecture Changes**
-
-#### **Track Management Enhancements** (`packages/track_management/track_manager.py`)
-- **Track Type Detection**: `_detect_track_type()` classifies tracks (click, bass, drums, vocal, standard)
-- **Track-Specific Timeouts**: `_get_track_type_timeout()` provides adaptive timeouts (12s for click tracks)
-- **Enhanced Solo Detection**: `_is_solo_button_active()` with 4-method detection approach
-- **Smart Solo Management**: `ensure_only_track_active()` for selective clearing vs full clearing
-
-#### **Download Verification Consistency** (`packages/download_management/download_manager.py`)
-- **Enhanced Verification**: `_is_solo_button_active_enhanced()` mirrors track manager detection
-- **Consistent Detection**: Same 4-method approach used throughout verification workflow
-
-#### **Configuration Updates** (`packages/configuration/config.py`)
-- **SOLO_ACTIVATION_DELAY_CLICK**: 12.0s (extended for click track reliability)
-- **SOLO_ACTIVATION_DELAY_SPECIAL**: 10.0s (bass/drums tracks)
-
-### **📊 Current System State**
-- **Branch**: `feature/bug-fix-track-isolation-downloads` ready for merge
-- **Performance**: ~20s per track with enhanced reliability
-- **Click Track Success**: >95% success rate across all track types
-- **Headless Compatibility**: Race conditions resolved for production use
-- **Test Coverage**: All reliability fixes maintain existing performance optimizations
-
-### **🔄 Next Session Priorities**
-- **Merge Feature Branch**: Ready for production deployment
-- **Performance Validation**: Test performance restoration in production
-- **Monitor Reliability**: Validate click track success rates over multiple runs
-- **Documentation Updates**: Update any user-facing documentation if needed
-
-**Status**: ✅ **BUG FIXES COMPLETE** - Enhanced reliability while maintaining performance optimizations.
+### **Error Handling Decorators**
+- **@selenium_safe**: Selenium operations with consistent error handling
+- **@validation_safe**: Validation methods returning boolean results
+- **@file_operation_safe**: File system operations
+- **@retry_on_failure**: Exponential backoff retry logic
