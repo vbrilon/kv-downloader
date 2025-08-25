@@ -466,12 +466,24 @@ class TestInterfaces(TestCase):
         class CompleteFileManager(IFileManager):
             def setup_song_folder(self, song_folder_name: str, clear_existing: bool = True) -> str:
                 return "/test"
-            
+
             def cleanup_partial_downloads(self, song_folder: str) -> None:
                 pass
-            
+
             def verify_download_completion(self, expected_filename: str, song_folder: str) -> bool:
                 return True
+
+            def wait_for_download_to_start(self, track_name: str, song_path, track_index=None):
+                return True
+
+            def check_for_completed_downloads(self, song_path, track_name):
+                return []
+
+            def clean_downloaded_filename(self, file_path, track_name=None):
+                return file_path
+
+            def validate_audio_content(self, file_path, track_name, expected_properties=None):
+                return {"is_valid": True, "warnings": [], "errors": [], "file_info": {}}
         
         file_manager = CompleteFileManager()
         self.assertIsInstance(file_manager, IFileManager)

@@ -31,6 +31,27 @@ class IFileManager(ABC):
     def verify_download_completion(self, expected_filename: str, song_folder: str) -> bool:
         pass
 
+    # Methods used by DownloadManager but previously not declared
+    @abstractmethod
+    def wait_for_download_to_start(self, track_name: str, song_path, track_index=None):
+        """Block until a download is detected or timeout; returns bool."""
+        pass
+
+    @abstractmethod
+    def check_for_completed_downloads(self, song_path, track_name):
+        """Return a list of completed file paths for the song path."""
+        pass
+
+    @abstractmethod
+    def clean_downloaded_filename(self, file_path, track_name=None):
+        """Normalize/clean the filename for a downloaded file; returns new Path."""
+        pass
+
+    @abstractmethod
+    def validate_audio_content(self, file_path, track_name, expected_properties=None):
+        """Validate audio file basics; returns a dict with status/details."""
+        pass
+
 
 class IChromeManager(ABC):
     """Interface for Chrome browser management"""
