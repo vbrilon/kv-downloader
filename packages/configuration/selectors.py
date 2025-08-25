@@ -20,3 +20,13 @@ LOGIN_STATUS_SELECTORS = [
     ("xpath", "//a[contains(text(), 'Log in')]")
 ]
 
+# Track/mixer selectors
+TRACK_ELEMENT_SELECTOR = ".track"
+
+# Solo button selectors within a track (primary → fallbacks)
+SOLO_BUTTON_SELECTORS = [
+    "button.track__solo",                 # Primary
+    "button.track__controls.track__solo", # Variant with multiple classes
+    ".track__solo",                        # Generic class
+    "button[class*='solo']",              # Fallback by class name
+]

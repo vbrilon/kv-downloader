@@ -12,6 +12,10 @@ from selenium.common.exceptions import (
 )
 from ..utils import safe_click, validation_safe, profile_timing, profile_selenium
 from ..configuration import SOLO_ACTIVATION_DELAY
+from ..configuration.selectors import (
+    TRACK_ELEMENT_SELECTOR,
+    SOLO_BUTTON_SELECTORS,
+)
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT, 
                                     TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES, 
@@ -41,7 +45,7 @@ class TrackManager:
         # Wait for page to load - either track elements appear or login form appears
         try:
             WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
-                lambda driver: driver.find_elements(By.CSS_SELECTOR, ".track") or 
+                lambda driver: driver.find_elements(By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR) or 
                                "login" in driver.current_url.lower() or
                                driver.find_elements(By.NAME, "frm_login")
             )
@@ -55,7 +59,7 @@ class TrackManager:
             return False
         
         # Check for track elements
-        track_elements = self.driver.find_elements(By.CSS_SELECTOR, ".track")
+        track_elements = self.driver.find_elements(By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR)
         if not track_elements:
             logging.warning("No track elements found - may not have access")
             return False
@@ -72,7 +76,7 @@ class TrackManager:
         logging.info("Discovering available tracks...")
         logging.debug(f"Searching for track elements with CSS selector: .track")
         
-        track_elements = self.driver.find_elements(By.CSS_SELECTOR, ".track")
+        track_elements = self.driver.find_elements(By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR)
         logging.debug(f"Found {len(track_elements)} track elements on page")
         
         tracks = []
@@ -209,42 +213,49 @@ class TrackManager:
             self.driver.get(song_url)
             try:
                 WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, ".track"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR))
                 )
             except TimeoutException:
                 logging.warning("Timeout waiting for track elements to load")
     
     def _find_track_element(self, track_index):
         """Find and return the track element for the given index"""
-        track_selector = f".track[data-index='{track_index}']"
+        track_selector = f"{TRACK_ELEMENT_SELECTOR}[data-index='{track_index}']"
         logging.debug(f"Looking for track element with selector: {track_selector}")
-        track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
-        
-        if not track_elements:
+        try:
+            track_element = WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, track_selector))
+            )
+            logging.debug(f"Found track element for index {track_index}")
+            return track_element
+        except TimeoutException:
             logging.error(f"Could not find track element with data-index='{track_index}'")
-            available_tracks = [el.get_attribute('data-index') for el in self.driver.find_elements(By.CSS_SELECTOR, '.track')]
+            available_tracks = [
+                el.get_attribute('data-index')
+                for el in self.driver.find_elements(By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR)
+            ]
             logging.debug(f"Available tracks on page: {available_tracks}")
             return None
-        
-        logging.debug(f"Found track element for index {track_index}")
-        return track_elements[0]
     
     def _find_solo_button(self, track_element, track_index):
         """Find and return the solo button within the track element"""
-        solo_selectors = [
-            "button.track__solo",  # Primary selector discovered
-            "button.track__controls.track__solo",
-            ".track__solo",
-            "button[class*='solo']"
-        ]
-        
-        for selector in solo_selectors:
+        solo_selectors = SOLO_BUTTON_SELECTORS
+
+        for i, selector in enumerate(solo_selectors):
             try:
-                logging.debug(f"Trying solo button selector: {selector}")
+                logging.debug(f"Trying solo selector {i+1}/{len(solo_selectors)}: {selector}")
+                # Prefer searching within the track element first
                 solo_button = track_element.find_element(By.CSS_SELECTOR, selector)
+                # Ensure it's present/visible by waiting briefly if needed
+                if not (solo_button and solo_button.is_displayed() and solo_button.is_enabled()):
+                    solo_button = WebDriverWait(self.driver, WEBDRIVER_BRIEF_TIMEOUT).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
                 if solo_button and solo_button.is_displayed():
                     logging.info(f"Found solo button with selector: {selector}")
-                    logging.debug(f"Solo button is displayed: {solo_button.is_displayed()}, enabled: {solo_button.is_enabled()}")
+                    logging.debug(
+                        f"Solo button is displayed: {solo_button.is_displayed()}, enabled: {solo_button.is_enabled()}"
+                    )
                     return solo_button
             except Exception as e:
                 logging.debug(f"Selector {selector} failed: {e}")
