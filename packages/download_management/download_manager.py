@@ -12,6 +12,7 @@ from selenium.common.exceptions import (
     TimeoutException
 )
 from ..utils import safe_click_with_scroll, profile_timing, profile_selenium
+from ..configuration.selectors import DOWNLOAD_BUTTON_SELECTORS
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
@@ -111,25 +112,22 @@ class DownloadManager:
         Returns:
             WebElement or None: The download button if found and usable, None otherwise
         """
-        # Find the download button - discovered selector
-        download_selectors = [
-            "a.download",  # Primary discovered selector
-            "a[class*='download']",
-            "//a[contains(@class, 'download')]",
-            "//a[contains(text(), 'Download')]",
-            "//a[contains(text(), 'MP3')]"
-        ]
-        
-        logging.debug(f"Searching for download button with {len(download_selectors)} selectors")
-        
+        # Find the download button using centralized selectors
+        logging.debug(f"Searching for download button with {len(DOWNLOAD_BUTTON_SELECTORS)} selectors")
         download_button = None
-        for i, selector in enumerate(download_selectors):
+        for i, selector in enumerate(DOWNLOAD_BUTTON_SELECTORS):
             try:
-                logging.debug(f"Trying download selector {i+1}/{len(download_selectors)}: {selector}")
+                logging.debug(f"Trying download selector {i+1}/{len(DOWNLOAD_BUTTON_SELECTORS)}: {selector}")
                 if selector.startswith("//"):
-                    download_button = self.driver.find_element(By.XPATH, selector)
+                    # Wait for presence with XPath
+                    download_button = WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
+                        EC.presence_of_element_located((By.XPATH, selector))
+                    )
                 else:
-                    download_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    # Wait for presence with CSS
+                    download_button = WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
                 
                 if download_button and download_button.is_displayed() and download_button.is_enabled():
                     logging.info(f"Found download button with selector: {selector}")

@@ -101,9 +101,13 @@ class ChromeManagerAdapter(IChromeManager):
         self._chrome_manager.set_download_path(path)
     
     def quit_driver(self) -> None:
+        """Compatibility quit; calls underlying quit() or quit_driver()."""
         if hasattr(self._chrome_manager, 'quit_driver'):
             self._chrome_manager.quit_driver()
+        elif hasattr(self._chrome_manager, 'quit'):
+            self._chrome_manager.quit()
         elif hasattr(self._chrome_manager, 'cleanup'):
+            # Legacy fallback
             self._chrome_manager.cleanup()
 
 
