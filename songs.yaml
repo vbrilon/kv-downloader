@@ -8,11 +8,11 @@ songs:
 #    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
     
   #- url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/n-i-b.html"
+#  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/n-i-b.html"
   - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/iron-man.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/changes.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/war-pigs.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/paranoid.html"
+#  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/changes.html"
+#  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/war-pigs.html"
+#  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/paranoid.html"
 
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com
