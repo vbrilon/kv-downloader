@@ -240,8 +240,66 @@ class FileManager:
             logging.warning(f"Error during download cleanup: {e}")
     
     def wait_for_download_to_start(self, track_name, song_path, track_index=None):
-        """Wait for download to actually start by monitoring song folder for new files AND file modifications"""
+        """Wait for download start via watchdog (if available) with polling fallback.
+
+        Uses filesystem events for faster detection when the optional
+        `watchdog` library is installed. Falls back to the existing polling
+        strategy when watchdog isn't available or on any error.
+        """
         try:
+            # Prefer watchdog when available for immediate event detection
+            try:
+                import threading
+                from watchdog.observers import Observer  # type: ignore
+                from watchdog.events import FileSystemEventHandler  # type: ignore
+
+                class _DownloadEventHandler(FileSystemEventHandler):
+                    def __init__(self, trigger_event, audio_exts):
+                        self.trigger_event = trigger_event
+                        self.audio_exts = audio_exts
+
+                    def on_created(self, event):
+                        try:
+                            if not getattr(event, 'is_directory', False):
+                                name = str(event.src_path).lower()
+                                if name.endswith('.crdownload') or any(name.endswith(ext) for ext in self.audio_exts):
+                                    self.trigger_event.set()
+                        except Exception:
+                            pass
+
+                    def on_modified(self, event):
+                        try:
+                            if not getattr(event, 'is_directory', False):
+                                name = str(event.src_path).lower()
+                                if name.endswith('.crdownload') or any(name.endswith(ext) for ext in self.audio_exts):
+                                    self.trigger_event.set()
+                        except Exception:
+                            pass
+
+                # Set up watchdog observer
+                event = threading.Event()
+                handler = _DownloadEventHandler(event, tuple(self._audio_extensions))
+                observer = Observer()
+                observer.schedule(handler, str(song_path), recursive=False)
+                observer.start()
+                logging.info("🕵️ Using watchdog for fast download-start detection")
+                try:
+                    # Wait up to the max wait time for an event
+                    max_wait = FILE_OPERATION_MAX_WAIT
+                    if event.wait(timeout=max_wait):
+                        logging.info(f"✅ Watchdog detected download start for: {track_name}")
+                        observer.stop()
+                        observer.join(timeout=2)
+                        return True
+                finally:
+                    try:
+                        observer.stop()
+                        observer.join(timeout=2)
+                    except Exception:
+                        pass
+            except Exception as watchdog_error:
+                logging.debug(f"Watchdog not available or failed, falling back to polling: {watchdog_error}")
+
             song_info = self._get_file_info(song_path)
             if not song_path or not song_info['exists']:
                 logging.error(f"Song folder not available for monitoring: {song_path}")
