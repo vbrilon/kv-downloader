@@ -6,9 +6,11 @@ Progress Update
 - Completed: `ChromeManagerAdapter.quit_driver` now falls back to `quit()` when appropriate.
 - Completed: Aligned `IFileManager` interface with actual usage; updated unit tests.
 - Completed: Added basic tooling configs (`pyproject.toml`, `.pre-commit-config.yaml`).
-- Merged: Plan doc and Phase 1 quick wins into `main`.
+- Completed: Optional watchdog-based file detection with automatic polling fallback.
+- Completed: Added `docs/RECS.md` to version control.
+- Merged: Plan doc, Phase 1 quick wins, and watchdog/selectors work into `main`.
 Status
-- Phase 1 is in progress; remaining items include optional watchdog integration and migrating any remaining hard-coded selectors/waits.
+- Phase 1 is in progress; remaining items include migrating any residual hard-coded selectors/waits and small reliability touch-ups.
 This plan translates the recommendations in `docs/RECS.md` into a pragmatic, phased roadmap. It prioritizes high-impact wins first, then deepens reliability, architecture, and developer experience. Phases can be delivered as small PRs per bullet for fast review.
 
 ## Scope & Goals
@@ -17,7 +19,7 @@ This plan translates the recommendations in `docs/RECS.md` into a pragmatic, pha
 - Preserve current CLI behavior while adding safer defaults and observability.
 
 ## Phase 1: Quick Wins
-Status: In progress
+Status: In progress (partially delivered)
 - Objectives: Land high-impact, low-risk improvements quickly.
 - Key changes:
   - Align `IFileManager`/`IChromeManager` with actual usage (method names and gaps).
@@ -26,7 +28,7 @@ Status: In progress
   - Optional `watchdog` path for fast file event detection with automatic fallback to polling.
   - Introduce `ruff` + `mypy` + `pre-commit` configured minimally; annotate public surfaces touched.
 - Deliverables: Updated interfaces/adapters, selector registry, lint/type config, watchdog integration path.
-  - Delivered so far: selector registry, waits standardization (download + track/solo), interface alignment, adapter update, tooling configs.
+  - Delivered so far: selector registry, waits standardization (download + track/solo), interface alignment, adapter update, tooling configs, optional watchdog path.
 - Acceptance: End-to-end flow still works; lint/type checks pass on touched files; reduced log noise.
 
 ## Phase 2: Interfaces & Dependency Injection
