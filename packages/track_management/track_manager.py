@@ -15,6 +15,7 @@ from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
     SOLO_BUTTON_SELECTORS,
+    TRACK_CAPTION_SELECTOR,
 )
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT, 
@@ -82,7 +83,7 @@ class TrackManager:
         tracks = []
         for i, track_element in enumerate(track_elements):
             try:
-                caption_element = track_element.find_element(By.CSS_SELECTOR, ".track__caption")
+                caption_element = track_element.find_element(By.CSS_SELECTOR, TRACK_CAPTION_SELECTOR)
                 track_name = caption_element.text.strip()
                 data_index = track_element.get_attribute("data-index")
                 

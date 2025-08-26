@@ -23,6 +23,9 @@ LOGIN_STATUS_SELECTORS = [
 # Track/mixer selectors
 TRACK_ELEMENT_SELECTOR = ".track"
 
+# Track caption selector
+TRACK_CAPTION_SELECTOR = ".track__caption"
+
 # Solo button selectors within a track (primary → fallbacks)
 SOLO_BUTTON_SELECTORS = [
     "button.track__solo",                 # Primary
