@@ -7,17 +7,19 @@ songs:
 #    description: "Artist - Song Title"  # Optional: for documentation
 #    key: 2  # Optional: Pitch adjustment in semitones (-12 to +12)
     
-  #- url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
-#  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/n-i-b.html"
-  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/iron-man.html"
+# - url: "https://www.karaoke-version.com/custombackingtrack/stone-temple-pilots/interstate-love-song.html"
+# - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/n-i-b.html"
+  - url: "https://www.karaoke-version.com/custombackingtrack/muse/starlight.html"
 #  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/changes.html"
 #  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/war-pigs.html"
 #  - url: "https://www.karaoke-version.com/custombackingtrack/black-sabbath/paranoid.html"
 
 # Configuration Notes:
 # - URLs should be direct links to individual song pages on Karaoke-Version.com
-# - Name is optional - auto-extracted from URL as "Artist - Song" if omitted. 
-#   This will be the name of the folder the track is downloaded to
+# - Name is optional - uses smart auto-extraction from URL if omitted:
+#   * No conflicts: folder named with song only (e.g., "Paranoid")
+#   * With conflicts: folder named "Artist - Song" to prevent overwrites
+#   * System automatically detects duplicate song names across all configured songs
 # - Description is optional and used for documentation only
 # - Key supports multiple formats:
 #   * Integer: 2, -3, 0

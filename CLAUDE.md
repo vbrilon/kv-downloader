@@ -4,9 +4,14 @@
 ```yaml
 songs:
   - url: "https://www.karaoke-version.com/custombackingtrack/artist/song.html"
-    name: "Song_Directory_Name"  # Optional: auto-extracts from URL if omitted
+    name: "Song_Directory_Name"  # Optional: smart auto-extraction from URL if omitted
     key: -1  # Optional: Pitch adjustment in semitones (-12 to +12)
 ```
+
+### Smart Folder Naming
+- **No conflicts**: Folders named with song only (e.g., "Paranoid", "Starlight")
+- **With conflicts**: Folders include artist to prevent overwrites (e.g., "Fleetwood Mac - The Chain", "Ingrid Michaelson - The Chain")
+- **Automatic detection**: System scans all configured songs and detects name conflicts across the entire configuration
 
 ## Architecture
 

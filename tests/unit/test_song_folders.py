@@ -27,39 +27,45 @@ def test_song_folder_extraction():
         test_cases = [
             {
                 'url': 'https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html',
-                'expected_contains': ['Jimmy Eat World', 'The Middle']
+                'expected_song': 'The Middle',
+                'expected_artist': 'Jimmy Eat World'
             },
             {
                 'url': 'https://www.karaoke-version.com/custombackingtrack/chappell-roan/pink-pony-club.html',
-                'expected_contains': ['Chappell Roan', 'Pink Pony Club']
+                'expected_song': 'Pink Pony Club',
+                'expected_artist': 'Chappell Roan'
             },
             {
                 'url': 'https://www.karaoke-version.com/custombackingtrack/taylor-swift/shake-it-off.html',
-                'expected_contains': ['Taylor Swift', 'Shake It Off']
+                'expected_song': 'Shake It Off',
+                'expected_artist': 'Taylor Swift'
             }
         ]
-        
+
         success_count = 0
-        
+
         for i, test_case in enumerate(test_cases, 1):
             print(f"{i}️⃣ Testing URL: {test_case['url']}")
-            
+
             folder_name = automator.download_manager.extract_song_folder_name(test_case['url'])
             print(f"   Generated folder: '{folder_name}'")
-            
-            # Check if expected elements are in the folder name
-            contains_expected = all(
-                expected.lower().replace(' ', '').replace('-', '') in 
-                folder_name.lower().replace(' ', '').replace('-', '') 
-                for expected in test_case['expected_contains']
-            )
-            
-            if contains_expected:
-                print(f"   ✅ Contains expected elements: {test_case['expected_contains']}")
+
+            # Normalize for comparison
+            folder_normalized = folder_name.lower().replace(' ', '').replace('-', '')
+            song_normalized = test_case['expected_song'].lower().replace(' ', '').replace('-', '')
+            artist_normalized = test_case['expected_artist'].lower().replace(' ', '').replace('-', '')
+
+            # Accept both formats: "Song" or "Artist - Song"
+            song_only_match = song_normalized in folder_normalized and artist_normalized not in folder_normalized
+            full_match = song_normalized in folder_normalized and artist_normalized in folder_normalized
+
+            if song_only_match or full_match:
+                format_type = "song-only" if song_only_match else "artist-song"
+                print(f"   ✅ Valid folder name ({format_type} format)")
                 success_count += 1
             else:
-                print(f"   ❌ Missing expected elements: {test_case['expected_contains']}")
-        
+                print(f"   ❌ Invalid folder name (expected song: '{test_case['expected_song']}')")
+
         print(f"\n📊 URL Extraction Results: {success_count}/{len(test_cases)} successful")
         return success_count == len(test_cases)
         
@@ -141,14 +147,16 @@ def test_song_folder_creation():
         for folder in song_folders:
             print(f"  📁 {folder.name}")
         
-        # Look for Jimmy Eat World folder
-        jimmy_folders = [f for f in song_folders if 'jimmy' in f.name.lower() and 'eat' in f.name.lower()]
-        
-        if jimmy_folders:
-            print(f"✅ Found Jimmy Eat World folder: {jimmy_folders[0].name}")
+        # Look for song folder (either "The Middle" or "Jimmy Eat World - The Middle")
+        middle_folders = [f for f in song_folders
+                         if 'middle' in f.name.lower() or
+                         ('jimmy' in f.name.lower() and 'eat' in f.name.lower())]
+
+        if middle_folders:
+            print(f"✅ Found song folder: {middle_folders[0].name}")
             folder_creation_success = True
         else:
-            print("⚠️  No Jimmy Eat World folder found (may be created after download completes)")
+            print("⚠️  No song folder found (may be created after download completes)")
             folder_creation_success = True  # Don't fail for timing issues
         
         # Test custom folder name
@@ -268,10 +276,11 @@ if __name__ == "__main__":
     if all_success:
         print("\n🎉 SONG FOLDER FUNCTIONALITY IS WORKING!")
         print("✅ Downloads organized into song-specific folders")
-        print("✅ URL parsing extracts artist and song names")
+        print("✅ URL parsing extracts song names (with artist if conflicts detected)")
         print("✅ Cleanup works within song folders")
         print("📁 Downloads will be organized as:")
-        print("   downloads/Artist - Song/track_files.mp3")
+        print("   downloads/Song/track_files.mp3")
+        print("   downloads/Artist - Song/track_files.mp3  (if name conflicts exist)")
     else:
         print("\n⚠️  Some song folder functionality needs attention")
     
