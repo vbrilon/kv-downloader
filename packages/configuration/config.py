@@ -14,7 +14,7 @@ USERNAME = os.getenv("KV_USERNAME")
 PASSWORD = os.getenv("KV_PASSWORD")
 
 # Download settings
-DOWNLOAD_FOLDER = "./downloads"
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "./downloads")
 DELAY_BETWEEN_DOWNLOADS = 5  # seconds - increased for processing time
 MAX_RETRIES = 3
 DOWNLOAD_TIMEOUT = 30  # seconds to wait for download to complete
