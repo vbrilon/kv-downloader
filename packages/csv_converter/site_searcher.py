@@ -95,9 +95,9 @@ class SiteSearcher:
     def _wait_for_page_load(self):
         """Wait for search results page to load"""
         try:
-            # Wait for either results or no-results message
+            # Wait for any link to a custom backing track page
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".song-row, .no-results, .search-results"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/custombackingtrack/"][href$=".html"]'))
             )
         except TimeoutException:
             # Page might have loaded differently, continue anyway
@@ -107,197 +107,112 @@ class SiteSearcher:
         """
         Extract search results from the page
 
+        The site structure has song links followed by artist links:
+        - Song link: /custombackingtrack/artist/song.html (with song title as text)
+        - Artist link: /custombackingtrack/artist/ (with artist name as text)
+
         Returns:
             List of SearchResult objects
         """
         results = []
+        seen_urls = set()
 
         try:
-            # Find all song result rows
-            # The site uses .song-row or similar for results
-            result_selectors = [
-                ".song-row",
-                ".search-item",
-                "[data-song-id]",
-                ".result-item"
-            ]
+            # Find all song links (end with .html, exclude search.html)
+            song_links = self.driver.find_elements(
+                By.CSS_SELECTOR,
+                'a[href*="/custombackingtrack/"][href$=".html"]:not([href*="search.html"])'
+            )
 
-            song_elements = []
-            for selector in result_selectors:
-                song_elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                if song_elements:
-                    logging.debug(f"Found results using selector: {selector}")
-                    break
+            logging.debug(f"Found {len(song_links)} potential song links")
 
-            # If no structured results, try to parse the page differently
-            if not song_elements:
-                results = self._extract_results_fallback()
-                return results
+            for song_link in song_links:
+                try:
+                    href = song_link.get_attribute('href')
 
-            for element in song_elements[:10]:  # Limit to first 10 results
-                result = self._parse_result_element(element)
-                if result:
+                    # Skip duplicates
+                    if not href or href in seen_urls:
+                        continue
+
+                    # Validate URL pattern: /custombackingtrack/artist/song.html
+                    path = urllib.parse.urlparse(href).path
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 3 or parts[0] != 'custombackingtrack':
+                        continue
+
+                    seen_urls.add(href)
+
+                    # Get song name from link text
+                    song_name = song_link.text.strip()
+                    if not song_name:
+                        # Fallback to slug
+                        song_name = self._slug_to_name(parts[2].replace('.html', ''))
+
+                    # Try to find artist from sibling link
+                    artist_name = self._find_artist_for_song_link(song_link, parts[1])
+
+                    result = SearchResult(song=song_name, artist=artist_name, url=href)
                     results.append(result)
+                    logging.debug(f"  Found: {song_name} by {artist_name}")
+
+                    # Limit to first 10 results
+                    if len(results) >= 10:
+                        break
+
+                except Exception as e:
+                    logging.debug(f"Error parsing song link: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error extracting results: {e}")
 
         return results
 
-    def _extract_results_fallback(self) -> List[SearchResult]:
+    def _find_artist_for_song_link(self, song_link, artist_slug: str) -> str:
         """
-        Fallback method to extract results when standard selectors don't work
+        Find the artist name for a song link by looking at sibling elements
+
+        Args:
+            song_link: Selenium WebElement for the song link
+            artist_slug: Artist slug from URL as fallback
 
         Returns:
-            List of SearchResult objects
+            Artist name
         """
-        results = []
-
         try:
-            # Look for links to custom backing track pages
-            links = self.driver.find_elements(
+            # Look for sibling link that points to artist page
+            # Artist links have pattern: /custombackingtrack/artist/ (no .html)
+            parent = song_link.find_element(By.XPATH, '..')
+
+            # Find artist link in the parent container
+            artist_links = parent.find_elements(
                 By.CSS_SELECTOR,
-                'a[href*="/custombackingtrack/"]'
+                f'a[href*="/custombackingtrack/{artist_slug}/"]'
             )
 
-            seen_urls = set()
-            for link in links:
-                try:
-                    href = link.get_attribute('href')
+            for artist_link in artist_links:
+                href = artist_link.get_attribute('href')
+                # Artist page links don't end with .html
+                if href and not href.endswith('.html'):
+                    text = artist_link.text.strip()
+                    if text:
+                        return text
 
-                    # Skip if not a song page or already seen
-                    if not href or '/search.html' in href or href in seen_urls:
-                        continue
-
-                    # Check if it's a valid song URL pattern
-                    if '.html' not in href:
-                        continue
-
-                    seen_urls.add(href)
-
-                    # Try to extract song/artist from the link or surrounding context
-                    result = self._parse_link_result(link, href)
-                    if result:
-                        results.append(result)
-
-                except Exception as e:
-                    logging.debug(f"Error parsing link: {e}")
-                    continue
+            # Try finding any artist-like link in parent
+            all_links = parent.find_elements(By.TAG_NAME, 'a')
+            for link in all_links:
+                href = link.get_attribute('href') or ''
+                # Artist links end with / and contain /custombackingtrack/
+                if '/custombackingtrack/' in href and href.endswith('/') and not href.endswith('custombackingtrack/'):
+                    text = link.text.strip()
+                    if text and text != song_link.text.strip():
+                        return text
 
         except Exception as e:
-            logging.error(f"Fallback extraction error: {e}")
+            logging.debug(f"Error finding artist: {e}")
 
-        return results[:10]  # Limit results
-
-    def _parse_result_element(self, element) -> Optional[SearchResult]:
-        """
-        Parse a search result element
-
-        Args:
-            element: Selenium WebElement for a result row
-
-        Returns:
-            SearchResult or None
-        """
-        try:
-            # Try various selectors for song title
-            song = None
-            song_selectors = [
-                ".song-title", ".title", "h3", "h4",
-                "[data-song-title]", ".name"
-            ]
-            for selector in song_selectors:
-                try:
-                    song_elem = element.find_element(By.CSS_SELECTOR, selector)
-                    song = song_elem.text.strip()
-                    if song:
-                        break
-                except NoSuchElementException:
-                    continue
-
-            # Try various selectors for artist
-            artist = None
-            artist_selectors = [
-                ".artist", ".artist-name", "[data-artist]",
-                ".song-artist", ".subtitle"
-            ]
-            for selector in artist_selectors:
-                try:
-                    artist_elem = element.find_element(By.CSS_SELECTOR, selector)
-                    artist = artist_elem.text.strip()
-                    if artist:
-                        break
-                except NoSuchElementException:
-                    continue
-
-            # Get the URL
-            url = None
-            try:
-                link = element.find_element(By.CSS_SELECTOR, 'a[href*="/custombackingtrack/"]')
-                url = link.get_attribute('href')
-            except NoSuchElementException:
-                # Try getting URL from element itself if it's a link
-                if element.tag_name == 'a':
-                    url = element.get_attribute('href')
-
-            if song and url:
-                return SearchResult(song=song, artist=artist or '', url=url)
-
-        except Exception as e:
-            logging.debug(f"Error parsing result element: {e}")
-
-        return None
-
-    def _parse_link_result(self, link, href: str) -> Optional[SearchResult]:
-        """
-        Parse a result from a link element
-
-        Args:
-            link: Selenium WebElement for the link
-            href: URL of the link
-
-        Returns:
-            SearchResult or None
-        """
-        try:
-            # Extract song and artist from URL path
-            # URL pattern: /custombackingtrack/artist/song.html
-            path = urllib.parse.urlparse(href).path
-            parts = path.strip('/').split('/')
-
-            if len(parts) >= 3 and parts[0] == 'custombackingtrack':
-                artist_slug = parts[1]
-                song_slug = parts[2].replace('.html', '')
-
-                # Convert slugs to readable names
-                artist = self._slug_to_name(artist_slug)
-                song = self._slug_to_name(song_slug)
-
-                # Try to get better names from the link text
-                link_text = link.text.strip()
-                if link_text and link_text != href:
-                    # Sometimes the link text has the song name
-                    song = link_text
-
-                # Look for artist in parent or sibling elements
-                try:
-                    parent = link.find_element(By.XPATH, '..')
-                    parent_text = parent.text
-                    if '-' in parent_text:
-                        # Format might be "Artist - Song"
-                        parts = parent_text.split('-')
-                        if len(parts) >= 2:
-                            artist = parts[0].strip()
-                            song = parts[1].strip()
-                except Exception:
-                    pass
-
-                return SearchResult(song=song, artist=artist, url=href)
-
-        except Exception as e:
-            logging.debug(f"Error parsing link result: {e}")
-
-        return None
+        # Fallback to slug
+        return self._slug_to_name(artist_slug)
 
     def _slug_to_name(self, slug: str) -> str:
         """

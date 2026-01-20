@@ -55,13 +55,16 @@ class ChromeManager:
         
         # Configure headless mode if requested
         if self.headless:
-            chrome_options.add_argument("--headless")
+            # Use new headless mode (harder to detect)
+            chrome_options.add_argument("--headless=new")
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--window-size=1920,1080")
+            # Add user-agent to appear more like a real browser
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             logging.info("🔇 Running in headless mode (browser hidden)")
-            logging.debug("Headless Chrome arguments: --headless, --no-sandbox, --disable-dev-shm-usage, --disable-gpu")
+            logging.debug("Headless Chrome arguments: --headless=new, --no-sandbox, --disable-dev-shm-usage, --disable-gpu")
         else:
             logging.info("👁️ Running in visible mode (browser window open)")
             logging.debug("Chrome will open visible window for debugging")
