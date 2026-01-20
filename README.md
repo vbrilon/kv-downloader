@@ -36,14 +36,52 @@ DOWNLOAD_FOLDER=./downloads  # Optional: custom download location
 
 ### 3. Configure Songs
 
-Edit `songs.yaml` to specify which songs to download:
+#### Option A: Generate from CSV (Recommended for multiple songs)
+
+If you have a list of songs, create a CSV file with `Song,Artist` columns:
+
+```csv
+Song,Artist
+Basket Case,Green Day
+Otherside,RHCP
+Crazy Train,Ozzy
+Bad Moon Rising,CCR
+```
+
+Then run the CSV converter to automatically search and generate `songs.yaml`:
+
+```bash
+# Basic usage - generates songs_generated.yaml
+python csv_to_songs.py list.csv
+
+# With visible browser for debugging
+python csv_to_songs.py list.csv --debug
+
+# Preview without writing files
+python csv_to_songs.py list.csv --dry-run
+
+# Custom output file
+python csv_to_songs.py list.csv --output my_songs.yaml
+```
+
+The converter will:
+- Search karaoke-version.com for each song
+- Expand common abbreviations (RHCP → Red Hot Chili Peppers, GnR → Guns N' Roses, etc.)
+- Score matches and include high-confidence results in the YAML
+- Generate `unmatched_songs.txt` for songs requiring manual lookup
+
+After reviewing the generated file, rename it to `songs.yaml`.
+
+#### Option B: Manual Configuration
+
+Edit `songs.yaml` directly to specify which songs to download:
 
 ```yaml
 songs:
   - url: "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
     description: "Jimmy Eat World - The Middle"
     key: 0  # Optional: Pitch adjustment (-12 to +12 semitones)
-  
+
   - url: "https://www.karaoke-version.com/custombackingtrack/taylor-swift/shake-it-off.html"
     name: "Shake_It_Off"  # Optional: override auto-extracted folder name
     key: "+2"  # Raise pitch by 2 semitones (supports multiple formats)
@@ -200,6 +238,12 @@ python karaoke_automator.py --clear-session
 - Ensure all string values are wrapped in double quotes
 - Verify no tabs are used (only spaces for indentation)
 
+**CSV Converter Issues**
+- **"No results found"**: Try expanding artist abbreviations manually or check spelling
+- **Many partial matches**: Review `unmatched_songs.txt` and verify URLs manually
+- **Slow searching**: Rate limiting (2.5s between searches) prevents being blocked
+- **Browser timeout**: Use `--debug` to see what's happening in the browser
+
 ### Testing
 
 Run the test suite to verify functionality:
@@ -235,6 +279,7 @@ python tests/run_tests.py --integration-only
 - Karaoke-Version.com account with purchased songs
 
 ### Features
+- **CSV to YAML converter** - batch convert song lists with automatic site searching
 - **Real-time progress bar** with track status and timing
 - **Automatic file organization** with clean filenames
 - **Key adjustment support** (-12 to +12 semitones)
