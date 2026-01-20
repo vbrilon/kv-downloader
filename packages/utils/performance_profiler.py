@@ -33,9 +33,9 @@ class PerformanceProfiler:
         self.enable_memory = enable_memory and PSUTIL_AVAILABLE  # Disable memory tracking if psutil unavailable
         self.enable_detailed_logging = enable_detailed_logging
         
-        # DEBUG: Print profiler initialization state
-        print(f"🔍 PROFILER INIT: enabled={enabled}, detailed_logging={enable_detailed_logging}")
-        logging.info(f"🔍 PROFILER INIT: enabled={enabled}, detailed_logging={enable_detailed_logging}")
+        # Log profiler initialization state only when enabled
+        if self.enabled:
+            logging.info(f"🔍 PROFILER INIT: enabled={enabled}, detailed_logging={enable_detailed_logging}")
         
         # Performance data storage
         self.timing_data = {}
@@ -46,8 +46,8 @@ class PerformanceProfiler:
         # Thread safety
         self._lock = threading.Lock()
         
-        # Warn if memory tracking disabled due to missing psutil
-        if enable_memory and not PSUTIL_AVAILABLE:
+        # Warn if memory tracking disabled due to missing psutil (only when profiling is enabled)
+        if self.enabled and enable_memory and not PSUTIL_AVAILABLE:
             logging.warning("🔍 Performance profiling: psutil not available - memory tracking disabled")
         
         # Setup logging
