@@ -355,6 +355,43 @@ class KaraokeVersionAutomator:
 
         return success
 
+    def _retry_song_failures(self, song):
+        """Tier 1: Retry failed downloads for the current song
+
+        Called after each song completes to give failed tracks a second chance
+        before moving to the next song.
+
+        Args:
+            song (dict): Song configuration
+        """
+        # Find failures for this song with attempt=1
+        song_failures = [f for f in self.failed_downloads
+                        if f['song']['url'] == song['url'] and f['attempt'] == 1]
+
+        if not song_failures:
+            return
+
+        logging.info(f"🔄 Tier 1 Retry: {len(song_failures)} failed track(s) for {song['name']}")
+
+        for failure in song_failures:
+            # Remove from list before retry
+            self.failed_downloads.remove(failure)
+
+            track = failure['track']
+            track_name = self.sanitize_filename(track['name'])
+            logging.info(f"🔄 Retrying: {track_name}")
+
+            # Re-attempt download
+            success = self._attempt_track_download(song, track, song.get('key', 0))
+
+            if not success:
+                # Still failed - mark as attempt 2 for Tier 2 retry
+                failure['attempt'] = 2
+                self.failed_downloads.append(failure)
+                logging.warning(f"⚠️ Retry failed for {track_name} - queued for final retry")
+            else:
+                logging.info(f"✅ Retry successful for {track_name}")
+
     def _finish_song_processing(self, song):
         """Complete song processing and cleanup"""
         self.clear_all_solos(song['url'])
