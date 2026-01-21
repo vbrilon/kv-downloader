@@ -430,6 +430,35 @@ class KaraokeVersionAutomator:
             else:
                 logging.info(f"✅ Final retry successful for {track_name}")
 
+    def _display_failure_summary(self):
+        """Display summary of permanently failed downloads
+
+        Shows minimal info for each failure: track name and song URL
+        for easy manual recovery.
+        """
+        # Get permanent failures (attempt=3)
+        permanent_failures = [f for f in self.failed_downloads if f['attempt'] == 3]
+
+        if not permanent_failures:
+            if self.show_progress:
+                print("\n✅ All tracks downloaded successfully!")
+            else:
+                logging.info("All tracks downloaded successfully!")
+            return
+
+        # Display failure summary
+        if self.show_progress:
+            print(f"\n{'='*60}")
+            print(f"❌ FAILED DOWNLOADS ({len(permanent_failures)} track(s)):")
+            print(f"{'='*60}")
+            for f in permanent_failures:
+                print(f"  - {f['track']['name']} ({f['song']['url']})")
+            print(f"{'='*60}\n")
+        else:
+            logging.error(f"Failed downloads ({len(permanent_failures)} tracks):")
+            for f in permanent_failures:
+                logging.error(f"  - {f['track']['name']} ({f['song']['url']})")
+
     def _finish_song_processing(self, song):
         """Complete song processing and cleanup"""
         self.clear_all_solos(song['url'])
