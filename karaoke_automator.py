@@ -210,6 +210,10 @@ class KaraokeVersionAutomator:
         self._setup_mixer_controls(song, song_key)
         self._prepare_song_folder(song)
         self._download_all_tracks(song, tracks, song_key)
+
+        # Tier 1: Retry any failures for this song
+        self._retry_song_failures(song)
+
         self._finish_song_processing(song)
     
     def _start_song_tracking(self, song, tracks):
