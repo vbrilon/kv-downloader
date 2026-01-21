@@ -286,9 +286,25 @@ class KaraokeVersionAutomator:
             logging.error(f"Failed to solo track {track_name}")
             if self.progress:
                 self.progress.update_track_status(track['index'], 'failed')
-            self.stats.record_track_completion(song['name'], track_name, success=False, 
+            self.stats.record_track_completion(song['name'], track_name, success=False,
                                              error_message="Failed to solo track")
-    
+
+    def _record_failed_download(self, song, track, reason):
+        """Record a failed download for later retry
+
+        Args:
+            song (dict): Song configuration with url, name, key
+            track (dict): Track info with name and index
+            reason (str): Failure reason for logging
+        """
+        self.failed_downloads.append({
+            'song': song,
+            'track': track,
+            'attempt': 1,
+            'reason': reason
+        })
+        logging.info(f"📋 Queued for retry: {track['name']} (reason: {reason})")
+
     def _finish_song_processing(self, song):
         """Complete song processing and cleanup"""
         self.clear_all_solos(song['url'])
