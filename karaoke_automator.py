@@ -47,7 +47,8 @@ class KaraokeVersionAutomator:
         self.config_manager = ConfigurationManager(config_file)
         self.progress = ProgressTracker(show_display=show_progress) if show_progress else None
         self.stats = StatsReporter()  # Always track stats
-        
+        self.failed_downloads = []  # Track failures for retry
+
         # Get the global profiler (will be enabled if --profile flag was used)
         self.profiler = get_profiler()
         
