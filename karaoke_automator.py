@@ -313,6 +313,48 @@ class KaraokeVersionAutomator:
         })
         logging.info(f"📋 Queued for retry: {track['name']} (reason: {reason})")
 
+    def _attempt_track_download(self, song, track, song_key):
+        """Attempt to download a track without recording failure
+
+        Used by retry methods to avoid double-recording failures.
+
+        Args:
+            song (dict): Song configuration
+            track (dict): Track info with name and index
+            song_key (int): Key adjustment
+
+        Returns:
+            bool: True if download succeeded, False otherwise
+        """
+        track_name = self.sanitize_filename(track['name'])
+        success = False
+
+        if self.progress:
+            self.progress.update_track_status(track['index'], 'isolating')
+
+        # Smart solo management
+        self.ensure_only_track_active(track['index'], song['url'])
+
+        if self.solo_track(track, song['url']):
+            try:
+                success = self.download_manager.download_current_mix(
+                    song['url'],
+                    track_name,
+                    cleanup_existing=False,
+                    song_folder=song.get('name'),
+                    key_adjustment=song_key,
+                    track_index=track['index']
+                )
+            except Exception as e:
+                logging.error(f"Exception during retry download for {track_name}: {e}")
+                success = False
+        else:
+            logging.error(f"Failed to solo track {track_name} during retry")
+            if self.progress:
+                self.progress.update_track_status(track['index'], 'failed')
+
+        return success
+
     def _finish_song_processing(self, song):
         """Complete song processing and cleanup"""
         self.clear_all_solos(song['url'])
