@@ -143,7 +143,14 @@ class KaraokeVersionAutomator:
                 self._process_single_song(song)
             
             logging.info("Automation completed")
-            
+
+            # Tier 2: Final retry for any remaining failures
+            if self.failed_downloads:
+                self._retry_all_failures()
+
+            # Display failure summary
+            self._display_failure_summary()
+
             # Run final cleanup pass to catch any files that weren't cleaned up
             try:
                 logging.info("🧹 Running final cleanup pass...")
@@ -156,6 +163,7 @@ class KaraokeVersionAutomator:
             
         except Exception as e:
             logging.error(f"Automation failed: {e}")
+            self._display_failure_summary()  # Show failures even on error
             self._generate_final_reports(failed=True)
             return False
         finally:
