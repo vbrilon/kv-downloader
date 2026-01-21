@@ -253,23 +253,27 @@ class KaraokeVersionAutomator:
     
     @profile_timing("_download_single_track", "system", "method")
     def _download_single_track(self, song, track, song_key):
-        """Download a single track"""
+        """Download a single track
+
+        Returns:
+            bool: True if download succeeded, False otherwise
+        """
         track_name = self.sanitize_filename(track['name'])
-        success = False  # Initialize success variable to prevent scope issues
-        
+        success = False
+
         if self.progress:
             self.progress.update_track_status(track['index'], 'isolating')
-        
+
         self.stats.record_track_start(song['name'], track_name, track['index'])
-        
-        # Smart solo management - only clear conflicting tracks (performance optimized)
+
+        # Smart solo management - only clear conflicting tracks
         logging.debug(f"Ensuring clean solo state for {track_name} (track {track['index']})")
         self.ensure_only_track_active(track['index'], song['url'])
-        
+
         if self.solo_track(track, song['url']):
             try:
                 success = self.download_manager.download_current_mix(
-                    song['url'], 
+                    song['url'],
                     track_name,
                     cleanup_existing=False,
                     song_folder=song.get('name'),
@@ -279,15 +283,19 @@ class KaraokeVersionAutomator:
             except Exception as e:
                 logging.error(f"Exception during download for {track_name}: {e}")
                 success = False
-            
+
             if not success:
                 logging.error(f"Failed to download {track_name}")
+                self._record_failed_download(song, track, "Download failed")
         else:
             logging.error(f"Failed to solo track {track_name}")
             if self.progress:
                 self.progress.update_track_status(track['index'], 'failed')
             self.stats.record_track_completion(song['name'], track_name, success=False,
                                              error_message="Failed to solo track")
+            self._record_failed_download(song, track, "Failed to solo track")
+
+        return success
 
     def _record_failed_download(self, song, track, reason):
         """Record a failed download for later retry
