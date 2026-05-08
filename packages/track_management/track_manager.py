@@ -194,17 +194,17 @@ class TrackManager:
             # Use existing adaptive timeout for standard tracks
             return self._get_adaptive_timeout()
     
-    @profile_timing("solo_track", "track_management", "method") 
+    @profile_timing("solo_track", "track_management", "method")
     def solo_track(self, track_info, song_url):
-        """Solo a specific track (mutes all others)"""
+        """Ensure the target track is solo'd. Assumes ensure_only_track_active was just called."""
         track_name = track_info['name']
         track_index = track_info['index']
-        
+
         logging.info(f"Soloing track {track_index}: {track_name}")
-        
+
         if self.progress_tracker:
             self.progress_tracker.update_track_status(track_index, 'isolating')
-        
+
         try:
             self._navigate_to_song_if_needed(song_url)
             track_element = self._find_track_element(track_index)
@@ -215,7 +215,12 @@ class TrackManager:
             if not solo_button:
                 return False
 
-            return self._activate_solo_button(solo_button, track_name, track_index)
+            # Fast path: ensure_only_track_active should have already activated.
+            # Only click if the button isn't active yet.
+            if not self._is_solo_button_active(solo_button):
+                safe_click(self.driver, solo_button, f"solo button for {track_name}")
+
+            return self._activate_solo_button_verify_only(solo_button, track_name, track_index)
 
         except (InvalidSessionIdException, NoSuchWindowException):
             # Infrastructure failure — Chrome is gone. Don't pretend this is
@@ -284,16 +289,12 @@ class TrackManager:
         logging.debug(f"Track element HTML: {track_element.get_attribute('outerHTML')[:200]}...")
         return None
     
-    @profile_timing("_activate_solo_button", "track_management", "method")
-    def _activate_solo_button(self, solo_button, track_name, track_index):
-        """Activate the solo button and verify success"""
-        logging.info(f"Clicking solo button for {track_name}")
-        safe_click(self.driver, solo_button, f"solo button for {track_name}")
-        
+    @profile_timing("_activate_solo_button_verify_only", "track_management", "method")
+    def _activate_solo_button_verify_only(self, solo_button, track_name, track_index):
+        """Wait for solo activation; click was already handled by caller."""
         if self._wait_for_solo_activation(solo_button, track_name):
             return self._finalize_solo_activation(track_name, track_index)
-        else:
-            return self._retry_solo_activation(solo_button, track_name, track_index)
+        return self._retry_solo_activation(solo_button, track_name, track_index)
     
     def _wait_for_solo_activation(self, solo_button, track_name):
         """Wait for solo button to become active - track-type-aware timeout with enhanced detection"""
@@ -582,29 +583,32 @@ class TrackManager:
                 
             active_tracks = []
             target_button = None
-            
+
+            # data-index comes from the DOM as a string; coerce so it can be
+            # compared against enumerate()'s int loop counter.
+            target_index_int = int(target_index) if isinstance(target_index, str) else target_index
+
             # Scan for currently active tracks using enhanced detection
             for i, button in enumerate(solo_buttons):
                 try:
                     if self._is_solo_button_active(button):
                         active_tracks.append(i)
                         logging.debug(f"Found active track: {i}")
-                    
-                    # Remember target button for later activation
-                    if i == target_index:
+
+                    if i == target_index_int:
                         target_button = button
-                        
+
                 except Exception as e:
                     logging.debug(f"Error checking button {i}: {e}")
                     continue
-            
+
             # Check if target is already the only active track
-            if len(active_tracks) == 1 and active_tracks[0] == target_index:
+            if len(active_tracks) == 1 and active_tracks[0] == target_index_int:
                 logging.debug(f"Track {target_index} is already the only active track - no clearing needed")
                 return True
-            
+
             # Deactivate only the conflicting tracks (not target)
-            conflicting_tracks = [track for track in active_tracks if track != target_index]
+            conflicting_tracks = [track for track in active_tracks if track != target_index_int]
             
             if conflicting_tracks:
                 logging.info(f"Deactivating {len(conflicting_tracks)} conflicting tracks: {conflicting_tracks}")
@@ -630,7 +634,7 @@ class TrackManager:
                 logging.debug("No conflicting tracks to deactivate")
             
             # Activate target track if it's not already active
-            if target_index not in active_tracks:
+            if target_index_int not in active_tracks:
                 if target_button:
                     logging.debug(f"Activating target track {target_index}")
                     target_button.click()

@@ -154,5 +154,28 @@ def test_finalize_solo_activation_does_not_call_mixer_state_check(mocker):
     tm._verify_mixer_state_configuration.assert_not_called()
 
 
+def test_ensure_only_track_active_finds_target_with_string_index(mocker):
+    """data-index comes from the DOM as a string. ensure_only_track_active must
+    handle string indices correctly (the prior int == str comparison silently failed)."""
+    from packages.track_management.track_manager import TrackManager
+
+    tm = mocker.Mock(spec=TrackManager)
+    tm.driver = mocker.Mock()
+    tm.driver.current_url = 'https://song-url'
+
+    btn0 = mocker.Mock()
+    btn3 = mocker.Mock()
+    btn3.click = mocker.Mock()
+    tm.driver.find_elements = mocker.Mock(return_value=[btn0, mocker.Mock(), mocker.Mock(), btn3])
+    tm._is_solo_button_active = mocker.Mock(return_value=False)
+
+    mocker.patch('packages.track_management.track_manager.WebDriverWait')
+
+    result = TrackManager.ensure_only_track_active(tm, "3", "https://song-url")
+
+    assert result is True
+    btn3.click.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
