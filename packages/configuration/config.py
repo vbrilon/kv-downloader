@@ -41,7 +41,11 @@ WEBDRIVER_MICRO_TIMEOUT = 0.5
 PROGRESS_UPDATE_INTERVAL = 0.5
 CLICK_HANDLER_DELAY = 0.5
 TRACK_INTERACTION_DELAY = 0.5
-BETWEEN_TRACKS_PAUSE = 0.5  # Reduced from 2s - download completion monitoring ensures readiness
+# Tier 1 perf tweak (2026-05-08): tightened from 0.5s. Kept >0 so post-download
+# UI events (modal close, button-state update) finish settling before we solo
+# the next track. 0.2s is well above the observed settle time and a 5x
+# improvement in cumulative pause time over a 15-track song.
+BETWEEN_TRACKS_PAUSE = 0.2
 RETRY_VERIFICATION_DELAY = 2
 
 # Retry and Loop Constants
@@ -53,7 +57,12 @@ DOWNLOAD_MAX_WAIT = 90
 DOWNLOAD_COMPLETION_TIMEOUT = 60
 
 # Polling Intervals
-DOWNLOAD_CHECK_INTERVAL = 3  # Reduced from 5s - faster polling for quicker completion detection
+# Tier 1 perf tweak (2026-05-08): tightened from 3s. The actual download
+# completion fires at server-determined times (after ~14s of mix generation);
+# the polling interval bounds how late we DETECT completion. 1s polling means
+# at most ~1s of detection lag per track. Each poll is one cached directory
+# scan (2s TTL) so the cost is negligible.
+DOWNLOAD_CHECK_INTERVAL = 1
 FILE_CHECK_INTERVAL = 1
 SOLO_CHECK_INTERVAL = 0.5
 DOWNLOAD_MONITORING_INITIAL_WAIT = 10  # Performance optimization: reduced from 15s - test server generation reliability

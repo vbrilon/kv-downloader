@@ -383,10 +383,17 @@ class TrackManager:
         )
 
         if audio_server_ready:
-            time.sleep(0.2)  # Tiny safety buffer after deterministic detection
+            # Tier 1 perf tweak (2026-05-08): no post-detection buffer.
+            # _wait_for_audio_server_sync already deterministically confirmed
+            # the solo button is active in the DOM. The next operation is a
+            # click on the same page, which goes through chromedriver's own
+            # readiness checks. 0.2s here was pure padding × 15 tracks.
             logging.info(f"✅ Audio server sync verified for {track_name}")
         else:
-            time.sleep(1.0)  # Fallback safety buffer when DOM detection didn't conclude
+            # When sync was NOT confirmed, the buffer is the only safety net.
+            # Keep it: we have no positive signal, so we trade wall-time for
+            # avoiding race conditions on the click that follows.
+            time.sleep(1.0)
             logging.warning(f"⚠️ Audio server sync inconclusive for {track_name} — using fallback")
 
         return True
