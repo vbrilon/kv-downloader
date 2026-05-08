@@ -321,42 +321,24 @@ class DownloadManager:
     
     @profile_timing("_validate_pre_download_requirements", "download_management", "method")
     def _validate_pre_download_requirements(self, track_name, track_index, song_name):
-        """Perform pre-download validation checks with retry logic
-        
-        Args:
-            track_name (str): Name of the track being downloaded
-            track_index (int): Track index for progress tracking
-            song_name (str): Song name for stats recording
-            
-        Returns:
-            bool: True if validation passes, False if blocked
+        """Verify the solo state once before clicking download.
+
+        We used to call this twice ("initial" and "final") with nothing in between,
+        which doubled cost and hid no real bug. The single call is sufficient: the
+        solo button cannot change state between two adjacent Python statements with
+        no DOM interaction.
         """
-        # Initial verification
-        verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
-        if not verification_passed:
-            logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
-            if self.progress_tracker and track_index:
-                self.progress_tracker.update_track_status(track_index, 'failed')
-            
-            # Record failure in stats
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                       error_message="Solo verification failed")
-            return False
-        
-        # Final verification before download
-        logging.info(f"🔍 Final verification before download for {track_name}")
-        final_verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
-        if not final_verification_passed:
-            logging.error(f"❌ Final track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
-            if self.progress_tracker and track_index:
-                self.progress_tracker.update_track_status(track_index, 'failed')
-            
-            # Record failure in stats
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                       error_message="Final solo verification failed")
-            return False
-        
-        return True
+        if self._verify_track_selection_with_retry(track_name, track_index):
+            return True
+
+        logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
+        if self.progress_tracker and track_index:
+            self.progress_tracker.update_track_status(track_index, 'failed')
+        self.stats_reporter.record_track_completion(
+            song_name, track_name, success=False,
+            error_message="Solo verification failed"
+        )
+        return False
     
     @profile_timing("_execute_download_action", "download_management", "method")
     def _execute_download_action(self, download_button, track_index):

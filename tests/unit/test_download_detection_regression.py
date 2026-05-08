@@ -350,6 +350,21 @@ class TestDownloadDetectionRegression(TestCase):
         self.assertNotEqual(initial_info.get('size'), updated_info.get('size'))
 
 
+def test_validate_pre_download_calls_verify_only_once(mocker):
+    """The duplicate 'final verification' call must be removed."""
+    from packages.download_management.download_manager import DownloadManager
+
+    dm = mocker.Mock(spec=DownloadManager)
+    dm._verify_track_selection_with_retry = mocker.Mock(return_value=True)
+    dm.progress_tracker = mocker.Mock()
+    dm.stats_reporter = mocker.Mock()
+
+    DownloadManager._validate_pre_download_requirements(dm, "Bass", 3, "Test Song")
+
+    assert dm._verify_track_selection_with_retry.call_count == 1, \
+        f"Expected 1 verification call, got {dm._verify_track_selection_with_retry.call_count}"
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
