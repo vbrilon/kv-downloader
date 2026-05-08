@@ -90,19 +90,14 @@ def test_session_persistence_logic():
         assert clear_result, "Session clear should succeed"
         assert not session_path.exists(), "Session file should be deleted after clear"
         print("✅ Session clearing works correctly")
-        
+
         print("\n🎉 ALL SESSION PERSISTENCE TESTS PASSED!")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Test failed with error: {e}")
-        return False
-    
+
     finally:
         # Clean up temp file if it still exists
         try:
             Path(session_file).unlink()
-        except:
+        except FileNotFoundError:
             pass
 
 
@@ -110,81 +105,64 @@ def test_session_workflow():
     """Test the complete session workflow logic"""
     print("\n🔄 TESTING COMPLETE SESSION WORKFLOW")
     print("="*60)
-    
+
     # Create temporary session file
     with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as temp_file:
         session_file = temp_file.name
-    
+
     try:
         # Mock everything needed
         mock_driver = Mock()
         mock_wait = Mock()
-        
+
         login_manager = LoginManager(mock_driver, mock_wait, session_file)
-        
-        # Mock the login methods
+
+        # login_with_session_persistence first checks Chrome's native session via
+        # is_logged_in(); only if that fails does it fall back to fresh login().
         login_manager.login = Mock(return_value=True)
-        login_manager.is_logged_in = Mock(return_value=True)
-        
-        # Test the complete workflow
-        print("1️⃣ Testing first login (no saved session)...")
-        
-        # First call - should do fresh login
+        login_manager.is_logged_in = Mock(return_value=False)
+        # save_session is invoked when native session is detected; stub it out so
+        # the pickle path on the mocked driver is not exercised.
+        login_manager.save_session = Mock(return_value=True)
+
+        print("1️⃣ Testing first login (no native session, no saved session)...")
         result1 = login_manager.login_with_session_persistence()
         assert result1, "First login should succeed"
-        
-        # Should have called regular login
         login_manager.login.assert_called_once()
+        # is_logged_in is consulted before falling back to fresh login.
+        login_manager.is_logged_in.assert_called_once()
         print("✅ Fresh login performed correctly")
-        
-        # Mock session save for next test
-        mock_driver.get_cookies.return_value = [{'name': 'session_cookie', 'value': 'abc123'}]
-        mock_driver.current_url = 'https://www.karaoke-version.com'
-        mock_driver.execute_script.return_value = {}
-        mock_driver.get_window_size.return_value = {'width': 1920, 'height': 1080}
-        
-        login_manager.save_session()
-        
-        print("\n2️⃣ Testing session restoration...")
-        
-        # Reset mock
+
+        print("\n2️⃣ Testing native Chrome session shortcut...")
         login_manager.login.reset_mock()
-        
-        # Mock session loading
-        mock_driver.get.return_value = None
-        mock_driver.add_cookie.return_value = None
-        mock_driver.refresh.return_value = None
-        
-        # Second call - should restore session
+        login_manager.save_session.reset_mock()
+        login_manager.is_logged_in = Mock(return_value=True)
+
         result2 = login_manager.login_with_session_persistence()
-        assert result2, "Session restoration should succeed"
-        
-        # Should NOT have called regular login (used saved session)
+        assert result2, "Native session shortcut should succeed"
         login_manager.login.assert_not_called()
-        print("✅ Session restoration skipped fresh login correctly")
-        
+        login_manager.save_session.assert_called_once()
+        print("✅ Native session shortcut skipped fresh login correctly")
+
         print("\n3️⃣ Testing force relogin...")
-        
-        # Test force relogin
+        login_manager.login.reset_mock()
+        login_manager.save_session.reset_mock()
+        login_manager.is_logged_in.reset_mock()
+
         result3 = login_manager.login_with_session_persistence(force_relogin=True)
         assert result3, "Force relogin should succeed"
-        
-        # Should have called regular login due to force flag
         login_manager.login.assert_called_once()
+        # Force relogin must bypass the native-session shortcut entirely.
+        login_manager.is_logged_in.assert_not_called()
         print("✅ Force relogin performed fresh login correctly")
-        
+
         print("\n🎉 ALL WORKFLOW TESTS PASSED!")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Workflow test failed: {e}")
-        return False
-    
+
     finally:
         # Cleanup
         try:
             Path(session_file).unlink()
-        except:
+        except FileNotFoundError:
             pass
 
 
@@ -192,18 +170,17 @@ if __name__ == "__main__":
     print("🔐 SESSION PERSISTENCE TESTING")
     print("Testing login session saving and restoration functionality")
     print()
-    
-    # Run tests
-    logic_tests_passed = test_session_persistence_logic()
-    workflow_tests_passed = test_session_workflow()
-    
-    # Final result
-    print("\n" + "="*60)
-    if logic_tests_passed and workflow_tests_passed:
-        print("🎉 ALL SESSION PERSISTENCE TESTS PASSED!")
-        print("✅ Session persistence is working correctly")
-        sys.exit(0)
-    else:
+
+    try:
+        test_session_persistence_logic()
+        test_session_workflow()
+    except AssertionError as e:
+        print("\n" + "="*60)
         print("❌ SOME TESTS FAILED!")
-        print("⚠️  Session persistence needs attention")
+        print(f"⚠️  {e}")
         sys.exit(1)
+
+    print("\n" + "="*60)
+    print("🎉 ALL SESSION PERSISTENCE TESTS PASSED!")
+    print("✅ Session persistence is working correctly")
+    sys.exit(0)

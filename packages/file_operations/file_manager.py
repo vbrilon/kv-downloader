@@ -5,15 +5,21 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Dict, Set, List, Optional, Tuple
-from ..configuration.config import (FILE_OPERATION_MAX_WAIT, LOG_INTERVAL_SECONDS, 
+from ..configuration import config as _config
+from ..configuration.config import (FILE_OPERATION_MAX_WAIT, LOG_INTERVAL_SECONDS,
                                     FILE_MATCH_MIN_RATIO, FILE_MATCH_HIGH_RATIO)
 from ..utils import profile_timing
 
-try:
-    from packages.configuration import DOWNLOAD_FOLDER
-except ImportError:
-    # Fallback for when config is not available during testing
-    DOWNLOAD_FOLDER = "./downloads"
+
+def _download_folder() -> Path:
+    """Resolve the configured download root each call.
+
+    Reading `_config.DOWNLOAD_FOLDER` rather than caching a module-level
+    binding keeps tests honest: a `patch('packages.configuration.config.
+    DOWNLOAD_FOLDER', tmpdir)` decorator now actually reroutes file ops to
+    the temporary directory instead of the user's real download folder.
+    """
+    return Path(_config.DOWNLOAD_FOLDER)
 
 
 class FileManager:
@@ -135,7 +141,7 @@ class FileManager:
     def clear_song_folder(self, song_folder_name):
         """Completely remove existing song folder and all its contents"""
         try:
-            base_download_folder = Path(DOWNLOAD_FOLDER)
+            base_download_folder = _download_folder()
             song_path = base_download_folder / song_folder_name
             
             # Use cached file info to reduce multiple exists/is_dir calls
@@ -174,29 +180,29 @@ class FileManager:
             clear_existing (bool): Whether to clear existing folder contents first (default: True)
         """
         try:
-            base_download_folder = Path(DOWNLOAD_FOLDER)
+            base_download_folder = _download_folder()
             song_path = base_download_folder / song_folder_name
-            
+
             # Clear existing folder if requested (default behavior)
             if clear_existing:
                 self.clear_song_folder(song_folder_name)
-            
+
             # Create the folder (will recreate if it was cleared)
             song_path.mkdir(parents=True, exist_ok=True)
-            
+
             logging.info(f"📁 Song folder ready: {song_path}")
             return song_path
-            
+
         except Exception as e:
             logging.error(f"Error creating song folder: {e}")
             # Fallback to base download folder
-            return Path(DOWNLOAD_FOLDER)
-    
+            return _download_folder()
+
     def cleanup_existing_downloads(self, track_name, download_folder=None):
         """Remove existing files that might conflict with new download"""
         try:
             if download_folder is None:
-                download_folder = Path(DOWNLOAD_FOLDER)
+                download_folder = _download_folder()
             else:
                 download_folder = Path(download_folder)
                 

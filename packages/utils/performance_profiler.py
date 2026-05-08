@@ -445,13 +445,34 @@ def get_profiler() -> PerformanceProfiler:
 
 
 def initialize_profiler(enabled: bool = False, enable_memory: bool = True, enable_detailed_logging: bool = True):
-    """Initialize global profiler with specified settings"""
+    """Initialize / reconfigure the global profiler.
+
+    Mutates the existing singleton in place so that module-level
+    `@profile_timing(...)` decorators applied earlier — which captured the
+    instance via closure — observe the new settings. Replacing the instance
+    here would orphan every already-applied decorator on the prior (typically
+    disabled) profiler, silently breaking instrumentation.
+    """
     global _global_profiler
-    _global_profiler = PerformanceProfiler(
-        enabled=enabled, 
-        enable_memory=enable_memory, 
-        enable_detailed_logging=enable_detailed_logging
-    )
+    if _global_profiler is None:
+        _global_profiler = PerformanceProfiler(
+            enabled=enabled,
+            enable_memory=enable_memory,
+            enable_detailed_logging=enable_detailed_logging,
+        )
+        return _global_profiler
+
+    was_enabled = _global_profiler.enabled
+    _global_profiler.enabled = enabled
+    _global_profiler.enable_memory = enable_memory and PSUTIL_AVAILABLE
+    _global_profiler.enable_detailed_logging = enable_detailed_logging
+
+    # Performance logging files are only set up the first time profiling
+    # turns on. Re-running the setup on every toggle would create duplicate
+    # log files / handlers.
+    if enabled and not was_enabled:
+        _global_profiler._setup_performance_logging()
+
     return _global_profiler
 
 

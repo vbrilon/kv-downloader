@@ -93,8 +93,8 @@ class TestChromeManager(unittest.TestCase):
 
             options = manager._configure_chrome_options()
 
-            # Verify headless arguments were added
-            mock_options.add_argument.assert_any_call("--headless")
+            # Verify headless arguments were added (production uses Chrome's "new" headless mode)
+            mock_options.add_argument.assert_any_call("--headless=new")
             mock_options.add_argument.assert_any_call("--no-sandbox")
             mock_options.add_argument.assert_any_call("--disable-dev-shm-usage")
             mock_options.add_argument.assert_any_call("--disable-gpu")
@@ -146,7 +146,7 @@ class TestChromeManager(unittest.TestCase):
 
             service = self.chrome_manager._get_chrome_service()
 
-            mock_service.assert_called_once_with("/opt/homebrew/bin/chromedriver")
+            mock_service.assert_called_once_with("/opt/homebrew/bin/chromedriver", port=9515)
             self.assertEqual(service, mock_service_instance)
 
     @patch('packages.browser.chrome_manager.os.path.exists')
@@ -166,7 +166,7 @@ class TestChromeManager(unittest.TestCase):
             service = self.chrome_manager._get_chrome_service()
 
             mock_manager.install.assert_called_once()
-            mock_service.assert_called_once_with("/downloaded/chromedriver")
+            mock_service.assert_called_once_with("/downloaded/chromedriver", port=9515)
 
     @patch('packages.browser.chrome_manager.os.path.exists')
     @patch('packages.browser.chrome_manager.ChromeDriverManager')

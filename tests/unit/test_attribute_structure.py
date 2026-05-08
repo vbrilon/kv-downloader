@@ -8,6 +8,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -15,6 +17,7 @@ sys.path.insert(0, str(project_root))
 from karaoke_automator import KaraokeVersionAutomator
 
 
+@pytest.mark.live
 class TestAttributeStructure(unittest.TestCase):
     """Test that critical attributes and methods exist with correct names"""
     
