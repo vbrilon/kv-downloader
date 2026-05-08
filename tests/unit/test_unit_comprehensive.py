@@ -351,20 +351,18 @@ class TestDownloadFunctionality(unittest.TestCase):
                 "arguments[0].click();", mock_download_button
             )
 
-    def test_download_with_click_interception(self):
-        """Download button uses JS-only click, so native interception is never seen."""
+    def test_download_skips_native_click_path(self):
+        """Download button uses JS-only click; native element.click() is never invoked."""
         song_url = "https://example.com/song"
         track_name = "test_track"
 
-        # Mock download button. Even if the native click would be intercepted, the
-        # download path skips the native click entirely and goes straight to JS,
-        # so click.side_effect must never fire.
+        # Mock download button. The download path skips the native click entirely
+        # and goes straight to JS, so element.click() must never be called.
         mock_download_button = Mock()
         mock_download_button.is_displayed.return_value = True
         mock_download_button.is_enabled.return_value = True
         mock_download_button.text = "Download\nMP3"
         mock_download_button.get_attribute.return_value = "mixer.getMix();"
-        mock_download_button.click.side_effect = Exception("element click intercepted")
 
         self.mock_driver.find_element.return_value = mock_download_button
         self.mock_driver.window_handles = ['window1']  # Mock window handles

@@ -401,10 +401,7 @@ def test_js_click_with_scroll_skips_native_click(mocker):
     js_click_with_scroll(driver, element, "download button")
 
     element.click.assert_not_called()
-    # First execute_script call is scrollIntoView, second is the click
-    assert driver.execute_script.call_count == 2
-    click_call = driver.execute_script.call_args_list[1]
-    assert "arguments[0].click()" in click_call[0][0]
+    driver.execute_script.assert_any_call("arguments[0].click();", element)
 
 
 if __name__ == "__main__":

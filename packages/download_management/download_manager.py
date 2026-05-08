@@ -178,7 +178,8 @@ class DownloadManager:
         
         # Scroll to download button and click
         logging.info("Clicking download button...")
-        js_click_with_scroll(self.driver, download_button, "download button")
+        if not js_click_with_scroll(self.driver, download_button, "download button"):
+            raise Exception("DOWNLOAD_BUTTON_CLICK_FAILED")
         
         # Wait for any immediate UI response or popup to appear
         try:
