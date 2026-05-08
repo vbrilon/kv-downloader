@@ -158,65 +158,50 @@ class DownloadManager:
         return download_button
 
     def _execute_download_click(self, download_button):
-        """Execute the download button click and handle any popups or windows
-        
-        Args:
-            download_button: The WebElement representing the download button
-            
-        Returns:
-            bool: True if download click was successful, False otherwise
+        """Click the download button, then wait for the readiness modal to populate.
+
+        Verified 2026-05-08 on the live site: clicking `a.custom__song-download`
+        fires `mixer.getMix();return false;` which triggers ~14s of server-side
+        mix generation. When generation completes, the modal's __overlay sibling
+        gets the `is-open` class and the modal__content is populated.
+
+        We wait for that activation signal directly. Replaces the previous code
+        that polled `len(driver.window_handles)` and `page_source.lower()` for
+        text like "generating"/"preparing" — both with full timeouts that always
+        expired since (a) no new window opens on this site, (b) page_source is
+        an expensive full-DOM serialization.
         """
-        # Get button details for logging
+        from ..configuration.selectors import DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR
+
         button_text = download_button.text.strip()
         button_onclick = download_button.get_attribute('onclick') or ''
-        
         logging.info(f"Download button text: '{button_text}'")
         if button_onclick:
             logging.info(f"Download onclick: {button_onclick[:50]}...")
-        
-        # Scroll to download button and click
+
         logging.info("Clicking download button...")
         if not js_click_with_scroll(self.driver, download_button, "download button"):
             raise Exception("DOWNLOAD_BUTTON_CLICK_FAILED")
-        
-        # Wait for any immediate UI response or popup to appear
+
+        # Server mix-generation runs ~14s typical; allow generous timeout.
+        # When it completes, .modal__overlay.is-open is the deterministic signal.
         try:
-            # Wait briefly for any popups, new windows, or page changes
-            WebDriverWait(self.driver, WEBDRIVER_BRIEF_TIMEOUT).until(
-                lambda driver: len(driver.window_handles) > 1 or
-                               driver.current_url != self.driver.current_url
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR)
+                )
             )
+            logging.debug("✅ Download modal overlay opened")
         except TimeoutException:
-            pass  # No immediate response detected
-        
-        # Check if any popup or new window appeared
-        original_window_count = len(self.driver.window_handles)
-        logging.debug(f"Windows before download: {original_window_count}")
-        
-        # Wait for download initialization to complete
-        try:
-            # Wait for window changes or download-related indicators
-            WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
-                lambda driver: len(driver.window_handles) != original_window_count or
-                               "generating" in driver.page_source.lower() or
-                               "preparing" in driver.page_source.lower()
+            logging.warning(
+                "⚠️ Download modal overlay did not open within 30s — "
+                "proceeding to file-system monitoring anyway"
             )
-        except TimeoutException:
-            pass  # Continue with download monitoring
-        current_window_count = len(self.driver.window_handles)
-        logging.debug(f"Windows after download: {current_window_count}")
-        
-        if current_window_count > original_window_count:
-            logging.info(f"🪟 New window/popup detected ({current_window_count} vs {original_window_count})")
-            popup_handled = self._handle_download_popup()
-            if popup_handled:
-                logging.info("✅ Download popup handled successfully")
-            else:
-                logging.warning("⚠️ Download popup handling had issues")
-        
-        # Check for download popup elements in current window (non-window popups)
-        self._check_and_handle_inline_popups()
-        
+
+        # Note: we deliberately do NOT close the modal here. The next phase
+        # (`_wait_for_download_readiness` in `_monitor_download_progress`) needs
+        # to read the readiness text from the populated modal. Closing first was
+        # the bug that made the previous code fall back to page_source polling.
         return True
 
     @profile_timing("download_current_mix", "download_management", "method")
@@ -496,138 +481,58 @@ class DownloadManager:
     
     @profile_timing("_wait_for_download_readiness", "download_management", "method")
     def _wait_for_download_readiness(self, track_name, max_wait=60):
-        """Wait for DOM indication that download is ready using popup text monitoring
-        
-        Args:
-            track_name (str): Name of track being downloaded (for logging)
-            max_wait (int): Maximum time to wait in seconds (default: 60s)
-            
-        Returns:
-            bool: True if download readiness detected, False if timeout
+        """Wait for the readiness text to appear inside the populated modal.
+
+        Reads modal element text only — does NOT read page_source. The earlier
+        version polled the entire DOM serialization on every tick across all
+        windows; this version waits for the modal__overlay.is-open class
+        (verified 2026-05-08 to be the deterministic activation signal) and
+        then reads modal__content text.
+
+        Returns True if readiness detected, False on timeout.
         """
-        logging.info(f"🔍 Monitoring DOM for download readiness signal for {track_name}")
-        
-        # Track time waited during this DOM monitoring
-        waited = 0
-        check_interval = 1  # Check every second for responsive detection
-        
-        # Primary pattern to look for - the exact text that triggers auto-download
-        primary_readiness_pattern = "you can also click on the link below to manually begin your download:"
-        
-        # Fallback patterns for download readiness
-        fallback_readiness_patterns = [
+        from ..configuration.selectors import (
+            DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR,
+            DOWNLOAD_MODAL_CONTENT_SELECTOR,
+        )
+
+        primary_pattern = "you can also click on the link below to manually begin your download:"
+        fallback_patterns = (
             "your download will begin in a moment",
             "download will begin",
-            "download is ready", 
+            "download is ready",
             "click here to download",
-            "download now",
-            "download starting"
-        ]
-        
-        # Patterns indicating we're still waiting/generating
-        generation_patterns = [
-            "please wait",
-            "generating",
-            "preparing",
-            "creating your custom",
-            "processing"
-        ]
-        
-        while waited < max_wait:
+            "download starting",
+        )
+
+        def readiness_in_modal(_driver):
             try:
-                # Check all windows for popup content
-                current_windows = self.driver.window_handles
-                main_window = current_windows[0]
-                
-                # Check popup windows first (most likely location)
-                for window in current_windows[1:]:  # Skip main window initially
-                    try:
-                        self.driver.switch_to.window(window)
-                        page_text = self.driver.page_source.lower()
-                        
-                        # Check for primary download ready pattern first
-                        if primary_readiness_pattern in page_text:
-                            logging.info(f"🎉 Download readiness detected in popup: PRIMARY PATTERN for {track_name}")
-                            self.driver.switch_to.window(main_window)  # Return to main
-                            return True
-                        
-                        # Check fallback patterns
-                        for pattern in fallback_readiness_patterns:
-                            if pattern in page_text:
-                                logging.info(f"🎉 Download readiness detected in popup: '{pattern}' for {track_name}")
-                                self.driver.switch_to.window(main_window)  # Return to main
-                                return True
-                        
-                        # Log if we're still seeing generation patterns
-                        for pattern in generation_patterns:
-                            if pattern in page_text:
-                                if waited % 5 == 0:  # Log every 5 seconds
-                                    logging.info(f"⏳ Still generating (popup): '{pattern}' for {track_name} (waited {waited}s)")
-                                break
-                                
-                    except Exception as e:
-                        logging.debug(f"Error checking popup window for download readiness: {e}")
-                        continue
-                
-                # Also check main window for inline popups/modals
-                try:
-                    self.driver.switch_to.window(main_window)
-                    page_text = self.driver.page_source.lower()
-                    
-                    # Check for primary download ready pattern first
-                    if primary_readiness_pattern in page_text:
-                        logging.info(f"🎉 Download readiness detected in main window: PRIMARY PATTERN for {track_name}")
-                        return True
-                    
-                    # Check fallback patterns in main window
-                    for pattern in fallback_readiness_patterns:
-                        if pattern in page_text:
-                            logging.info(f"🎉 Download readiness detected in main window: '{pattern}' for {track_name}")
-                            return True
-                    
-                    # Check for modal/popup elements with readiness text
-                    modal_selectors = [".modal", ".popup", ".dialog", ".overlay", "[role='dialog']"]
-                    for selector in modal_selectors:
-                        try:
-                            modals = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                            for modal in modals:
-                                if modal.is_displayed():
-                                    modal_text = modal.text.lower()
-                                    
-                                    # Check primary pattern first
-                                    if primary_readiness_pattern in modal_text:
-                                        logging.info(f"🎉 Download readiness detected in modal: PRIMARY PATTERN for {track_name}")
-                                        return True
-                                    
-                                    # Check fallback patterns
-                                    for pattern in fallback_readiness_patterns:
-                                        if pattern in modal_text:
-                                            logging.info(f"🎉 Download readiness detected in modal: '{pattern}' for {track_name}")
-                                            return True
-                        except Exception:
-                            continue
-                            
-                except Exception as e:
-                    logging.debug(f"Error checking main window for download readiness: {e}")
-                
-                # Wait before next check
-                self._wait_for_check_interval(check_interval)
-                waited += check_interval
-                
-            except Exception as e:
-                logging.debug(f"Error during download readiness monitoring: {e}")
-                self._wait_for_check_interval(check_interval)
-                waited += check_interval
-        
-        logging.warning(f"⚠️ Download readiness monitoring timed out after {max_wait}s for {track_name}")
-        
-        # Ensure we're back on main window
+                # Step 1: is the modal active at all?
+                overlays = _driver.find_elements(
+                    By.CSS_SELECTOR, DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR
+                )
+                if not overlays:
+                    return False
+                # Step 2: read the populated content's text
+                contents = _driver.find_elements(By.CSS_SELECTOR, DOWNLOAD_MODAL_CONTENT_SELECTOR)
+                for c in contents:
+                    text = (c.text or "").lower()
+                    if primary_pattern in text:
+                        return "primary"
+                    for pat in fallback_patterns:
+                        if pat in text:
+                            return pat
+            except Exception:
+                pass
+            return False
+
         try:
-            self.driver.switch_to.window(self.driver.window_handles[0])
-        except:
-            pass
-            
-        return False
+            matched = WebDriverWait(self.driver, max_wait, poll_frequency=0.5).until(readiness_in_modal)
+            logging.info(f"🎉 Download readiness ({matched}) detected for {track_name}")
+            return True
+        except TimeoutException:
+            logging.warning(f"⚠️ Download readiness not detected within {max_wait}s for {track_name}")
+            return False
     
     def _monitor_download_progress(self, context, track_index):
         """Main monitoring loop. Scan-then-sleep so an already-present file is
@@ -635,6 +540,10 @@ class DownloadManager:
         download_ready = self._wait_for_download_readiness(context['track_name'])
         if download_ready:
             logging.info(f"✅ Download ready signal detected for {context['track_name']}")
+            # Now (and only now) close the modal — we've already extracted
+            # what we needed. This was the previous code's bug: closing first
+            # forced page_source polling for the readiness text.
+            self._check_and_handle_inline_popups()
         else:
             logging.warning(f"⚠️ Download readiness not detected for {context['track_name']}, falling back")
             self._wait_for_check_interval(3)
