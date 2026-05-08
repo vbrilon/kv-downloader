@@ -17,11 +17,22 @@ from ..configuration.selectors import (
     SOLO_BUTTON_SELECTORS,
     TRACK_CAPTION_SELECTOR,
 )
-from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
-                                    WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT, 
-                                    TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES, 
+from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT,
+                                    WEBDRIVER_BRIEF_TIMEOUT, WEBDRIVER_MICRO_TIMEOUT,
+                                    TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES,
                                     SOLO_ACTIVATION_MAX_WAIT, SOLO_CHECK_INTERVAL,
                                     SOLO_ACTIVATION_DELAY_SIMPLE, SOLO_ACTIVATION_DELAY_COMPLEX)
+
+
+# Exact CSS class tokens that signal an active solo button. Compared as
+# whole tokens against the split class list — never as substrings, since
+# "active" appears inside "inactive" and "on" appears inside "button"/"icon".
+ACTIVE_SOLO_CLASS_TOKENS = frozenset({
+    "is-active",
+    "active",
+    "selected",
+    "track__solo--active",
+})
 
 
 class TrackManager:
@@ -332,47 +343,39 @@ class TrackManager:
             bool: True if button is in active state
         """
         try:
-            # Method 1: CSS class detection (existing approach)
-            button_classes = (solo_button.get_attribute('class') or '').lower()
-            class_active = any(state in button_classes for state in ['is-active', 'active', 'selected', 'on'])
-            
+            # Method 1: CSS class detection by exact token match.
+            # `in` against the raw class string would treat "active" as a
+            # substring of "inactive" and "on" as a substring of "button"/"icon",
+            # producing false positives for every inactive solo button.
+            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
+            class_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
+
             # Method 2: ARIA attribute detection
             aria_pressed = solo_button.get_attribute('aria-pressed')
             aria_active = aria_pressed == 'true' if aria_pressed else False
-            
+
             # Method 3: Data attribute detection
             data_state = (solo_button.get_attribute('data-state') or '').lower()
-            data_active = data_state in ['active', 'on', 'selected']
-            
-            # Method 4: Visual state detection (background color, border changes)
-            try:
-                button_style = solo_button.get_attribute('style') or ''
-                visual_indicators = ['background-color', 'border-color', 'color']
-                visual_active = any(indicator in button_style.lower() for indicator in visual_indicators)
-            except:
-                visual_active = False
-            
-            # Combined detection result
+            data_active = data_state in ('active', 'on', 'selected')
+
             is_active = class_active or aria_active or data_active
-            
+
             # Enhanced logging for debugging click track issues
             if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug(f"Solo button state detection:")
-                logging.debug(f"  Classes: '{button_classes}' -> Active: {class_active}")
+                logging.debug("Solo button state detection:")
+                logging.debug(f"  Classes: {sorted(class_tokens)} -> Active: {class_active}")
                 logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
                 logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
-                logging.debug(f"  Visual indicators: {visual_active}")
                 logging.debug(f"  Final result: {is_active}")
-            
+
             return is_active
-            
+
         except Exception as e:
             logging.debug(f"Error in enhanced solo button detection: {e}")
-            # Fallback to simple class detection
             try:
-                button_classes = (solo_button.get_attribute('class') or '').lower()
-                return any(state in button_classes for state in ['is-active', 'active', 'selected'])
-            except:
+                fallback_tokens = set((solo_button.get_attribute('class') or '').lower().split())
+                return bool(fallback_tokens & ACTIVE_SOLO_CLASS_TOKENS)
+            except Exception:
                 return False
     
     def _check_solo_activation_status(self, solo_button, track_name, waited):
@@ -535,18 +538,13 @@ class TrackManager:
                 
             track_element = track_elements[0]
             solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-            button_classes = solo_button.get_attribute('class') or ''
-            
-            # Check if this button has active state classes
-            is_active = any(active_class in button_classes.lower() 
-                          for active_class in ['is-active', 'active', 'selected'])
-            
-            return is_active
-            
-        except Exception as e:
+            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
+            return bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
+
+        except Exception:
             # Return False on any error - don't crash the polling loop
             return False
-    
+
     def _verify_mixer_state_configuration(self):
         """Verify mixer state configuration matches expected solo state"""
         try:
@@ -655,12 +653,9 @@ class TrackManager:
                 
             track_element = track_elements[0]
             solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-            button_classes = solo_button.get_attribute('class') or ''
-            
-            # Check if this button is active
-            is_active = any(active_class in button_classes.lower() 
-                          for active_class in ['is-active', 'active', 'selected'])
-            
+            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
+            is_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
+
             if is_active:
                 logging.debug(f"✅ Solo button is active for track {expected_solo_index}")
                 return True

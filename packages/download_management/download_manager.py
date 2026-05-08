@@ -13,6 +13,7 @@ from selenium.common.exceptions import (
 )
 from ..utils import safe_click_with_scroll, profile_timing, profile_selenium
 from ..configuration.selectors import DOWNLOAD_BUTTON_SELECTORS
+from ..track_management.track_manager import ACTIVE_SOLO_CLASS_TOKENS
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
@@ -1213,9 +1214,9 @@ class DownloadManager:
                         # Get parent track element to find data-index
                         parent_track = button.find_element(By.XPATH, "./ancestor::*[contains(@class, 'track')]")
                         button_track_index = parent_track.get_attribute('data-index')
-                        button_classes = button.get_attribute('class') or ''
-                        
-                        if 'is-active' in button_classes.lower() or 'active' in button_classes.lower():
+                        class_tokens = set((button.get_attribute('class') or '').lower().split())
+
+                        if class_tokens & ACTIVE_SOLO_CLASS_TOKENS:
                             active_count += 1
                             if button_track_index != str(track_index):
                                 other_active_tracks.append(button_track_index)
@@ -1294,45 +1295,35 @@ class DownloadManager:
             bool: True if button is in active state
         """
         try:
-            # Method 1: CSS class detection (existing approach + expanded patterns)
-            button_classes = (solo_button.get_attribute('class') or '').lower()
-            class_active = any(state in button_classes for state in ['is-active', 'active', 'selected', 'on'])
-            
+            # Method 1: CSS class detection by exact token match (see
+            # track_manager.ACTIVE_SOLO_CLASS_TOKENS for why substring matching
+            # is wrong — "active" lives inside "inactive").
+            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
+            class_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
+
             # Method 2: ARIA attribute detection
             aria_pressed = solo_button.get_attribute('aria-pressed')
             aria_active = aria_pressed == 'true' if aria_pressed else False
-            
+
             # Method 3: Data attribute detection
             data_state = (solo_button.get_attribute('data-state') or '').lower()
-            data_active = data_state in ['active', 'on', 'selected']
-            
-            # Method 4: Visual state detection (background color, border changes)
-            try:
-                button_style = solo_button.get_attribute('style') or ''
-                visual_indicators = ['background-color', 'border-color', 'color']
-                visual_active = any(indicator in button_style.lower() for indicator in visual_indicators)
-            except:
-                visual_active = False
-            
-            # Combined detection result
+            data_active = data_state in ('active', 'on', 'selected')
+
             is_active = class_active or aria_active or data_active
-            
-            # Enhanced logging for debugging download verification issues
+
             if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug(f"Download verification - Solo button state detection:")
-                logging.debug(f"  Classes: '{button_classes}' -> Active: {class_active}")
+                logging.debug("Download verification - Solo button state detection:")
+                logging.debug(f"  Classes: {sorted(class_tokens)} -> Active: {class_active}")
                 logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
                 logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
-                logging.debug(f"  Visual indicators: {visual_active}")
                 logging.debug(f"  Final result: {is_active}")
-            
+
             return is_active
-            
+
         except Exception as e:
             logging.debug(f"Error in enhanced solo button detection (download verification): {e}")
-            # Fallback to simple class detection
             try:
-                button_classes = (solo_button.get_attribute('class') or '').lower()
-                return any(state in button_classes for state in ['is-active', 'active', 'selected'])
-            except:
+                fallback_tokens = set((solo_button.get_attribute('class') or '').lower().split())
+                return bool(fallback_tokens & ACTIVE_SOLO_CLASS_TOKENS)
+            except Exception:
                 return False
