@@ -1088,8 +1088,13 @@ class DownloadManager:
                     # Check track name matches
                     try:
                         caption_element = track_element.find_element(By.CSS_SELECTOR, ".track__caption")
-                        actual_track_name = caption_element.text.strip()
-                        
+                        # ' '.join(...split()) collapses any whitespace (incl. embedded
+                        # newlines + leading spaces — e.g. "Intro count\n      Click")
+                        # to single spaces. Must match the same normalization
+                        # discover_tracks applies, otherwise the track name passed
+                        # in (already normalized) won't match the freshly-read DOM text.
+                        actual_track_name = ' '.join(caption_element.text.split())
+
                         # Normalize names for comparison
                         normalized_expected = track_name.lower().replace('_', ' ').replace('-', ' ')
                         normalized_actual = actual_track_name.lower().replace('_', ' ').replace('-', ' ')
