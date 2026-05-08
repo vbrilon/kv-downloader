@@ -1,8 +1,59 @@
 # Performance & Cleanup Implementation Plan
 
+> **STATUS (2026-05-08): IMPLEMENTED & MERGED.** See "Implementation Status" section below for what shipped and what's still outstanding. The task-by-task content below is preserved as historical record but should not be re-executed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Cut per-track wall-clock time from ~22–25s to ~12–15s by removing redundant verification, replacing blind waits with positive DOM-based waits, and fixing one silent bug — without weakening the validated solo→audio-server-sync mechanism that prior incidents have hardened.
+
+---
+
+## Implementation Status (2026-05-08)
+
+### Final result
+
+| Metric | Pre-implementation (`main`) | Post-implementation | Delta |
+|---|---|---|---|
+| Mean per-track | 27.6s | **20.3s** | **−7.3s, −26.5%** |
+| 15-track song duration | ~7m 30s | ~5m 5s | −2m 25s |
+
+Single-track-best: Click track 43.3s → 17.2s (**−26.1s**). Validated against ELO "Don't Bring Me Down" with `--profile --max-tracks 5`. Stats archived in `docs/baselines/`.
+
+### Phases shipped (all merged to `main`)
+
+| Phase | Outcome |
+|---|---|
+| 0 — Baselines | ✅ Captured pre/post stats |
+| 1 — Quick wins (5 tasks: js click, drop dup verify, scan-then-sleep, dead method/import) | ✅ |
+| 2 — Live modal flow inspection | ✅ Confirmed `.modal__overlay.is-open` is the activation signal |
+| 3 — Modal flow rework (positive modal wait, eliminate page_source polling, reorder modal close) | ✅ |
+| 4 — Verification collapse (Phase 3 audio mix, mixer state, page_source debug) | ✅ |
+| 5 — `ensure_only_track_active` type-comparison fix + drop redundant solo click | ✅ |
+| 6.1 — Consolidate `_is_solo_button_active*` into `packages/utils/solo_state` | ✅ |
+| 6.2 — Replace misleading `WebDriverWait(...).until(lambda d: True)` no-ops | ✅ |
+| 6.3 — Audit `tools/inspection/` and `archive/` | ✅ Audit done; stale scripts + `archive/` deleted |
+
+### Phases skipped or closed without action
+
+| Phase | Reason |
+|---|---|
+| 7.1 — Per-track folder clearing investigation | Hypothesized bug **does not exist** — `cleanup_existing=False` propagates correctly. Closed. |
+| 7.2 — Mystery 2s solo→download gap | Hypothesized gap **does not exist** — measured at 0ms. Closed. |
+| 8.1 — Direct `mixer.getMix()` API call | Impossible: function returns void; download URL only delivered via modal DOM. Closed. |
+| 8.2 — Speculative pre-soloing of next track | Deferred — risky (shared solo state, could corrupt in-flight download). Not worth it given current 20.3s/track. |
+| 8.4 — Wire `--profile` into CI | Deferred — the tool runs manually; CI would be overkill. |
+
+### Outstanding (NOT implemented; worth your consideration later)
+
+These came up during implementation but were not pursued because each requires a personal/environment decision:
+
+1. **Phase 8.3 — Move `DOWNLOAD_FOLDER` out of Dropbox.** Current `.env` points at `/Users/victorbrilon/Library/CloudStorage/Dropbox/New_Song_Tracks`. Every file create/delete/rename triggers a Dropbox sync event that can serialize on the cloud-storage daemon, adding tens-to-hundreds of ms to filesystem ops in the hot path. Recommendation: try changing `DOWNLOAD_FOLDER` to a local scratch path, run `python karaoke_automator.py --profile --max-tracks 5`, compare to the 20.3s baseline. If meaningfully faster, make it permanent and `rsync -a <local> <Dropbox>` after each session. **Effort: one .env line + 5-track benchmark.** See `docs/spikes/2026-05-08-phase-8-research.md`.
+
+2. **Site-selectors drift refresh.** Phase 2 live inspection (2026-05-08) found the karaoke-version.com mixer DOM has shifted: the live site uses `.custom__mixer-track-line` (with `data-index`) for tracks and `a.custom__song-download` for the download link. The codebase's primary selectors (`.track`, `a.download`) no longer match; production succeeds because of fallback selectors (`a[class*='download']` matches; `.track[data-index]` is searched but production-side Selenium queries through some other path that still works). Worth a future selectors refresh in `packages/configuration/selectors.py` to make the primary selectors accurate again. **Effort: ~30min, low risk** — replace primaries, keep fallbacks for safety. Also: `/login` returns 404; the actual form is at `/my/login.html`. The `LOGIN_URL` env default in `packages/configuration/config.py` should probably be updated. See `docs/site-flow/2026-05-08-download-modal-flow.md`.
+
+3. **`tools/inspection/` partial-cleanup follow-up.** The 2026-05-08 audit deleted 7 broken/stale scripts and the `archive/` directory. Four scripts remain (`debug_track_discovery.py`, `inspect_key_controls.py`, `simple_page_test.py`, `verify_solo_button_detection.py`). They compile but haven't been used recently. If you don't reach for them in the next month, consider deleting too. See `docs/audits/2026-05-08-tools-inspection-audit.md`.
+
+---
 
 **Architecture:** Each phase is an independent, shippable change. Capture before/after numbers via the existing `--profile` infrastructure on every task; refuse to merge a task whose profiler delta doesn't match the prediction. Phases are ordered by risk (lowest first) so we accumulate confidence as we go.
 

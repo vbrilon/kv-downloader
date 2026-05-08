@@ -181,3 +181,4 @@ chromedriver*
 session_data.pkl
 .cache/
 chrome_profile/
+.claude/
