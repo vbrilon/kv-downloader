@@ -385,21 +385,6 @@ class TrackManager:
             except Exception:
                 return False
     
-    def _check_solo_activation_status(self, solo_button, track_name, waited):
-        """Check and log solo activation status"""
-        try:
-            if self._is_solo_button_active(solo_button):
-                logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
-                return True
-            
-            if waited % 2 == 0:  # Log every 2 seconds
-                button_classes = solo_button.get_attribute('class') or ''
-                logging.debug(f"   Still waiting for solo activation... ({waited}s) - classes: '{button_classes}'")
-        except Exception as e:
-            logging.debug(f"Error checking solo status at {waited}s: {e}")
-        
-        return False
-    
     def _retry_solo_activation(self, solo_button, track_name, track_index=None):
         """Retry solo activation with aggressive clicking"""
         logging.info(f"🔄 Final retry attempt for {track_name}")
