@@ -632,58 +632,48 @@ class DownloadManager:
         return False
     
     def _monitor_download_progress(self, context, track_index):
-        """Main monitoring loop for download progress with intelligent optimization"""
-        # DOM-based optimization: Wait for download readiness popup instead of hardcoded delay
+        """Main monitoring loop. Scan-then-sleep so an already-present file is
+        detected on iteration 0 instead of after one full check_interval."""
         download_ready = self._wait_for_download_readiness(context['track_name'])
-        
         if download_ready:
-            logging.info(f"✅ Download ready signal detected, starting intelligent monitoring for {context['track_name']}")
+            logging.info(f"✅ Download ready signal detected for {context['track_name']}")
         else:
-            logging.warning(f"⚠️ Download readiness not detected within timeout, falling back to file monitoring for {context['track_name']}")
-            # Add minimal fallback wait
+            logging.warning(f"⚠️ Download readiness not detected for {context['track_name']}, falling back")
             self._wait_for_check_interval(3)
             context['waited'] += 3
-        
-        # Intelligent progress detection variables
+
         download_detected = False
         in_progress_detected = False
         adaptive_interval = context['check_interval']
-        
+
         while context['waited'] < context['max_wait']:
-            self._wait_for_check_interval(adaptive_interval)
-            context['waited'] += adaptive_interval
-            
-            # Check for in-progress downloads (.crdownload files) for intelligent timing
             in_progress_files = self._check_for_in_progress_downloads(context['song_path'])
             new_completed_files = self._check_for_new_downloads(context)
-            
-            # Intelligent progress detection logic
+
             if in_progress_files and not in_progress_detected:
                 in_progress_detected = True
                 download_detected = True
-                adaptive_interval = 2  # Faster polling when download is active
-                logging.info(f"🚀 Download in progress detected for {context['track_name']}, switching to fast polling (2s)")
+                adaptive_interval = 2
+                logging.info(f"🚀 Download in progress for {context['track_name']}, polling at 2s")
             elif in_progress_detected and not in_progress_files:
-                # Download was in progress but .crdownload files disappeared - likely completed
-                adaptive_interval = 1  # Very fast polling for completion detection
-                logging.info(f"⚡ Download completion imminent for {context['track_name']}, switching to rapid polling (1s)")
-            
+                adaptive_interval = 1
+                logging.info(f"⚡ Download completion imminent for {context['track_name']}, polling at 1s")
+
             if new_completed_files:
                 self._handle_completed_download(new_completed_files, context, track_index)
-                break
-            
-            # Adaptive logging based on detection state
+                return
+
             if download_detected:
-                # More frequent updates when we know download is active
-                if context['waited'] % 5 == 0:  # Every 5 seconds when active
+                if context['waited'] % 5 == 0:
                     progress_status = "in progress" if in_progress_files else "completing"
                     logging.info(f"   📊 Download {progress_status} for {context['track_name']} (waited {context['waited']}s)")
             else:
-                # Standard progress updates when waiting for server generation
                 self._update_progress_if_needed(context, track_index)
-        
-        if context['waited'] >= context['max_wait']:
-            self._handle_timeout(context['track_name'], track_index, context['song_name'])
+
+            self._wait_for_check_interval(adaptive_interval)
+            context['waited'] += adaptive_interval
+
+        self._handle_timeout(context['track_name'], track_index, context['song_name'])
     
     def _wait_for_check_interval(self, check_interval):
         """Wait for the specified check interval"""

@@ -62,5 +62,71 @@ def test_completion_detection():
         print(f"Cleanup result: {result.name}")
         print(f"File exists after cleanup: {result.exists()}")
 
+
+def test_monitor_progress_scans_before_first_sleep(mocker):
+    """When the file is already present, completion must be detected before any
+    interval sleep on iteration 0. Verifies via call ordering, not wall time
+    (mocked sleeps don't actually wait)."""
+    from packages.download_management.download_manager import DownloadManager
+
+    call_order = []
+
+    def _record(name, value):
+        call_order.append(name)
+        return value
+
+    dm = mocker.Mock(spec=DownloadManager)
+    dm._wait_for_download_readiness = mocker.Mock(return_value=True)
+    dm._wait_for_check_interval = mocker.Mock(side_effect=lambda i: call_order.append('sleep'))
+    dm._check_for_in_progress_downloads = mocker.Mock(side_effect=lambda p: _record('check_in_progress', []))
+    dm._check_for_new_downloads = mocker.Mock(side_effect=lambda c: _record('check_completed', ["fake_completed_file"]))
+    dm._handle_completed_download = mocker.Mock(side_effect=lambda *a, **k: call_order.append('handle_completed'))
+    dm._update_progress_if_needed = mocker.Mock()
+    dm._handle_timeout = mocker.Mock(side_effect=lambda *a: call_order.append('timeout'))
+
+    context = {
+        'track_name': 'Bass', 'song_name': 'Test', 'song_path': mocker.Mock(),
+        'max_wait': 90, 'check_interval': 3, 'waited': 0, 'initial_files': set()
+    }
+
+    DownloadManager._monitor_download_progress(dm, context, track_index=3)
+
+    # The first scan must complete before any sleep on the fast path.
+    # Old (broken) order would be: ['sleep', 'check_in_progress', 'check_completed', 'handle_completed']
+    # New (fixed) order is:        ['check_in_progress', 'check_completed', 'handle_completed']
+    assert 'handle_completed' in call_order, "Should have handled the completed file"
+    handle_idx = call_order.index('handle_completed')
+    sleeps_before_handle = [c for c in call_order[:handle_idx] if c == 'sleep']
+    assert sleeps_before_handle == [], (
+        f"Expected zero interval sleeps before handling the already-present file, "
+        f"got: {call_order}"
+    )
+    dm._handle_timeout.assert_not_called()
+
+
+def test_monitor_progress_times_out_when_no_file_appears(mocker):
+    """When max_wait elapses without a completed file, _handle_timeout must fire
+    exactly once with the right args."""
+    from packages.download_management.download_manager import DownloadManager
+
+    dm = mocker.Mock(spec=DownloadManager)
+    dm._wait_for_download_readiness = mocker.Mock(return_value=True)
+    dm._wait_for_check_interval = mocker.Mock()
+    dm._check_for_in_progress_downloads = mocker.Mock(return_value=[])
+    dm._check_for_new_downloads = mocker.Mock(return_value=[])  # never finds a file
+    dm._handle_completed_download = mocker.Mock()
+    dm._update_progress_if_needed = mocker.Mock()
+    dm._handle_timeout = mocker.Mock()
+
+    context = {
+        'track_name': 'Bass', 'song_name': 'Test', 'song_path': mocker.Mock(),
+        'max_wait': 10, 'check_interval': 3, 'waited': 0, 'initial_files': set()
+    }
+
+    DownloadManager._monitor_download_progress(dm, context, track_index=3)
+
+    dm._handle_completed_download.assert_not_called()
+    dm._handle_timeout.assert_called_once_with('Bass', 3, 'Test')
+
 if __name__ == "__main__":
     test_completion_detection()
