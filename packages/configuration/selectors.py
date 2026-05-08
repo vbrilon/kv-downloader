@@ -21,10 +21,24 @@ LOGIN_STATUS_SELECTORS = [
 ]
 
 # Track/mixer selectors
-TRACK_ELEMENT_SELECTOR = ".track"
-
-# Track caption selector
-TRACK_CAPTION_SELECTOR = ".track__caption"
+#
+# karaoke-version.com renders the mixer in TWO different markup variants and
+# A/B-buckets each session into ONE of them (verified live 2026-05-08 — see
+# tools/inspection/inspect_selectors.py and docs/validation/). We must match
+# either variant so production survives an A/B flip:
+#
+#   Legacy bucket:  <div class="track" data-index="N"> ... .track__caption ...
+#   Modern bucket:  <div class="custom__mixer-track-line" data-index="N">
+#                       ... .custom__mixer-track-caption-name ...
+#
+# The comma-list is the union (CSS selectors-list grammar) — `find_elements`
+# returns matches against either side. Only one side ever populates a given
+# page; bucketing is per-session.
+#
+# Solo button stays on `button.track__solo` because the modern markup keeps
+# the legacy `track__solo` class as a compatibility alias on the new button.
+TRACK_ELEMENT_SELECTOR = ".track, .custom__mixer-track-line"
+TRACK_CAPTION_SELECTOR = ".track__caption, .custom__mixer-track-caption-name"
 
 # Solo button selectors within a track (primary → fallbacks)
 SOLO_BUTTON_SELECTORS = [

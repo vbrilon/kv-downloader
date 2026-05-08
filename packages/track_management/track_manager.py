@@ -26,6 +26,18 @@ from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_T
                                     SOLO_ACTIVATION_DELAY_SIMPLE, SOLO_ACTIVATION_DELAY_COMPLEX)
 
 
+def _build_indexed_track_selector(track_element_selector, track_index):
+    """Apply [data-index='N'] to every part of a comma-list selector.
+
+    TRACK_ELEMENT_SELECTOR is a comma-list (legacy + modern A/B variants); the
+    naive `f"{SEL}[data-index='X']"` only filters the LAST selector in the
+    list, leaving the others unfiltered. Splitting on comma and re-joining
+    applies the index filter to each variant.
+    """
+    parts = [s.strip() for s in track_element_selector.split(",")]
+    return ", ".join(f"{p}[data-index='{track_index}']" for p in parts)
+
+
 class TrackManager:
     """Handles track discovery, isolation, and mixer controls"""
     
@@ -222,7 +234,7 @@ class TrackManager:
     
     def _find_track_element(self, track_index):
         """Find and return the track element for the given index"""
-        track_selector = f"{TRACK_ELEMENT_SELECTOR}[data-index='{track_index}']"
+        track_selector = _build_indexed_track_selector(TRACK_ELEMENT_SELECTOR, track_index)
         logging.debug(f"Looking for track element with selector: {track_selector}")
         try:
             track_element = WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
