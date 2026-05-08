@@ -407,10 +407,6 @@ class TrackManager:
         """Perform multiple JavaScript clicks to ensure registration"""
         for i in range(SOLO_BUTTON_MAX_RETRIES):
             self.driver.execute_script("arguments[0].click();", solo_button)
-            try:
-                WebDriverWait(self.driver, 1).until(lambda driver: True)
-            except TimeoutException:
-                pass
     
     def _wait_for_retry_activation(self, solo_button):
         """Wait for solo button activation after retry"""
@@ -816,21 +812,11 @@ class TrackManager:
                         raise e
                 
                 # Brief wait between clicks for UI responsiveness
-                try:
-                    WebDriverWait(self.driver, 0.5).until(
-                        lambda driver: True  # Minimal delay replacement
-                    )
-                except TimeoutException:
-                    pass
+                time.sleep(0.1)
                 logging.debug(f"   Step {step + 1}/{steps_needed}")
             
             # Wait for UI to update the key display
-            try:
-                WebDriverWait(self.driver, 2).until(
-                    lambda driver: True  # Allow UI update time
-                )
-            except TimeoutException:
-                pass
+            time.sleep(0.5)
             try:
                 final_value_element = pitch_container.find_element(By.XPATH, ".//div[text()!='' and not(@class) and not(contains(@class, 'pitch__label'))]")
                 final_key = int(final_value_element.text.strip())
