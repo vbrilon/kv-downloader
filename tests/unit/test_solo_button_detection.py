@@ -167,5 +167,118 @@ def test_ensure_only_track_active_finds_target_with_string_index(mocker):
     assert args[1] is btn3, f"Expected target button (btn3) to be clicked, got {args[1]}"
 
 
+# ---------------------------------------------------------------------------
+# Click-track 12s timeout fix (2026-05-08)
+# ---------------------------------------------------------------------------
+# Root cause (verified via Chrome DevTools trace on 2026-05-08):
+# `ensure_only_track_active` already activates the target solo button. Then
+# `solo_track` reads `is_solo_button_active(solo_button)` — which can return
+# False as a transient race on track 0 of a fresh page — and clicks AGAIN.
+# That second click TOGGLES THE BUTTON OFF. Polling for active fails for 10–12s.
+# The retry path's `_perform_aggressive_clicks` fires 3 clicks (ON-OFF-ON,
+# odd count) which lands the button back ON. The 12s SOLO_ACTIVATION_DELAY_CLICK
+# constant was just absorbing this self-inflicted toggle-off; the right fix is
+# to stop clicking redundantly in `solo_track`.
+#
+# After the fix:
+#   * `ensure_only_track_active` is the single source of activation clicks.
+#   * `solo_track` is verify-only — polls until active (or times out into retry).
+#   * The retry safety net (3 aggressive clicks at an inactive button → ACTIVE)
+#     stays for the rare case `ensure_only_track_active` never activated.
+#   * Click tracks fall through to the standard adaptive timeout.
+
+def test_solo_track_does_not_click_redundantly(mocker):
+    """solo_track must NOT click the solo button. ensure_only_track_active
+    already clicks it; a redundant click TOGGLES the button OFF (verified
+    on the live mixer 2026-05-08), which is what the 12s click-track timeout
+    was masking.
+
+    The retry path (`_perform_aggressive_clicks`) remains as the safety net
+    if `ensure_only_track_active` ever fails to activate.
+    """
+    from packages.track_management.track_manager import TrackManager
+
+    tm = mocker.Mock(spec=TrackManager)
+    tm.driver = mocker.Mock()
+    tm.driver.current_url = 'https://song-url'
+    tm.progress_tracker = None
+
+    track_element = mocker.Mock()
+    solo_button = mocker.Mock()
+    tm._navigate_to_song_if_needed = mocker.Mock()
+    tm._find_track_element = mocker.Mock(return_value=track_element)
+    tm._find_solo_button = mocker.Mock(return_value=solo_button)
+    tm._activate_solo_button_verify_only = mocker.Mock(return_value=True)
+
+    mock_js_click = mocker.patch('packages.track_management.track_manager.js_click_with_scroll', return_value=True)
+
+    # Whether is_solo_button_active reads True or False does not matter —
+    # solo_track must not click in either case. Cover both to lock that in.
+    for transient_state in (True, False):
+        mocker.patch(
+            'packages.track_management.track_manager.is_solo_button_active',
+            return_value=transient_state,
+        )
+        mock_js_click.reset_mock()
+
+        result = TrackManager.solo_track(tm, {'index': '0', 'name': 'Intro count Click'}, 'https://song-url')
+
+        assert result is True
+        mock_js_click.assert_not_called(), (
+            f"solo_track must not click (is_solo_button_active read {transient_state}); "
+            "ensure_only_track_active is the single source of activation clicks."
+        )
+
+    # safe_click was the original click helper here; it is no longer needed.
+    import packages.track_management.track_manager as tm_mod
+    assert not hasattr(tm_mod, 'safe_click'), (
+        "track_manager should no longer import safe_click; the redundant click "
+        "in solo_track was removed entirely."
+    )
+
+
+def test_get_track_type_timeout_uses_adaptive_for_click_tracks(mocker):
+    """Click tracks must use the standard adaptive timeout, not a hard-coded
+    12s constant. The 12s value masked the silent-native-click bug; removing
+    that mask is the whole point of this fix.
+    """
+    from packages.track_management.track_manager import TrackManager
+    from packages.configuration.config import (
+        SOLO_ACTIVATION_DELAY_SIMPLE,
+        SOLO_ACTIVATION_DELAY_COMPLEX,
+    )
+
+    tm = mocker.Mock(spec=TrackManager)
+    tm.track_complexity = "complex"
+    tm._detect_track_type = lambda name: "click"
+    tm._get_adaptive_timeout = lambda: SOLO_ACTIVATION_DELAY_COMPLEX
+
+    timeout = TrackManager._get_track_type_timeout(tm, "Intro count Click")
+
+    assert timeout == SOLO_ACTIVATION_DELAY_COMPLEX, (
+        f"Click tracks should use adaptive timeout ({SOLO_ACTIVATION_DELAY_COMPLEX}s), "
+        f"not the deleted 12s constant. Got {timeout}."
+    )
+
+    tm.track_complexity = "simple"
+    tm._get_adaptive_timeout = lambda: SOLO_ACTIVATION_DELAY_SIMPLE
+    timeout_simple = TrackManager._get_track_type_timeout(tm, "Intro count Click")
+    assert timeout_simple == SOLO_ACTIVATION_DELAY_SIMPLE
+
+
+def test_solo_activation_delay_click_constant_is_removed():
+    """The SOLO_ACTIVATION_DELAY_CLICK constant must be deleted from config.
+
+    Why: leaving it in place invites future "let's tune it" attempts that
+    re-introduce the click-specific path that the rest of the system
+    no longer needs.
+    """
+    from packages.configuration import config
+    assert not hasattr(config, 'SOLO_ACTIVATION_DELAY_CLICK'), (
+        "SOLO_ACTIVATION_DELAY_CLICK should be removed; click tracks now use "
+        "the standard adaptive timeout via _get_adaptive_timeout()."
+    )
+
+
 if __name__ == "__main__":
     unittest.main()

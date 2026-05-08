@@ -119,3 +119,12 @@ If it drops by >5s without any new "Solo button not active after Xs" warnings ac
 - Validation runs: ~1 hour wall-time but mostly idle
 
 Total: ~2 hours focused work, mostly waiting on Selenium runs.
+
+---
+
+## Follow-up todos
+
+- **Analyse the page selector situation.** Chrome MCP inspection on 2026-05-08 (interactive Chrome 146) shows `.track` matches 0 elements and `.track__caption` matches 0 elements on the live mixer — the redesigned DOM uses `custom__mixer-track-line[data-index]` and `custom__mixer-track-caption-name`. Yet `TRACK_ELEMENT_SELECTOR = ".track"` in `packages/configuration/selectors.py` is still wired through `discover_tracks` and `_find_track_element`, and production logs show 15 tracks discovered every run with no errors. Two possibilities to resolve:
+  1. Headless Chrome (production) and interactive Chrome (DevTools MCP) get different markup — possibly UA-gated or feature-flagged on the server. Worth confirming by running a one-shot Selenium snippet that prints `len(driver.find_elements(By.CSS_SELECTOR, ".track"))` in the same headless run.
+  2. The two paths are walking different DOMs (e.g. an iframe, a shadow root, or a pre-render that gets replaced). Possible but the page only has reCAPTCHA iframes per inspection.
+  Either way: the live mixer's live class names are the `custom__mixer-*` variants. The legacy `track__solo` class IS preserved as a compat alias on the button (`<button class="custom__mixer-track-solo-btn track__solo">`), which is why the solo-button-level selectors still work. If discovery is silently broken in headless and "succeeding" by some other means we don't yet understand, that's a latent fragility worth flushing out — and the new selectors should land in `selectors.py` so we stop relying on undocumented compat behavior.

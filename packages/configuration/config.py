@@ -24,9 +24,12 @@ SOLO_ACTIVATION_DELAY = 5.0   # seconds to wait after solo button activation for
 SOLO_ACTIVATION_DELAY_SIMPLE = 7.0   # seconds for simple arrangements (8 tracks or fewer) - optimized from 15.0s
 SOLO_ACTIVATION_DELAY_COMPLEX = 10.0  # seconds for complex arrangements (9+ tracks) - optimized from 21.0s
 
-# Track-type-specific timeout settings (Bug Fix: Click track isolation failures)
-SOLO_ACTIVATION_DELAY_CLICK = 12.0   # seconds for click tracks (extended timeout due to server processing differences)
-SOLO_ACTIVATION_DELAY_SPECIAL = 10.0  # seconds for bass/drums tracks (moderate extension for reliability)
+# Bass/drums need a slightly longer ceiling than the simple/complex defaults.
+# Click tracks used to have a separate 12s timeout; that masked a silent
+# native-click failure (see solo_track), not real server-side delay. Once the
+# click was switched to js_click_with_scroll, click tracks land within the
+# standard adaptive timeout like every other track, so the constant is gone.
+SOLO_ACTIVATION_DELAY_SPECIAL = 10.0
 
 # WebDriver Timeouts
 WEBDRIVER_DEFAULT_TIMEOUT = 10

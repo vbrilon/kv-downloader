@@ -12,7 +12,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
 )
-from ..utils import safe_click, js_click_with_scroll, profile_timing, profile_selenium, is_solo_button_active
+from ..utils import js_click_with_scroll, profile_timing, profile_selenium, is_solo_button_active
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
@@ -162,30 +162,14 @@ class TrackManager:
             return SOLO_ACTIVATION_DELAY_COMPLEX
     
     def _get_track_type_timeout(self, track_name):
-        """Get timeout based on track type for enhanced reliability
-        
-        Args:
-            track_name (str): Name of the track
-            
-        Returns:
-            float: Timeout value in seconds based on track type
-        """
+        """Get timeout based on track type for enhanced reliability."""
         track_type = self._detect_track_type(track_name)
-        
-        # Import track-specific timeouts (will be added to config.py)
-        from packages.configuration.config import (
-            SOLO_ACTIVATION_DELAY_CLICK, 
-            SOLO_ACTIVATION_DELAY_SPECIAL,
-            SOLO_ACTIVATION_DELAY
-        )
-        
-        if track_type == "click":
-            return SOLO_ACTIVATION_DELAY_CLICK  # Extended timeout for click tracks
-        elif track_type in ["bass", "drums"]:
-            return SOLO_ACTIVATION_DELAY_SPECIAL  # Special timeout for bass/drums
-        else:
-            # Use existing adaptive timeout for standard tracks
-            return self._get_adaptive_timeout()
+
+        from packages.configuration.config import SOLO_ACTIVATION_DELAY_SPECIAL
+
+        if track_type in ("bass", "drums"):
+            return SOLO_ACTIVATION_DELAY_SPECIAL
+        return self._get_adaptive_timeout()
     
     @profile_timing("solo_track", "track_management", "method")
     def solo_track(self, track_info, song_url):
@@ -208,11 +192,12 @@ class TrackManager:
             if not solo_button:
                 return False
 
-            # Fast path: ensure_only_track_active should have already activated.
-            # Only click if the button isn't active yet.
-            if not is_solo_button_active(solo_button):
-                safe_click(self.driver, solo_button, f"solo button for {track_name}")
-
+            # ensure_only_track_active is the single source of activation
+            # clicks. We MUST NOT click here: the button is already active and
+            # a redundant click toggles it OFF (verified live 2026-05-08), which
+            # is what the old 12s click-track timeout was masking. If anything
+            # is wrong, _retry_solo_activation's 3-click hammer (odd count =>
+            # ends ON whatever the start state) is the safety net.
             return self._activate_solo_button_verify_only(solo_button, track_name, track_index)
 
         except (InvalidSessionIdException, NoSuchWindowException):

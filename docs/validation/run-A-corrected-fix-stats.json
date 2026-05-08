@@ -1,0 +1,179 @@
+{
+  "session_metadata": {
+    "start_time": 1778235063.859513,
+    "end_time": 1778235081.4534552,
+    "duration": 17.593942165374756,
+    "total_tracks_attempted": 15,
+    "total_tracks_completed": 15,
+    "total_tracks_failed": 0,
+    "success_rate": 100.0,
+    "total_download_time": 4.918564081192017
+  },
+  "songs": [
+    {
+      "name": "Don't Bring Me Down",
+      "url": "https://www.karaoke-version.com/custombackingtrack/electric-light-orchestra/don-t-bring-me-down.html",
+      "start_time": 1778235068.590077,
+      "end_time": 1778235081.4530811,
+      "track_count": 15,
+      "tracks": [
+        {
+          "name": "Intro count Click",
+          "index": "0",
+          "start_time": 1778235068.6039,
+          "end_time": 1778235073.522382,
+          "status": "completed",
+          "download_time": 4.918482065200806,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Drum Kit",
+          "index": "1",
+          "start_time": 1778235074.02793,
+          "end_time": 1778235074.027937,
+          "status": "completed",
+          "download_time": 6.9141387939453125e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Tambourine",
+          "index": "2",
+          "start_time": 1778235074.542324,
+          "end_time": 1778235074.542332,
+          "status": "completed",
+          "download_time": 7.867813110351562e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Shaker",
+          "index": "3",
+          "start_time": 1778235075.058202,
+          "end_time": 1778235075.058209,
+          "status": "completed",
+          "download_time": 6.9141387939453125e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Hand Clap",
+          "index": "4",
+          "start_time": 1778235075.5824609,
+          "end_time": 1778235075.5824692,
+          "status": "completed",
+          "download_time": 8.344650268554688e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Bass",
+          "index": "5",
+          "start_time": 1778235076.097261,
+          "end_time": 1778235076.097263,
+          "status": "completed",
+          "download_time": 2.1457672119140625e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Acoustic Guitar",
+          "index": "6",
+          "start_time": 1778235076.60247,
+          "end_time": 1778235076.6024718,
+          "status": "completed",
+          "download_time": 1.9073486328125e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Electric Guitar",
+          "index": "7",
+          "start_time": 1778235077.11318,
+          "end_time": 1778235077.113184,
+          "status": "completed",
+          "download_time": 4.0531158447265625e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Rhythm Electric Guitar",
+          "index": "8",
+          "start_time": 1778235077.6283221,
+          "end_time": 1778235077.628331,
+          "status": "completed",
+          "download_time": 8.821487426757812e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Piano",
+          "index": "9",
+          "start_time": 1778235078.145267,
+          "end_time": 1778235078.145271,
+          "status": "completed",
+          "download_time": 4.0531158447265625e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Synth Lead",
+          "index": "10",
+          "start_time": 1778235078.6598248,
+          "end_time": 1778235078.659832,
+          "status": "completed",
+          "download_time": 7.152557373046875e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Synth Keys",
+          "index": "11",
+          "start_time": 1778235079.175327,
+          "end_time": 1778235079.175335,
+          "status": "completed",
+          "download_time": 7.867813110351562e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Noise effects",
+          "index": "12",
+          "start_time": 1778235079.6927629,
+          "end_time": 1778235079.692769,
+          "status": "completed",
+          "download_time": 6.198883056640625e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Backing Vocals",
+          "index": "13",
+          "start_time": 1778235080.2095082,
+          "end_time": 1778235080.209513,
+          "status": "completed",
+          "download_time": 4.76837158203125e-06,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Lead Vocal",
+          "index": "14",
+          "start_time": 1778235080.72512,
+          "end_time": 1778235080.725125,
+          "status": "completed",
+          "download_time": 5.0067901611328125e-06,
+          "error_message": null,
+          "file_size": 9835020
+        }
+      ],
+      "completed_tracks": 15,
+      "failed_tracks": 0,
+      "total_download_time": 4.918564081192017,
+      "status": "completed",
+      "total_time": 12.863004207611084
+    }
+  ],
+  "errors": []
+}
