@@ -1216,24 +1216,7 @@ class DownloadManager:
                     
             except Exception as e:
                 logging.warning(f"Error checking other solo buttons: {e}")
-            
-            # 3. Additional UI state checks
-            try:
-                # Check for any visible UI indicators of track isolation
-                page_text = self.driver.page_source.lower()
-                
-                # Look for indicators that might suggest track isolation is working
-                isolation_indicators = [
-                    'solo', 'isolated', 'muted', 'active'
-                ]
-                
-                found_indicators = [indicator for indicator in isolation_indicators if indicator in page_text]
-                if found_indicators:
-                    logging.debug(f"Found UI isolation indicators: {found_indicators}")
-                    
-            except Exception as e:
-                logging.debug(f"Error checking UI state indicators: {e}")
-            
+
             # Calculate overall verification score
             passed_checks = sum([
                 verification_results['solo_button_active'],
