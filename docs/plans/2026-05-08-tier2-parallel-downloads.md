@@ -1,5 +1,73 @@
 # Plan: Tier 2 — Parallel Downloads via Multi-Tab Pipelining
 
+> **STATUS (2026-05-08): CANCELLED — server architecture makes single-account parallelism infeasible.**
+> See [Postmortem](#postmortem-2026-05-08) below before re-attempting.
+
+## Postmortem (2026-05-08)
+
+Phase 0 was executed using probe scripts in `tools/`:
+
+- `probe_concurrent_tabs.py` — multi-tab in a single Chrome (Approach A)
+- `probe_concurrent_processes.py` — multiple Chrome processes (Approach B)
+- `probe_direct_fetch.py` — multi-tab + direct URL fetch via `requests`
+  (the test that produced the conclusive evidence)
+- `diag_solo_only.py` — production-path solo verifier
+
+### Finding
+
+When two tabs in the same Chrome session solo *different* tracks and click download
+nearly simultaneously, the server returns the **same** mix to both — specifically the
+mix corresponding to whichever solo button was clicked **last**.
+
+### Evidence (`probe_direct_fetch.py`, run 2026-05-08 16:13)
+
+- Tab 0 soloed Drum Kit (DOM verified: `is-active` token on track 1's solo button)
+- Tab 1 soloed Bass (DOM verified: `is-active` on track 2; all other tracks inactive)
+- Server-side mix-gen ran for real durations (33.9s and 17.8s — not a cached default)
+- **Both modal anchors resolved to the same URL**, ending in
+  `Bryan_Adams_18_til_I_Die(Bass_Custom_Backing_Track).mp3`. The filename literally
+  encodes "Bass" — i.e., Tab 0 was served the Bass mix despite its DOM correctly
+  showing Drum Kit soloed.
+- Direct-fetch SHA-256 identical for both files: `42ef7aebca3f9d83…`
+
+### Mechanism
+
+Clicking a solo button on Karaoke-Version.com fires an API call that updates
+the **account's** mixer state on the server. `mixer.getMix()` (the download trigger)
+reads the current account state when the mix-gen job runs, *not* the state at the
+moment of the request. When Tab 1's solo of Bass updated the server's view, Tab 0's
+already-queued mix-gen job read the new "Bass" state at execution time. Result:
+both jobs produce the same Bass mix.
+
+### Why both Approach A (multi-tab) and Approach B (multi-process) fail
+
+Both approaches authenticate as the same Karaoke-Version account. The server's
+state is keyed on the account, not the session/cookie/process — so a second Chrome
+instance does not give us a second mixer lane. Concurrent solos clobber each other
+regardless of how many client-side processes or tabs we run. The collapse happens at
+N=2; scaling to N=5 or N=10 doesn't change the outcome.
+
+### Workarounds considered, not pursued
+
+1. **Multiple Karaoke-Version accounts** — one parallel lane per account. Likely
+   violates the ToS, multiplies licensing cost, and adds non-trivial operational
+   complexity (account rotation, login state per worker, per-account purchase
+   tracking). Not recommended.
+2. **Overlap next-track's mix-gen with current-track's file download** — a modest
+   1–2s/track pipeline win, not parallelism. Worth considering as a small Tier 1.5
+   if the per-track floor still bothers us, but the gain is small enough it likely
+   isn't worth the complexity.
+
+### Recommendation
+
+Accept the per-track wall-time floor (~16s post-Tier-1). Tier 1 plus the click-track
+fix is the floor. Do **not** re-attempt parallel downloads on a single account.
+The probes left in `tools/` are sufficient to re-run if site behavior ever changes.
+
+---
+
+## Original plan (preserved for context)
+
 **Goal:** Cut total session time for a 15-track song from ~5 minutes to ~2 minutes (50–60% reduction) by running multiple track downloads concurrently instead of strictly sequentially.
 
 **Why now:** Tier 1 hit the per-track wall-time floor — 14s of every track is server-side audio mix generation that we cannot speed up. The only remaining win is to **overlap that server compute** by running N tracks at once.
