@@ -129,5 +129,19 @@ class TestDownloadManagerSoloDetection(unittest.TestCase):
         self.assertTrue(self.dm._is_solo_button_active_enhanced(btn))
 
 
+def test_finalize_solo_activation_does_not_call_phase3_validation(mocker):
+    """_finalize_solo_activation should not call _validate_audio_mix_state anymore."""
+    from packages.track_management.track_manager import TrackManager
+
+    tm = mocker.Mock(spec=TrackManager)
+    tm._wait_for_audio_server_sync = mocker.Mock(return_value=True)
+    tm._verify_mixer_state_configuration = mocker.Mock(return_value=True)
+    tm._validate_audio_mix_state = mocker.Mock(return_value={'audio_mix_validated': True})
+
+    TrackManager._finalize_solo_activation(tm, "Bass", 3)
+
+    tm._validate_audio_mix_state.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
 )
-from ..utils import safe_click, validation_safe, profile_timing, profile_selenium
+from ..utils import safe_click, profile_timing, profile_selenium
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
@@ -439,25 +439,7 @@ class TrackManager:
         
         # Phase 2: Verify mixer state configuration
         mixer_state_valid = self._verify_mixer_state_configuration()
-        
-        # Phase 3: Enhanced audio mix validation (optional)
-        phase3_validation_passed = True
-        if track_index is not None:
-            try:
-                logging.debug(f"🎵 Running Phase 3 audio mix validation for {track_name}...")
-                phase3_results = self._validate_audio_mix_state(track_name, track_index)
-                phase3_validation_passed = phase3_results['audio_mix_validated']
-                
-                if phase3_validation_passed:
-                    logging.info(f"✅ Phase 3 audio mix validation PASSED for {track_name}")
-                else:
-                    logging.warning(f"⚠️ Phase 3 audio mix validation FAILED for {track_name}")
-                    logging.warning(f"   Details: {'; '.join(phase3_results['details'][:3])}")  # Show first 3 details
-                    
-            except Exception as e:
-                logging.warning(f"⚠️ Phase 3 validation error for {track_name}: {e}")
-                # Don't fail the entire process if Phase 3 has issues
-        
+
         # Phase 4: Intelligent fallback - much shorter since we have deterministic detection
         if not audio_server_ready and not mixer_state_valid:
             # Use very short fallback since our deterministic method should have worked
@@ -469,16 +451,14 @@ class TrackManager:
             safety_buffer = 0.2
             logging.debug(f"⏳ Deterministic detection succeeded, adding {safety_buffer}s safety buffer...")
             time.sleep(safety_buffer)
-        
+
         # Final assessment
         overall_success = audio_server_ready or mixer_state_valid
-        if overall_success and phase3_validation_passed:
-            logging.info(f"✅ Complete audio server sync verification successful for {track_name}")
-        elif overall_success:
-            logging.info(f"✅ Basic audio server sync verification complete for {track_name} (Phase 3 issues noted)")
+        if overall_success:
+            logging.info(f"✅ Audio server sync verification successful for {track_name}")
         else:
             logging.warning(f"⚠️ Audio server sync verification had issues for {track_name} - using fallback timing")
-            
+
         return True
     
     @profile_timing("_wait_for_audio_server_sync", "track_management", "method")
@@ -495,7 +475,7 @@ class TrackManager:
             
             for check_num in range(max_checks):
                 try:
-                    # Use the same reliable logic as Phase 3 validation
+                    # Reuse the reliable solo-button predicate
                     if self._is_solo_button_active_for_index(expected_solo_index):
                         elapsed_time = (check_num * 0.2) + 0.3
                         logging.debug(f"✅ Solo button active after {elapsed_time:.1f}s - server sync complete")
@@ -607,56 +587,6 @@ class TrackManager:
             
         except Exception as e:
             logging.warning(f"⚠️ Error during mixer state verification: {e}")
-            return False
-    
-    @validation_safe(return_value={'audio_mix_validated': False, 'error_code': 'VALIDATION_FAILED'}, operation_name="audio mix validation")
-    def _validate_audio_mix_state(self, track_name, expected_solo_index):
-        """Simple validation that the expected track's solo button is active"""
-        logging.debug(f"🎵 Phase 3: Validating audio mix state for {track_name}...")
-        
-        # Simple but effective validation: check if expected solo button is active
-        is_valid = self._is_expected_solo_active(expected_solo_index)
-        
-        if is_valid:
-            logging.info(f"✅ Phase 3: Audio mix validation PASSED for {track_name}")
-            return {
-                'audio_mix_validated': True,
-                'error_code': None,
-                'details': [f"Solo button active for track {expected_solo_index}"]
-            }
-        else:
-            logging.warning(f"⚠️ Phase 3: Audio mix validation FAILED for {track_name}")
-            return {
-                'audio_mix_validated': False,
-                'error_code': 'SOLO_BUTTON_NOT_ACTIVE',
-                'details': [f"Expected solo button {expected_solo_index} is not active"]
-            }
-    
-    @validation_safe(return_value=False, operation_name="solo button check")
-    def _is_expected_solo_active(self, expected_solo_index):
-        """Check if the expected solo button is active and others are not"""
-        try:
-            # Find the expected track element
-            track_selector = f".track[data-index='{expected_solo_index}']"
-            track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
-            
-            if not track_elements:
-                return False
-                
-            track_element = track_elements[0]
-            solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            is_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
-            if is_active:
-                logging.debug(f"✅ Solo button is active for track {expected_solo_index}")
-                return True
-            else:
-                logging.debug(f"⚠️ Solo button not active for track {expected_solo_index}")
-                return False
-                
-        except Exception as e:
-            logging.warning(f"Error checking solo button state: {e}")
             return False
     
     def clear_all_solos(self, song_url):
