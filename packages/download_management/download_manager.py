@@ -363,16 +363,19 @@ class DownloadManager:
         
         if download_started:
             logging.info(f"✅ Download started for: {track_name} - monitoring completion")
-            
-            # Start background monitoring for completion and file cleanup
-            monitor_thread = self.start_completion_monitoring(song_path, track_name, track_index)
-            
-            # Wait for completion monitoring to finish before returning
+
+            # Capture the worker's actual outcome via a shared dict. Without this,
+            # a started-but-timed-out download (e.g. .crdownload stuck at 32KB
+            # because the CDN connection died) would silently return True here,
+            # bypassing the retry tier in karaoke_automator.
+            result = {"success": False}
+            monitor_thread = self.start_completion_monitoring(song_path, track_name, track_index, result)
+
             logging.info(f"⏳ Waiting for {track_name} completion monitoring to finish...")
             monitor_thread.join()
-            logging.info(f"✅ Completion monitoring finished for {track_name}")
-            
-            return True
+            logging.info(f"✅ Completion monitoring finished for {track_name} (success={result['success']})")
+
+            return result["success"]
         else:
             logging.warning(f"⚠️ Download not detected for: {track_name}")
             
@@ -427,24 +430,32 @@ class DownloadManager:
         
         return folder_name
     
-    def start_completion_monitoring(self, song_path, track_name, track_index):
-        """Start background monitoring for download completion and file cleanup"""
+    def start_completion_monitoring(self, song_path, track_name, track_index, result=None):
+        """Start background monitoring for download completion and file cleanup.
+
+        result: optional dict updated with {'success': bool} reflecting the
+        worker's actual outcome. Without it, callers can't distinguish a
+        completed download from a started-but-timed-out one.
+        """
+        if result is None:
+            result = {"success": False}
         monitor_thread = threading.Thread(
             target=self._completion_monitor_worker,
-            args=(song_path, track_name, track_index),
+            args=(song_path, track_name, track_index, result),
             daemon=False
         )
         monitor_thread.start()
         logging.info(f"🎆 Started background completion monitoring for {track_name}")
         return monitor_thread
-    
-    def _completion_monitor_worker(self, song_path, track_name, track_index):
-        """Worker function for completion monitoring"""
+
+    def _completion_monitor_worker(self, song_path, track_name, track_index, result):
+        """Worker function for completion monitoring. Sets result['success']."""
         try:
             context = self._initialize_monitoring_context(song_path, track_name)
-            self._monitor_download_progress(context, track_index)
+            self._monitor_download_progress(context, track_index, result)
         except Exception as e:
             self._handle_monitoring_error(e, song_path.name, track_name, track_index)
+            # result['success'] stays False (default)
     
     def _initialize_monitoring_context(self, song_path, track_name):
         """Initialize monitoring context and parameters"""
@@ -535,9 +546,13 @@ class DownloadManager:
             logging.warning(f"⚠️ Download readiness not detected within {max_wait}s for {track_name}")
             return False
     
-    def _monitor_download_progress(self, context, track_index):
+    def _monitor_download_progress(self, context, track_index, result=None):
         """Main monitoring loop. Scan-then-sleep so an already-present file is
-        detected on iteration 0 instead of after one full check_interval."""
+        detected on iteration 0 instead of after one full check_interval.
+
+        result: optional dict; sets result['success'] = True on completion. Stays
+        False on timeout (so the caller can route through the retry tier).
+        """
         download_ready = self._wait_for_download_readiness(context['track_name'])
         if download_ready:
             logging.info(f"✅ Download ready signal detected for {context['track_name']}")
@@ -569,6 +584,8 @@ class DownloadManager:
 
             if new_completed_files:
                 self._handle_completed_download(new_completed_files, context, track_index)
+                if result is not None:
+                    result["success"] = True
                 return
 
             if download_detected:

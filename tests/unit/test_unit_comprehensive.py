@@ -332,8 +332,19 @@ class TestDownloadFunctionality(unittest.TestCase):
         # _find_download_button) and is otherwise inert (used post-click for popup polling).
         from packages.utils.click_handlers import js_click_with_scroll
 
+        # The completion-monitoring worker now signals its outcome via a shared
+        # `result` dict (added to fix the timeout-bypass-retry bug). For this
+        # test we don't actually run the worker; just stub it to set success.
+        def _stub_monitoring(*args, **kwargs):
+            res = kwargs.get('result') if 'result' in kwargs else (args[3] if len(args) >= 4 else None)
+            if res is not None:
+                res['success'] = True
+            stub_thread = Mock()
+            stub_thread.join = Mock()
+            return stub_thread
+
         with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
-             patch.object(download_manager, 'start_completion_monitoring'), \
+             patch.object(download_manager, 'start_completion_monitoring', side_effect=_stub_monitoring), \
              patch.object(download_manager, '_validate_pre_download_requirements', return_value=True), \
              patch('packages.download_management.download_manager.js_click_with_scroll', side_effect=js_click_with_scroll), \
              patch('packages.download_management.download_manager.WebDriverWait') as mock_wait_cls:
@@ -386,8 +397,19 @@ class TestDownloadFunctionality(unittest.TestCase):
         # _find_download_button) and is otherwise inert (used post-click for popup polling).
         from packages.utils.click_handlers import js_click_with_scroll
 
+        # The completion-monitoring worker now signals its outcome via a shared
+        # `result` dict (added to fix the timeout-bypass-retry bug). For this
+        # test we don't actually run the worker; just stub it to set success.
+        def _stub_monitoring(*args, **kwargs):
+            res = kwargs.get('result') if 'result' in kwargs else (args[3] if len(args) >= 4 else None)
+            if res is not None:
+                res['success'] = True
+            stub_thread = Mock()
+            stub_thread.join = Mock()
+            return stub_thread
+
         with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
-             patch.object(download_manager, 'start_completion_monitoring'), \
+             patch.object(download_manager, 'start_completion_monitoring', side_effect=_stub_monitoring), \
              patch.object(download_manager, '_validate_pre_download_requirements', return_value=True), \
              patch('packages.download_management.download_manager.js_click_with_scroll', side_effect=js_click_with_scroll), \
              patch('packages.download_management.download_manager.WebDriverWait') as mock_wait_cls:

@@ -128,5 +128,57 @@ def test_monitor_progress_times_out_when_no_file_appears(mocker):
     dm._handle_completed_download.assert_not_called()
     dm._handle_timeout.assert_called_once_with('Bass', 3, 'Test')
 
+
+def test_monitor_progress_sets_result_success_on_completion(mocker):
+    """Regression: a completed download must set result['success']=True so the
+    boolean return value of _monitor_download_completion reflects truth.
+    Without this, started-but-timed-out downloads (.crdownload stuck because
+    the CDN connection died) silently appeared as success and bypassed retry."""
+    from packages.download_management.download_manager import DownloadManager
+
+    dm = mocker.Mock(spec=DownloadManager)
+    dm._wait_for_download_readiness = mocker.Mock(return_value=True)
+    dm._wait_for_check_interval = mocker.Mock()
+    dm._check_for_in_progress_downloads = mocker.Mock(return_value=[])
+    dm._check_for_new_downloads = mocker.Mock(return_value=["fake_completed_file"])
+    dm._handle_completed_download = mocker.Mock()
+    dm._update_progress_if_needed = mocker.Mock()
+    dm._handle_timeout = mocker.Mock()
+
+    context = {
+        'track_name': 'Piano', 'song_name': 'Test', 'song_path': mocker.Mock(),
+        'max_wait': 90, 'check_interval': 3, 'waited': 0, 'initial_files': set()
+    }
+    result = {"success": False}
+    DownloadManager._monitor_download_progress(dm, context, track_index=9, result=result)
+
+    assert result["success"] is True, "Completed download must mark result['success']=True"
+
+
+def test_monitor_progress_leaves_result_success_false_on_timeout(mocker):
+    """Regression: when the download times out (the Piano-with-stuck-crdownload
+    case), result['success'] must remain False so retry tier triggers."""
+    from packages.download_management.download_manager import DownloadManager
+
+    dm = mocker.Mock(spec=DownloadManager)
+    dm._wait_for_download_readiness = mocker.Mock(return_value=True)
+    dm._wait_for_check_interval = mocker.Mock()
+    dm._check_for_in_progress_downloads = mocker.Mock(return_value=[])
+    dm._check_for_new_downloads = mocker.Mock(return_value=[])  # never finds completed file
+    dm._handle_completed_download = mocker.Mock()
+    dm._update_progress_if_needed = mocker.Mock()
+    dm._handle_timeout = mocker.Mock()
+
+    context = {
+        'track_name': 'Piano', 'song_name': 'Test', 'song_path': mocker.Mock(),
+        'max_wait': 10, 'check_interval': 3, 'waited': 0, 'initial_files': set()
+    }
+    result = {"success": False}
+    DownloadManager._monitor_download_progress(dm, context, track_index=9, result=result)
+
+    assert result["success"] is False, "Timed-out download must leave result['success']=False"
+    dm._handle_timeout.assert_called_once()
+
+
 if __name__ == "__main__":
     test_completion_detection()
