@@ -1,6 +1,7 @@
 """Site searcher for karaoke-version.com"""
 
 import logging
+import string
 import time
 import urllib.parse
 from typing import List, Dict, Optional
@@ -224,9 +225,8 @@ class SiteSearcher:
         Returns:
             Readable name (e.g., 'Green Day')
         """
-        # Replace hyphens with spaces and title case
-        name = slug.replace('-', ' ')
-        return name.title()
+        # capwords (not str.title) so contractions like "don't" don't become "Don'T"
+        return string.capwords(slug.replace('-', ' '))
 
     def get_result_as_dict(self, result: SearchResult) -> Dict:
         """

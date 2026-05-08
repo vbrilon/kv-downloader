@@ -280,6 +280,46 @@ def test_folder_cleanup_integration():
         except Exception:
             pass
 
+def test_apostrophe_titlecase_in_generated_names():
+    """Folder names from URLs must NOT capitalize letters after apostrophes.
+
+    Regression: str.title() treats apostrophes as word boundaries, so it would
+    turn "don't" into "Don'T". We use string.capwords (split on whitespace only)
+    so contractions render correctly.
+    """
+    from packages.configuration.config_manager import ConfigurationManager
+    cm = ConfigurationManager()
+
+    # Song-only mode (typical case when names don't conflict)
+    name = cm._generate_name_from_url(
+        "https://www.karaoke-version.com/custombackingtrack/electric-light-orchestra/don-t-bring-me-down.html"
+    )
+    assert name == "Don't Bring Me Down", f"Expected 'Don't Bring Me Down', got {name!r}"
+
+    # Same with several other contractions to lock the behavior
+    cases = [
+        ("https://www.karaoke-version.com/custombackingtrack/billie-eilish/i-m-not-ok.html",
+         "I'm Not Ok"),
+        ("https://www.karaoke-version.com/custombackingtrack/the-temptations/it-s-getting-better.html",
+         "It's Getting Better"),
+        ("https://www.karaoke-version.com/custombackingtrack/queen/we-re-the-champions.html",
+         "We're The Champions"),
+    ]
+    for url, expected in cases:
+        got = cm._generate_name_from_url(url)
+        assert got == expected, f"For {url}: expected {expected!r}, got {got!r}"
+
+    # Artist-mode (when conflicts force include_artist=True): apostrophe handling
+    # must work in both halves of the "Artist - Song" string.
+    artist_song = cm._generate_name_from_url(
+        "https://www.karaoke-version.com/custombackingtrack/d-angelo/don-t-leave-me.html",
+        include_artist=True,
+    )
+    # Only assert that the song half doesn't have "Don'T"
+    assert "Don't" in artist_song, f"Song half should be 'Don't', got {artist_song!r}"
+    assert "Don'T" not in artist_song, f"Got the title()-style miscapitalization: {artist_song!r}"
+
+
 if __name__ == "__main__":
     print("📁 SONG FOLDER FUNCTIONALITY TESTS")
     print("="*60)

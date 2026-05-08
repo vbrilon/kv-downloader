@@ -6,6 +6,7 @@ Separated from config.py to keep config file clean
 """
 
 import os
+import string
 import yaml
 import logging
 from ..utils.performance_profiler import profile_timing
@@ -175,8 +176,9 @@ class ConfigurationManager:
                     artist_part, song_part = path_part.rsplit('/', 1)
                     artist_part = self._restore_apostrophes(artist_part)
                     song_part = self._restore_apostrophes(song_part)
-                    artist_name = artist_part.replace('-', ' ').title()
-                    song_name = song_part.replace('-', ' ').title()
+                    # capwords (not str.title) so contractions like "don't" don't become "Don'T"
+                    artist_name = string.capwords(artist_part.replace('-', ' '))
+                    song_name = string.capwords(song_part.replace('-', ' '))
                     name = f"{artist_name} - {song_name}"
                 else:
                     # Extract only the song name (after the last slash)
@@ -185,8 +187,8 @@ class ConfigurationManager:
                         path_part = path_part.split('/')[-1]
 
                     path_part = self._restore_apostrophes(path_part)
-                    # Replace remaining hyphens with spaces and title case
-                    name = path_part.replace('-', ' ').title()
+                    # capwords (not str.title) so contractions like "don't" don't become "Don'T"
+                    name = string.capwords(path_part.replace('-', ' '))
 
                 # Clean up invalid characters but preserve apostrophes
                 invalid_chars = '<>:"/\\|?*'  # Removed apostrophe from invalid chars

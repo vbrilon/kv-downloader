@@ -2,6 +2,7 @@
 
 import time
 import logging
+import string
 import threading
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -394,9 +395,9 @@ class DownloadManager:
                 artist_part = url_parts[-2] if len(url_parts) >= 2 else 'unknown_artist'
                 song_part = url_parts[-1].replace('.html', '') if len(url_parts) >= 1 else 'unknown_song'
                 
-                # Clean up names
-                artist = artist_part.replace('-', ' ').title()
-                song = song_part.replace('-', ' ').title()
+                # capwords (not str.title) so contractions like "don't" don't become "Don'T"
+                artist = string.capwords(artist_part.replace('-', ' '))
+                song = string.capwords(song_part.replace('-', ' '))
                 
                 folder_name = f"{artist} - {song}"
                 return self.sanitize_folder_name(folder_name)
