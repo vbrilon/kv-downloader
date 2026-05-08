@@ -1,0 +1,79 @@
+{
+  "session_metadata": {
+    "start_time": 1778227304.374012,
+    "end_time": 1778227425.751168,
+    "duration": 121.37715601921082,
+    "total_tracks_attempted": 5,
+    "total_tracks_completed": 5,
+    "total_tracks_failed": 0,
+    "success_rate": 100.0,
+    "total_download_time": 112.48109579086304
+  },
+  "songs": [
+    {
+      "name": "Don'T Bring Me Down",
+      "url": "https://www.karaoke-version.com/custombackingtrack/electric-light-orchestra/don-t-bring-me-down.html",
+      "start_time": 1778227308.9411578,
+      "end_time": 1778227425.750033,
+      "track_count": 15,
+      "tracks": [
+        {
+          "name": "Intro count\n      Click",
+          "index": "0",
+          "start_time": 1778227308.970303,
+          "end_time": 1778227338.757004,
+          "status": "completed",
+          "download_time": 29.786700963974,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Drum Kit",
+          "index": "1",
+          "start_time": 1778227339.275958,
+          "end_time": 1778227361.5212648,
+          "status": "completed",
+          "download_time": 22.245306730270386,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Tambourine",
+          "index": "2",
+          "start_time": 1778227362.031025,
+          "end_time": 1778227382.156588,
+          "status": "completed",
+          "download_time": 20.125563144683838,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Shaker",
+          "index": "3",
+          "start_time": 1778227382.680879,
+          "end_time": 1778227402.830445,
+          "status": "completed",
+          "download_time": 20.149565935134888,
+          "error_message": null,
+          "file_size": 9835020
+        },
+        {
+          "name": "Hand Clap",
+          "index": "4",
+          "start_time": 1778227403.346268,
+          "end_time": 1778227423.520227,
+          "status": "completed",
+          "download_time": 20.173959016799927,
+          "error_message": null,
+          "file_size": 9835020
+        }
+      ],
+      "completed_tracks": 5,
+      "failed_tracks": 0,
+      "total_download_time": 112.48109579086304,
+      "status": "completed",
+      "total_time": 116.80887508392334
+    }
+  ],
+  "errors": []
+}
