@@ -13,16 +13,14 @@ from selenium.common.exceptions import (
     TimeoutException,
     WebDriverException,
 )
-from ..utils import safe_click_with_scroll, profile_timing, profile_selenium
+from ..utils import js_click_with_scroll, profile_timing, profile_selenium, is_solo_button_active, ACTIVE_SOLO_CLASS_TOKENS
 from ..configuration.selectors import DOWNLOAD_BUTTON_SELECTORS
-from ..track_management.track_manager import ACTIVE_SOLO_CLASS_TOKENS
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
                                     DOWNLOAD_CHECK_INTERVAL, TRACK_SELECTION_MAX_RETRIES, 
                                     RETRY_VERIFICATION_DELAY, LOG_INTERVAL_SECONDS, 
-                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO,
-                                    DOWNLOAD_MONITORING_INITIAL_WAIT)
+                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO)
 
 
 class DownloadManager:
@@ -160,64 +158,50 @@ class DownloadManager:
         return download_button
 
     def _execute_download_click(self, download_button):
-        """Execute the download button click and handle any popups or windows
-        
-        Args:
-            download_button: The WebElement representing the download button
-            
-        Returns:
-            bool: True if download click was successful, False otherwise
+        """Click the download button, then wait for the readiness modal to populate.
+
+        Verified 2026-05-08 on the live site: clicking `a.custom__song-download`
+        fires `mixer.getMix();return false;` which triggers ~14s of server-side
+        mix generation. When generation completes, the modal's __overlay sibling
+        gets the `is-open` class and the modal__content is populated.
+
+        We wait for that activation signal directly. Replaces the previous code
+        that polled `len(driver.window_handles)` and `page_source.lower()` for
+        text like "generating"/"preparing" — both with full timeouts that always
+        expired since (a) no new window opens on this site, (b) page_source is
+        an expensive full-DOM serialization.
         """
-        # Get button details for logging
+        from ..configuration.selectors import DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR
+
         button_text = download_button.text.strip()
         button_onclick = download_button.get_attribute('onclick') or ''
-        
         logging.info(f"Download button text: '{button_text}'")
         if button_onclick:
             logging.info(f"Download onclick: {button_onclick[:50]}...")
-        
-        # Scroll to download button and click
+
         logging.info("Clicking download button...")
-        safe_click_with_scroll(self.driver, download_button, "download button")
-        
-        # Wait for any immediate UI response or popup to appear
+        if not js_click_with_scroll(self.driver, download_button, "download button"):
+            raise Exception("DOWNLOAD_BUTTON_CLICK_FAILED")
+
+        # Server mix-generation runs ~14s typical; allow generous timeout.
+        # When it completes, .modal__overlay.is-open is the deterministic signal.
         try:
-            # Wait briefly for any popups, new windows, or page changes
-            WebDriverWait(self.driver, WEBDRIVER_BRIEF_TIMEOUT).until(
-                lambda driver: len(driver.window_handles) > 1 or
-                               driver.current_url != self.driver.current_url
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR)
+                )
             )
+            logging.debug("✅ Download modal overlay opened")
         except TimeoutException:
-            pass  # No immediate response detected
-        
-        # Check if any popup or new window appeared
-        original_window_count = len(self.driver.window_handles)
-        logging.debug(f"Windows before download: {original_window_count}")
-        
-        # Wait for download initialization to complete
-        try:
-            # Wait for window changes or download-related indicators
-            WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
-                lambda driver: len(driver.window_handles) != original_window_count or
-                               "generating" in driver.page_source.lower() or
-                               "preparing" in driver.page_source.lower()
+            logging.warning(
+                "⚠️ Download modal overlay did not open within 30s — "
+                "proceeding to file-system monitoring anyway"
             )
-        except TimeoutException:
-            pass  # Continue with download monitoring
-        current_window_count = len(self.driver.window_handles)
-        logging.debug(f"Windows after download: {current_window_count}")
-        
-        if current_window_count > original_window_count:
-            logging.info(f"🪟 New window/popup detected ({current_window_count} vs {original_window_count})")
-            popup_handled = self._handle_download_popup()
-            if popup_handled:
-                logging.info("✅ Download popup handled successfully")
-            else:
-                logging.warning("⚠️ Download popup handling had issues")
-        
-        # Check for download popup elements in current window (non-window popups)
-        self._check_and_handle_inline_popups()
-        
+
+        # Note: we deliberately do NOT close the modal here. The next phase
+        # (`_wait_for_download_readiness` in `_monitor_download_progress`) needs
+        # to read the readiness text from the populated modal. Closing first was
+        # the bug that made the previous code fall back to page_source polling.
         return True
 
     @profile_timing("download_current_mix", "download_management", "method")
@@ -320,42 +304,24 @@ class DownloadManager:
     
     @profile_timing("_validate_pre_download_requirements", "download_management", "method")
     def _validate_pre_download_requirements(self, track_name, track_index, song_name):
-        """Perform pre-download validation checks with retry logic
-        
-        Args:
-            track_name (str): Name of the track being downloaded
-            track_index (int): Track index for progress tracking
-            song_name (str): Song name for stats recording
-            
-        Returns:
-            bool: True if validation passes, False if blocked
+        """Verify the solo state once before clicking download.
+
+        We used to call this twice ("initial" and "final") with nothing in between,
+        which doubled cost and hid no real bug. The single call is sufficient: the
+        solo button cannot change state between two adjacent Python statements with
+        no DOM interaction.
         """
-        # Initial verification
-        verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
-        if not verification_passed:
-            logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
-            if self.progress_tracker and track_index:
-                self.progress_tracker.update_track_status(track_index, 'failed')
-            
-            # Record failure in stats
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                       error_message="Solo verification failed")
-            return False
-        
-        # Final verification before download
-        logging.info(f"🔍 Final verification before download for {track_name}")
-        final_verification_passed = self._verify_track_selection_with_retry(track_name, track_index)
-        if not final_verification_passed:
-            logging.error(f"❌ Final track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
-            if self.progress_tracker and track_index:
-                self.progress_tracker.update_track_status(track_index, 'failed')
-            
-            # Record failure in stats
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
-                                                       error_message="Final solo verification failed")
-            return False
-        
-        return True
+        if self._verify_track_selection_with_retry(track_name, track_index):
+            return True
+
+        logging.error(f"❌ Track selection verification failed for {track_name} - BLOCKING DOWNLOAD")
+        if self.progress_tracker and track_index:
+            self.progress_tracker.update_track_status(track_index, 'failed')
+        self.stats_reporter.record_track_completion(
+            song_name, track_name, success=False,
+            error_message="Solo verification failed"
+        )
+        return False
     
     @profile_timing("_execute_download_action", "download_management", "method")
     def _execute_download_action(self, download_button, track_index):
@@ -515,192 +481,106 @@ class DownloadManager:
     
     @profile_timing("_wait_for_download_readiness", "download_management", "method")
     def _wait_for_download_readiness(self, track_name, max_wait=60):
-        """Wait for DOM indication that download is ready using popup text monitoring
-        
-        Args:
-            track_name (str): Name of track being downloaded (for logging)
-            max_wait (int): Maximum time to wait in seconds (default: 60s)
-            
-        Returns:
-            bool: True if download readiness detected, False if timeout
+        """Wait for the readiness text to appear inside the populated modal.
+
+        Reads modal element text only — does NOT read page_source. The earlier
+        version polled the entire DOM serialization on every tick across all
+        windows; this version waits for the modal__overlay.is-open class
+        (verified 2026-05-08 to be the deterministic activation signal) and
+        then reads modal__content text.
+
+        Returns True if readiness detected, False on timeout.
         """
-        logging.info(f"🔍 Monitoring DOM for download readiness signal for {track_name}")
-        
-        # Track time waited during this DOM monitoring
-        waited = 0
-        check_interval = 1  # Check every second for responsive detection
-        
-        # Primary pattern to look for - the exact text that triggers auto-download
-        primary_readiness_pattern = "you can also click on the link below to manually begin your download:"
-        
-        # Fallback patterns for download readiness
-        fallback_readiness_patterns = [
+        from ..configuration.selectors import (
+            DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR,
+            DOWNLOAD_MODAL_CONTENT_SELECTOR,
+        )
+
+        primary_pattern = "you can also click on the link below to manually begin your download:"
+        fallback_patterns = (
             "your download will begin in a moment",
             "download will begin",
-            "download is ready", 
+            "download is ready",
             "click here to download",
-            "download now",
-            "download starting"
-        ]
-        
-        # Patterns indicating we're still waiting/generating
-        generation_patterns = [
-            "please wait",
-            "generating",
-            "preparing",
-            "creating your custom",
-            "processing"
-        ]
-        
-        while waited < max_wait:
+            "download starting",
+        )
+
+        def readiness_in_modal(_driver):
             try:
-                # Check all windows for popup content
-                current_windows = self.driver.window_handles
-                main_window = current_windows[0]
-                
-                # Check popup windows first (most likely location)
-                for window in current_windows[1:]:  # Skip main window initially
-                    try:
-                        self.driver.switch_to.window(window)
-                        page_text = self.driver.page_source.lower()
-                        
-                        # Check for primary download ready pattern first
-                        if primary_readiness_pattern in page_text:
-                            logging.info(f"🎉 Download readiness detected in popup: PRIMARY PATTERN for {track_name}")
-                            self.driver.switch_to.window(main_window)  # Return to main
-                            return True
-                        
-                        # Check fallback patterns
-                        for pattern in fallback_readiness_patterns:
-                            if pattern in page_text:
-                                logging.info(f"🎉 Download readiness detected in popup: '{pattern}' for {track_name}")
-                                self.driver.switch_to.window(main_window)  # Return to main
-                                return True
-                        
-                        # Log if we're still seeing generation patterns
-                        for pattern in generation_patterns:
-                            if pattern in page_text:
-                                if waited % 5 == 0:  # Log every 5 seconds
-                                    logging.info(f"⏳ Still generating (popup): '{pattern}' for {track_name} (waited {waited}s)")
-                                break
-                                
-                    except Exception as e:
-                        logging.debug(f"Error checking popup window for download readiness: {e}")
-                        continue
-                
-                # Also check main window for inline popups/modals
-                try:
-                    self.driver.switch_to.window(main_window)
-                    page_text = self.driver.page_source.lower()
-                    
-                    # Check for primary download ready pattern first
-                    if primary_readiness_pattern in page_text:
-                        logging.info(f"🎉 Download readiness detected in main window: PRIMARY PATTERN for {track_name}")
-                        return True
-                    
-                    # Check fallback patterns in main window
-                    for pattern in fallback_readiness_patterns:
-                        if pattern in page_text:
-                            logging.info(f"🎉 Download readiness detected in main window: '{pattern}' for {track_name}")
-                            return True
-                    
-                    # Check for modal/popup elements with readiness text
-                    modal_selectors = [".modal", ".popup", ".dialog", ".overlay", "[role='dialog']"]
-                    for selector in modal_selectors:
-                        try:
-                            modals = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                            for modal in modals:
-                                if modal.is_displayed():
-                                    modal_text = modal.text.lower()
-                                    
-                                    # Check primary pattern first
-                                    if primary_readiness_pattern in modal_text:
-                                        logging.info(f"🎉 Download readiness detected in modal: PRIMARY PATTERN for {track_name}")
-                                        return True
-                                    
-                                    # Check fallback patterns
-                                    for pattern in fallback_readiness_patterns:
-                                        if pattern in modal_text:
-                                            logging.info(f"🎉 Download readiness detected in modal: '{pattern}' for {track_name}")
-                                            return True
-                        except Exception:
-                            continue
-                            
-                except Exception as e:
-                    logging.debug(f"Error checking main window for download readiness: {e}")
-                
-                # Wait before next check
-                self._wait_for_check_interval(check_interval)
-                waited += check_interval
-                
-            except Exception as e:
-                logging.debug(f"Error during download readiness monitoring: {e}")
-                self._wait_for_check_interval(check_interval)
-                waited += check_interval
-        
-        logging.warning(f"⚠️ Download readiness monitoring timed out after {max_wait}s for {track_name}")
-        
-        # Ensure we're back on main window
+                # Step 1: is the modal active at all?
+                overlays = _driver.find_elements(
+                    By.CSS_SELECTOR, DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR
+                )
+                if not overlays:
+                    return False
+                # Step 2: read the populated content's text
+                contents = _driver.find_elements(By.CSS_SELECTOR, DOWNLOAD_MODAL_CONTENT_SELECTOR)
+                for c in contents:
+                    text = (c.text or "").lower()
+                    if primary_pattern in text:
+                        return "primary"
+                    for pat in fallback_patterns:
+                        if pat in text:
+                            return pat
+            except Exception:
+                pass
+            return False
+
         try:
-            self.driver.switch_to.window(self.driver.window_handles[0])
-        except:
-            pass
-            
-        return False
+            matched = WebDriverWait(self.driver, max_wait, poll_frequency=0.5).until(readiness_in_modal)
+            logging.info(f"🎉 Download readiness ({matched}) detected for {track_name}")
+            return True
+        except TimeoutException:
+            logging.warning(f"⚠️ Download readiness not detected within {max_wait}s for {track_name}")
+            return False
     
     def _monitor_download_progress(self, context, track_index):
-        """Main monitoring loop for download progress with intelligent optimization"""
-        # DOM-based optimization: Wait for download readiness popup instead of hardcoded delay
+        """Main monitoring loop. Scan-then-sleep so an already-present file is
+        detected on iteration 0 instead of after one full check_interval."""
         download_ready = self._wait_for_download_readiness(context['track_name'])
-        
         if download_ready:
-            logging.info(f"✅ Download ready signal detected, starting intelligent monitoring for {context['track_name']}")
+            logging.info(f"✅ Download ready signal detected for {context['track_name']}")
+            # Now (and only now) close the modal — we've already extracted
+            # what we needed. This was the previous code's bug: closing first
+            # forced page_source polling for the readiness text.
+            self._check_and_handle_inline_popups()
         else:
-            logging.warning(f"⚠️ Download readiness not detected within timeout, falling back to file monitoring for {context['track_name']}")
-            # Add minimal fallback wait
+            logging.warning(f"⚠️ Download readiness not detected for {context['track_name']}, falling back")
             self._wait_for_check_interval(3)
             context['waited'] += 3
-        
-        # Intelligent progress detection variables
+
         download_detected = False
         in_progress_detected = False
         adaptive_interval = context['check_interval']
-        
+
         while context['waited'] < context['max_wait']:
-            self._wait_for_check_interval(adaptive_interval)
-            context['waited'] += adaptive_interval
-            
-            # Check for in-progress downloads (.crdownload files) for intelligent timing
             in_progress_files = self._check_for_in_progress_downloads(context['song_path'])
             new_completed_files = self._check_for_new_downloads(context)
-            
-            # Intelligent progress detection logic
+
             if in_progress_files and not in_progress_detected:
                 in_progress_detected = True
                 download_detected = True
-                adaptive_interval = 2  # Faster polling when download is active
-                logging.info(f"🚀 Download in progress detected for {context['track_name']}, switching to fast polling (2s)")
+                adaptive_interval = 2
+                logging.info(f"🚀 Download in progress for {context['track_name']}, polling at 2s")
             elif in_progress_detected and not in_progress_files:
-                # Download was in progress but .crdownload files disappeared - likely completed
-                adaptive_interval = 1  # Very fast polling for completion detection
-                logging.info(f"⚡ Download completion imminent for {context['track_name']}, switching to rapid polling (1s)")
-            
+                adaptive_interval = 1
+                logging.info(f"⚡ Download completion imminent for {context['track_name']}, polling at 1s")
+
             if new_completed_files:
                 self._handle_completed_download(new_completed_files, context, track_index)
-                break
-            
-            # Adaptive logging based on detection state
+                return
+
             if download_detected:
-                # More frequent updates when we know download is active
-                if context['waited'] % 5 == 0:  # Every 5 seconds when active
+                if context['waited'] % 5 == 0:
                     progress_status = "in progress" if in_progress_files else "completing"
                     logging.info(f"   📊 Download {progress_status} for {context['track_name']} (waited {context['waited']}s)")
             else:
-                # Standard progress updates when waiting for server generation
                 self._update_progress_if_needed(context, track_index)
-        
-        if context['waited'] >= context['max_wait']:
-            self._handle_timeout(context['track_name'], track_index, context['song_name'])
+
+            self._wait_for_check_interval(adaptive_interval)
+            context['waited'] += adaptive_interval
+
+        self._handle_timeout(context['track_name'], track_index, context['song_name'])
     
     def _wait_for_check_interval(self, check_interval):
         """Wait for the specified check interval"""
@@ -1177,8 +1057,8 @@ class DownloadManager:
                     # Find solo button within this track
                     solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
                     
-                    # Use enhanced solo button detection (same logic as track_manager.py)
-                    is_solo_active = self._is_solo_button_active_enhanced(solo_button)
+                    # Use the shared solo button detector (single source of truth)
+                    is_solo_active = is_solo_button_active(solo_button)
                     
                     if is_solo_active:
                         verification_results['solo_button_active'] = True
@@ -1244,24 +1124,7 @@ class DownloadManager:
                     
             except Exception as e:
                 logging.warning(f"Error checking other solo buttons: {e}")
-            
-            # 3. Additional UI state checks
-            try:
-                # Check for any visible UI indicators of track isolation
-                page_text = self.driver.page_source.lower()
-                
-                # Look for indicators that might suggest track isolation is working
-                isolation_indicators = [
-                    'solo', 'isolated', 'muted', 'active'
-                ]
-                
-                found_indicators = [indicator for indicator in isolation_indicators if indicator in page_text]
-                if found_indicators:
-                    logging.debug(f"Found UI isolation indicators: {found_indicators}")
-                    
-            except Exception as e:
-                logging.debug(f"Error checking UI state indicators: {e}")
-            
+
             # Calculate overall verification score
             passed_checks = sum([
                 verification_results['solo_button_active'],
@@ -1289,49 +1152,3 @@ class DownloadManager:
         except Exception as e:
             logging.error(f"❌ Error during track selection verification: {e}")
             return False  # Fail safely
-    
-    def _is_solo_button_active_enhanced(self, solo_button):
-        """Enhanced solo button active state detection with multiple approaches
-        
-        This method mirrors the enhanced detection logic from track_manager.py
-        to ensure consistent detection across both solo activation and download verification.
-        
-        Args:
-            solo_button: WebElement representing the solo button
-            
-        Returns:
-            bool: True if button is in active state
-        """
-        try:
-            # Method 1: CSS class detection by exact token match (see
-            # track_manager.ACTIVE_SOLO_CLASS_TOKENS for why substring matching
-            # is wrong — "active" lives inside "inactive").
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            class_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
-            # Method 2: ARIA attribute detection
-            aria_pressed = solo_button.get_attribute('aria-pressed')
-            aria_active = aria_pressed == 'true' if aria_pressed else False
-
-            # Method 3: Data attribute detection
-            data_state = (solo_button.get_attribute('data-state') or '').lower()
-            data_active = data_state in ('active', 'on', 'selected')
-
-            is_active = class_active or aria_active or data_active
-
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("Download verification - Solo button state detection:")
-                logging.debug(f"  Classes: {sorted(class_tokens)} -> Active: {class_active}")
-                logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
-                logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
-                logging.debug(f"  Final result: {is_active}")
-
-            return is_active
-
-        except Exception as e:
-            logging.debug(f"Error in enhanced solo button detection (download verification): {e}")
-            try:
-                fallback_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-                return bool(fallback_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-            except Exception:
-                return False

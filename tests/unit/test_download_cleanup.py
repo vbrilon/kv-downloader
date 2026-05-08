@@ -163,6 +163,47 @@ def test_cleanup_patterns():
             except Exception:
                 pass
 
+
+def test_wait_for_download_readiness_uses_modal_text_not_page_source(mocker):
+    """_wait_for_download_readiness must read modal text directly, never page_source.
+
+    The site renders an empty .modal at page load and only populates it when
+    mixer.getMix() resolves. Looking at .modal alone returns immediately on the
+    empty pre-render; we must wait for the overlay's is-open class plus the text
+    inside .modal__content.
+    """
+    from packages.download_management.download_manager import DownloadManager
+
+    dm = mocker.Mock(spec=DownloadManager)
+    dm.driver = mocker.Mock()
+    dm.driver.window_handles = ['main']
+
+    fake_open_overlay = mocker.Mock()
+    fake_open_overlay.is_displayed.return_value = True
+
+    fake_modal_content = mocker.Mock()
+    fake_modal_content.is_displayed.return_value = True
+    fake_modal_content.text = (
+        "Your download will begin in a moment... You can also click on the link "
+        "below to manually begin your download:"
+    )
+
+    def fake_find_elements(by, sel):
+        if "modal__overlay" in sel:
+            return [fake_open_overlay]
+        if "modal__content" in sel:
+            return [fake_modal_content]
+        return []
+
+    dm.driver.find_elements = mocker.Mock(side_effect=fake_find_elements)
+    dm._wait_for_check_interval = mocker.Mock()
+
+    result = DownloadManager._wait_for_download_readiness(dm, "Bass", max_wait=10)
+
+    assert result is True
+    assert dm.driver.page_source.lower.call_count == 0, "page_source must not be read"
+
+
 if __name__ == "__main__":
     print("🧹 DOWNLOAD CLEANUP FUNCTIONALITY TESTS")
     print("="*60)

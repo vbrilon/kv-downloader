@@ -33,3 +33,11 @@ SOLO_BUTTON_SELECTORS = [
     ".track__solo",                        # Generic class
     "button[class*='solo']",              # Fallback by class name
 ]
+
+# Download readiness modal — verified on the live site 2026-05-08.
+# .modal is pre-rendered and always-visible; the activation signal is the
+# overlay sibling getting the `is-open` class when mixer.getMix() resolves.
+DOWNLOAD_MODAL_OVERLAY_OPEN_SELECTOR = ".modal__overlay.is-open"
+
+# The readiness text appears inside this populated content element.
+DOWNLOAD_MODAL_CONTENT_SELECTOR = ".modal .modal__content"

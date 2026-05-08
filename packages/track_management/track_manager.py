@@ -12,7 +12,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
 )
-from ..utils import safe_click, validation_safe, profile_timing, profile_selenium
+from ..utils import safe_click, profile_timing, profile_selenium, is_solo_button_active
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
@@ -24,17 +24,6 @@ from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_T
                                     TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES,
                                     SOLO_ACTIVATION_MAX_WAIT, SOLO_CHECK_INTERVAL,
                                     SOLO_ACTIVATION_DELAY_SIMPLE, SOLO_ACTIVATION_DELAY_COMPLEX)
-
-
-# Exact CSS class tokens that signal an active solo button. Compared as
-# whole tokens against the split class list — never as substrings, since
-# "active" appears inside "inactive" and "on" appears inside "button"/"icon".
-ACTIVE_SOLO_CLASS_TOKENS = frozenset({
-    "is-active",
-    "active",
-    "selected",
-    "track__solo--active",
-})
 
 
 class TrackManager:
@@ -194,17 +183,17 @@ class TrackManager:
             # Use existing adaptive timeout for standard tracks
             return self._get_adaptive_timeout()
     
-    @profile_timing("solo_track", "track_management", "method") 
+    @profile_timing("solo_track", "track_management", "method")
     def solo_track(self, track_info, song_url):
-        """Solo a specific track (mutes all others)"""
+        """Ensure the target track is solo'd. Assumes ensure_only_track_active was just called."""
         track_name = track_info['name']
         track_index = track_info['index']
-        
+
         logging.info(f"Soloing track {track_index}: {track_name}")
-        
+
         if self.progress_tracker:
             self.progress_tracker.update_track_status(track_index, 'isolating')
-        
+
         try:
             self._navigate_to_song_if_needed(song_url)
             track_element = self._find_track_element(track_index)
@@ -215,7 +204,12 @@ class TrackManager:
             if not solo_button:
                 return False
 
-            return self._activate_solo_button(solo_button, track_name, track_index)
+            # Fast path: ensure_only_track_active should have already activated.
+            # Only click if the button isn't active yet.
+            if not is_solo_button_active(solo_button):
+                safe_click(self.driver, solo_button, f"solo button for {track_name}")
+
+            return self._activate_solo_button_verify_only(solo_button, track_name, track_index)
 
         except (InvalidSessionIdException, NoSuchWindowException):
             # Infrastructure failure — Chrome is gone. Don't pretend this is
@@ -284,16 +278,12 @@ class TrackManager:
         logging.debug(f"Track element HTML: {track_element.get_attribute('outerHTML')[:200]}...")
         return None
     
-    @profile_timing("_activate_solo_button", "track_management", "method")
-    def _activate_solo_button(self, solo_button, track_name, track_index):
-        """Activate the solo button and verify success"""
-        logging.info(f"Clicking solo button for {track_name}")
-        safe_click(self.driver, solo_button, f"solo button for {track_name}")
-        
+    @profile_timing("_activate_solo_button_verify_only", "track_management", "method")
+    def _activate_solo_button_verify_only(self, solo_button, track_name, track_index):
+        """Wait for solo activation; click was already handled by caller."""
         if self._wait_for_solo_activation(solo_button, track_name):
             return self._finalize_solo_activation(track_name, track_index)
-        else:
-            return self._retry_solo_activation(solo_button, track_name, track_index)
+        return self._retry_solo_activation(solo_button, track_name, track_index)
     
     def _wait_for_solo_activation(self, solo_button, track_name):
         """Wait for solo button to become active - track-type-aware timeout with enhanced detection"""
@@ -318,7 +308,7 @@ class TrackManager:
         while waited < max_wait:
             try:
                 # Check immediately without waiting first
-                if self._is_solo_button_active(solo_button):
+                if is_solo_button_active(solo_button):
                     logging.info(f"✅ Solo button became active for {track_name} (after {waited:.1f}s)")
                     return True
                 
@@ -338,66 +328,6 @@ class TrackManager:
         track_type = self._detect_track_type(track_name)
         logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name} (type: {track_type})")
         logging.warning(f"   Track-specific timeout was {track_type_timeout}s, actual timeout used: {max_wait}s")
-        return False
-    
-    def _is_solo_button_active(self, solo_button):
-        """Enhanced solo button active state detection with multiple approaches
-        
-        Args:
-            solo_button: WebElement representing the solo button
-            
-        Returns:
-            bool: True if button is in active state
-        """
-        try:
-            # Method 1: CSS class detection by exact token match.
-            # `in` against the raw class string would treat "active" as a
-            # substring of "inactive" and "on" as a substring of "button"/"icon",
-            # producing false positives for every inactive solo button.
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            class_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
-            # Method 2: ARIA attribute detection
-            aria_pressed = solo_button.get_attribute('aria-pressed')
-            aria_active = aria_pressed == 'true' if aria_pressed else False
-
-            # Method 3: Data attribute detection
-            data_state = (solo_button.get_attribute('data-state') or '').lower()
-            data_active = data_state in ('active', 'on', 'selected')
-
-            is_active = class_active or aria_active or data_active
-
-            # Enhanced logging for debugging click track issues
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("Solo button state detection:")
-                logging.debug(f"  Classes: {sorted(class_tokens)} -> Active: {class_active}")
-                logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
-                logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
-                logging.debug(f"  Final result: {is_active}")
-
-            return is_active
-
-        except Exception as e:
-            logging.debug(f"Error in enhanced solo button detection: {e}")
-            try:
-                fallback_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-                return bool(fallback_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-            except Exception:
-                return False
-    
-    def _check_solo_activation_status(self, solo_button, track_name, waited):
-        """Check and log solo activation status"""
-        try:
-            if self._is_solo_button_active(solo_button):
-                logging.info(f"✅ Solo button became active for {track_name} (after {waited}s)")
-                return True
-            
-            if waited % 2 == 0:  # Log every 2 seconds
-                button_classes = solo_button.get_attribute('class') or ''
-                logging.debug(f"   Still waiting for solo activation... ({waited}s) - classes: '{button_classes}'")
-        except Exception as e:
-            logging.debug(f"Error checking solo status at {waited}s: {e}")
-        
         return False
     
     def _retry_solo_activation(self, solo_button, track_name, track_index=None):
@@ -421,20 +351,16 @@ class TrackManager:
         """Perform multiple JavaScript clicks to ensure registration"""
         for i in range(SOLO_BUTTON_MAX_RETRIES):
             self.driver.execute_script("arguments[0].click();", solo_button)
-            try:
-                WebDriverWait(self.driver, 1).until(lambda driver: True)
-            except TimeoutException:
-                pass
     
     def _wait_for_retry_activation(self, solo_button):
         """Wait for solo button activation after retry"""
         try:
             WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
-                lambda driver: self._is_solo_button_active(solo_button)
+                lambda driver: is_solo_button_active(solo_button)
             )
             return True
         except TimeoutException:
-            return self._is_solo_button_active(solo_button)
+            return is_solo_button_active(solo_button)
     
     def _handle_solo_failure(self, solo_button, track_name):
         """Handle failed solo activation"""
@@ -446,54 +372,22 @@ class TrackManager:
     
     @profile_timing("_finalize_solo_activation", "track_management", "method")
     def _finalize_solo_activation(self, track_name, track_index=None):
-        """Finalize solo activation with comprehensive audio server sync verification"""
+        """Wait for audio server sync via DOM polling; brief safety buffer if needed."""
         logging.info(f"⏳ Waiting for audio server to process solo state for {track_name}...")
-        
-        # Phase 1: Wait for audio server processing indicators to clear
-        audio_server_ready = self._wait_for_audio_server_sync(track_index) if track_index is not None else False
-        
-        # Phase 2: Verify mixer state configuration
-        mixer_state_valid = self._verify_mixer_state_configuration()
-        
-        # Phase 3: Enhanced audio mix validation (optional)
-        phase3_validation_passed = True
-        if track_index is not None:
-            try:
-                logging.debug(f"🎵 Running Phase 3 audio mix validation for {track_name}...")
-                phase3_results = self._validate_audio_mix_state(track_name, track_index)
-                phase3_validation_passed = phase3_results['audio_mix_validated']
-                
-                if phase3_validation_passed:
-                    logging.info(f"✅ Phase 3 audio mix validation PASSED for {track_name}")
-                else:
-                    logging.warning(f"⚠️ Phase 3 audio mix validation FAILED for {track_name}")
-                    logging.warning(f"   Details: {'; '.join(phase3_results['details'][:3])}")  # Show first 3 details
-                    
-            except Exception as e:
-                logging.warning(f"⚠️ Phase 3 validation error for {track_name}: {e}")
-                # Don't fail the entire process if Phase 3 has issues
-        
-        # Phase 4: Intelligent fallback - much shorter since we have deterministic detection
-        if not audio_server_ready and not mixer_state_valid:
-            # Use very short fallback since our deterministic method should have worked
-            fallback_timeout = 1.0  # Just 1 second safety buffer
-            logging.info(f"⏳ Fallback: Using {fallback_timeout}s safety buffer (deterministic detection may have missed edge case)...")
-            time.sleep(fallback_timeout)
-        elif audio_server_ready:
-            # If deterministic detection worked, just add tiny safety buffer
-            safety_buffer = 0.2
-            logging.debug(f"⏳ Deterministic detection succeeded, adding {safety_buffer}s safety buffer...")
-            time.sleep(safety_buffer)
-        
-        # Final assessment
-        overall_success = audio_server_ready or mixer_state_valid
-        if overall_success and phase3_validation_passed:
-            logging.info(f"✅ Complete audio server sync verification successful for {track_name}")
-        elif overall_success:
-            logging.info(f"✅ Basic audio server sync verification complete for {track_name} (Phase 3 issues noted)")
+
+        audio_server_ready = (
+            self._wait_for_audio_server_sync(track_index)
+            if track_index is not None
+            else False
+        )
+
+        if audio_server_ready:
+            time.sleep(0.2)  # Tiny safety buffer after deterministic detection
+            logging.info(f"✅ Audio server sync verified for {track_name}")
         else:
-            logging.warning(f"⚠️ Audio server sync verification had issues for {track_name} - using fallback timing")
-            
+            time.sleep(1.0)  # Fallback safety buffer when DOM detection didn't conclude
+            logging.warning(f"⚠️ Audio server sync inconclusive for {track_name} — using fallback")
+
         return True
     
     @profile_timing("_wait_for_audio_server_sync", "track_management", "method")
@@ -510,7 +404,7 @@ class TrackManager:
             
             for check_num in range(max_checks):
                 try:
-                    # Use the same reliable logic as Phase 3 validation
+                    # Reuse the reliable solo-button predicate
                     if self._is_solo_button_active_for_index(expected_solo_index):
                         elapsed_time = (check_num * 0.2) + 0.3
                         logging.debug(f"✅ Solo button active after {elapsed_time:.1f}s - server sync complete")
@@ -539,141 +433,13 @@ class TrackManager:
         try:
             track_selector = f".track[data-index='{expected_solo_index}']"
             track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
-            
             if not track_elements:
                 return False
-                
-            track_element = track_elements[0]
-            solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            return bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
+            solo_button = track_elements[0].find_element(By.CSS_SELECTOR, "button.track__solo")
+            return is_solo_button_active(solo_button)
         except Exception:
-            # Return False on any error - don't crash the polling loop
             return False
 
-    def _verify_mixer_state_configuration(self):
-        """Verify mixer state configuration matches expected solo state"""
-        try:
-            logging.debug("🔍 Verifying mixer state configuration...")
-            
-            # Method 1: Check for mixer object availability via JavaScript
-            try:
-                mixer_available = self.driver.execute_script("""
-                    return typeof mixer !== 'undefined' && mixer !== null;
-                """)
-                
-                if mixer_available:
-                    # Try to get mixer state information
-                    mixer_state = self.driver.execute_script("""
-                        try {
-                            // Check if mixer has state-related properties
-                            if (typeof mixer.getState === 'function') {
-                                return mixer.getState();
-                            } else if (typeof mixer.currentState !== 'undefined') {
-                                return mixer.currentState;
-                            } else if (typeof mixer.state !== 'undefined') {
-                                return mixer.state;
-                            }
-                            return 'mixer_available_no_state';
-                        } catch (e) {
-                            return 'mixer_error: ' + e.message;
-                        }
-                    """)
-                    
-                    logging.debug(f"🎛️ Mixer state: {mixer_state}")
-                    
-                    # If we got any state information, consider it valid
-                    if mixer_state and str(mixer_state) != 'null':
-                        logging.debug("✅ Mixer state configuration verified")
-                        return True
-                        
-            except Exception as js_error:
-                logging.debug(f"JavaScript mixer check failed: {js_error}")
-            
-            # Method 2: Check DOM for mixer-related status elements
-            try:
-                # Look for mixer status indicators in the DOM
-                mixer_elements = self.driver.find_elements(By.CSS_SELECTOR, 
-                    ".mixer, .mixer-status, .track-mixer, .audio-mixer")
-                
-                if mixer_elements:
-                    logging.debug(f"✅ Found {len(mixer_elements)} mixer DOM elements")
-                    return True
-                    
-            except Exception as dom_error:
-                logging.debug(f"DOM mixer check failed: {dom_error}")
-            
-            # Method 3: Check for track state consistency
-            try:
-                # Verify at least one solo button is active
-                active_solos = self.driver.find_elements(By.CSS_SELECTOR, 
-                    "button.track__solo.active, button.track__solo.is-active, button.track__solo.selected")
-                
-                if active_solos:
-                    logging.debug(f"✅ Found {len(active_solos)} active solo button(s)")
-                    return True
-                    
-            except Exception as solo_error:
-                logging.debug(f"Solo button check failed: {solo_error}")
-            
-            logging.debug("⚠️ Mixer state verification inconclusive - using fallback")
-            return False
-            
-        except Exception as e:
-            logging.warning(f"⚠️ Error during mixer state verification: {e}")
-            return False
-    
-    @validation_safe(return_value={'audio_mix_validated': False, 'error_code': 'VALIDATION_FAILED'}, operation_name="audio mix validation")
-    def _validate_audio_mix_state(self, track_name, expected_solo_index):
-        """Simple validation that the expected track's solo button is active"""
-        logging.debug(f"🎵 Phase 3: Validating audio mix state for {track_name}...")
-        
-        # Simple but effective validation: check if expected solo button is active
-        is_valid = self._is_expected_solo_active(expected_solo_index)
-        
-        if is_valid:
-            logging.info(f"✅ Phase 3: Audio mix validation PASSED for {track_name}")
-            return {
-                'audio_mix_validated': True,
-                'error_code': None,
-                'details': [f"Solo button active for track {expected_solo_index}"]
-            }
-        else:
-            logging.warning(f"⚠️ Phase 3: Audio mix validation FAILED for {track_name}")
-            return {
-                'audio_mix_validated': False,
-                'error_code': 'SOLO_BUTTON_NOT_ACTIVE',
-                'details': [f"Expected solo button {expected_solo_index} is not active"]
-            }
-    
-    @validation_safe(return_value=False, operation_name="solo button check")
-    def _is_expected_solo_active(self, expected_solo_index):
-        """Check if the expected solo button is active and others are not"""
-        try:
-            # Find the expected track element
-            track_selector = f".track[data-index='{expected_solo_index}']"
-            track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
-            
-            if not track_elements:
-                return False
-                
-            track_element = track_elements[0]
-            solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            is_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
-            if is_active:
-                logging.debug(f"✅ Solo button is active for track {expected_solo_index}")
-                return True
-            else:
-                logging.debug(f"⚠️ Solo button not active for track {expected_solo_index}")
-                return False
-                
-        except Exception as e:
-            logging.warning(f"Error checking solo button state: {e}")
-            return False
-    
     def clear_all_solos(self, song_url):
         """Clear all solo buttons (un-mute all tracks)"""
         logging.info("Clearing all solo buttons...")
@@ -697,14 +463,14 @@ class TrackManager:
             for button in solo_buttons:
                 try:
                     # Use enhanced detection to identify active solo buttons
-                    if self._is_solo_button_active(button):
+                    if is_solo_button_active(button):
                         logging.info("Clicking to deactivate active solo button")
                         button.click()
                         active_solos += 1
                         # Brief wait for UI update with enhanced detection
                         try:
                             WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                                lambda driver: not self._is_solo_button_active(button)
+                                lambda driver: not is_solo_button_active(button)
                             )
                         except TimeoutException:
                             pass  # Continue even if state change not detected
@@ -751,29 +517,32 @@ class TrackManager:
                 
             active_tracks = []
             target_button = None
-            
+
+            # data-index comes from the DOM as a string; coerce so it can be
+            # compared against enumerate()'s int loop counter.
+            target_index_int = int(target_index) if isinstance(target_index, str) else target_index
+
             # Scan for currently active tracks using enhanced detection
             for i, button in enumerate(solo_buttons):
                 try:
-                    if self._is_solo_button_active(button):
+                    if is_solo_button_active(button):
                         active_tracks.append(i)
                         logging.debug(f"Found active track: {i}")
-                    
-                    # Remember target button for later activation
-                    if i == target_index:
+
+                    if i == target_index_int:
                         target_button = button
-                        
+
                 except Exception as e:
                     logging.debug(f"Error checking button {i}: {e}")
                     continue
-            
+
             # Check if target is already the only active track
-            if len(active_tracks) == 1 and active_tracks[0] == target_index:
+            if len(active_tracks) == 1 and active_tracks[0] == target_index_int:
                 logging.debug(f"Track {target_index} is already the only active track - no clearing needed")
                 return True
-            
+
             # Deactivate only the conflicting tracks (not target)
-            conflicting_tracks = [track for track in active_tracks if track != target_index]
+            conflicting_tracks = [track for track in active_tracks if track != target_index_int]
             
             if conflicting_tracks:
                 logging.info(f"Deactivating {len(conflicting_tracks)} conflicting tracks: {conflicting_tracks}")
@@ -787,7 +556,7 @@ class TrackManager:
                         # Brief wait for deactivation with enhanced detection
                         try:
                             WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                                lambda driver: not self._is_solo_button_active(button)
+                                lambda driver: not is_solo_button_active(button)
                             )
                         except TimeoutException:
                             pass  # Continue even if state change not detected immediately
@@ -799,7 +568,7 @@ class TrackManager:
                 logging.debug("No conflicting tracks to deactivate")
             
             # Activate target track if it's not already active
-            if target_index not in active_tracks:
+            if target_index_int not in active_tracks:
                 if target_button:
                     logging.debug(f"Activating target track {target_index}")
                     target_button.click()
@@ -807,7 +576,7 @@ class TrackManager:
                     # Brief wait for activation
                     try:
                         WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                            lambda driver: self._is_solo_button_active(target_button)
+                            lambda driver: is_solo_button_active(target_button)
                         )
                     except TimeoutException:
                         pass  # Continue even if state change not detected immediately
@@ -981,21 +750,11 @@ class TrackManager:
                         raise e
                 
                 # Brief wait between clicks for UI responsiveness
-                try:
-                    WebDriverWait(self.driver, 0.5).until(
-                        lambda driver: True  # Minimal delay replacement
-                    )
-                except TimeoutException:
-                    pass
+                time.sleep(0.1)
                 logging.debug(f"   Step {step + 1}/{steps_needed}")
             
             # Wait for UI to update the key display
-            try:
-                WebDriverWait(self.driver, 2).until(
-                    lambda driver: True  # Allow UI update time
-                )
-            except TimeoutException:
-                pass
+            time.sleep(0.5)
             try:
                 final_value_element = pitch_container.find_element(By.XPATH, ".//div[text()!='' and not(@class) and not(contains(@class, 'pitch__label'))]")
                 final_key = int(final_value_element.text.strip())
