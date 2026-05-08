@@ -12,14 +12,19 @@
 
 ### Final result
 
-| Metric | Pre-implementation (`main`) | Post-implementation | Delta |
-|---|---|---|---|
-| Mean per-track | 27.6s | **20.3s** | **−7.3s, −26.5%** |
-| 15-track song duration | ~7m 30s | ~5m 5s | −2m 25s |
+| Metric | Pre-implementation (`main`) | After Phase 1–6 merge | After post-merge fixes | Delta vs main |
+|---|---|---|---|---|
+| Mean per-track | 27.6s | 20.3s | **19.5s** | **−8.1s, −29.3%** |
+| 15-track song duration | ~7m 30s | ~5m 5s | **5m 6s** | −2m 24s |
+| Click track | 43.3s | 17.2s | 29.7s* | −13.6s |
+| Slowest non-Click | 31.9s | 30.6s | 29.2s | −2.7s |
+| Success rate (full 15-track run) | — | — | **15/15 (100%)** | — |
 
-Single-track-best: Click track 43.3s → 17.2s (**−26.1s**). Validated against ELO "Don't Bring Me Down" with `--profile --max-tracks 5`. Stats archived in `docs/baselines/`.
+\* Click track went up post-merge because the off-screen click bug (introduced by Phase 5's fix) was triggering on the Click→Drum Kit transition; later fixed via `ebefab8`. The 29.7s here is the new floor — 12s of mandatory click-track solo polling + ~18s server mix generation.
 
-### Phases shipped (all merged to `main`)
+Validated end-to-end against ELO "Don't Bring Me Down" with full 15-track runs. Stats archived in `docs/baselines/`.
+
+### Phases shipped (all merged to `main` via `feature/perf-optimization`)
 
 | Phase | Outcome |
 |---|---|
@@ -33,6 +38,21 @@ Single-track-best: Click track 43.3s → 17.2s (**−26.1s**). Validated against
 | 6.2 — Replace misleading `WebDriverWait(...).until(lambda d: True)` no-ops | ✅ |
 | 6.3 — Audit `tools/inspection/` and `archive/` | ✅ Audit done; stale scripts + `archive/` deleted |
 
+### Post-merge fixes (2026-05-08, after Phase 1–6 merge)
+
+Discovered during validation runs and shipped directly to `main` with user approval:
+
+| Commit | Change | Why |
+|---|---|---|
+| `b8bc1e3` | Rule out Dropbox folder swap (docs only) | Micro-benchmark showed 0.18ms/song overhead — negligible |
+| `ebefab8` | Off-screen solo button clicks → `js_click_with_scroll` | Three bare `button.click()` calls in `track_manager` were failing on off-screen targets after Phase 5's fix. Cost ~23s on Click + Drum Kit per song before fix. |
+| `958f84d` | Pin `watchdog==6.0.0` in `requirements.txt` | The watchdog fast-path in `wait_for_download_to_start` was silently disabled (import failed); production was using polling fallback (~500ms avg detection delay). Saves ~7s per 15-track song. |
+| `40399c7` | Use `string.capwords` instead of `str.title()` for URL-derived names | `str.title()` capitalized letters after apostrophes (`"Don't"` → `"Don'T"`). Folders now render correctly. |
+| `0fdaac7` | Collapse embedded whitespace in track names from DOM | The "Intro count Click" caption is two siblings with `\n      ` between them; broke progress-display column alignment. |
+| `4f4a178` | Propagate download-completion outcome via `result` dict | A timed-out download (e.g. CDN connection died, `.crdownload` stuck at 32KB) was returning `True` from `_monitor_download_completion`, bypassing the retry tier. Now correctly routes through retry. |
+| `044d4d9` | Normalize whitespace in track-name verification | Regression from `0fdaac7`: `_verify_track_selection_state` re-read the DOM caption fresh and didn't apply the same whitespace normalization, causing every Click track download to fail verification 3× in retry. |
+| `f57d1bf` | Skip already-downloaded tracks (idempotent re-runs) | Re-running on a partially-completed song was wiping the folder and re-downloading everything. Now skips tracks whose final `.mp3` is on disk; sweeps only stale `.crdownload` files. |
+
 ### Phases skipped or closed without action
 
 | Phase | Reason |
@@ -40,20 +60,20 @@ Single-track-best: Click track 43.3s → 17.2s (**−26.1s**). Validated against
 | 7.1 — Per-track folder clearing investigation | Hypothesized bug **does not exist** — `cleanup_existing=False` propagates correctly. Closed. |
 | 7.2 — Mystery 2s solo→download gap | Hypothesized gap **does not exist** — measured at 0ms. Closed. |
 | 8.1 — Direct `mixer.getMix()` API call | Impossible: function returns void; download URL only delivered via modal DOM. Closed. |
-| 8.2 — Speculative pre-soloing of next track | Deferred — risky (shared solo state, could corrupt in-flight download). Not worth it given current 20.3s/track. |
+| 8.2 — Speculative pre-soloing of next track | Deferred — risky (shared solo state, could corrupt in-flight download). Not worth it given current 19.5s/track. |
 | 8.4 — Wire `--profile` into CI | Deferred — the tool runs manually; CI would be overkill. |
 
 ### Outstanding (NOT implemented; worth your consideration later)
-
-These came up during implementation but were not pursued because each requires a personal/environment decision:
 
 1. **Site-selectors drift refresh.** Phase 2 live inspection (2026-05-08) found the karaoke-version.com mixer DOM has shifted: the live site uses `.custom__mixer-track-line` (with `data-index`) for tracks and `a.custom__song-download` for the download link. The codebase's primary selectors (`.track`, `a.download`) no longer match; production succeeds because of fallback selectors (`a[class*='download']` matches; `.track[data-index]` is searched but production-side Selenium queries through some other path that still works). Worth a future selectors refresh in `packages/configuration/selectors.py` to make the primary selectors accurate again. **Effort: ~30min, low risk** — replace primaries, keep fallbacks for safety. Also: `/login` returns 404; the actual form is at `/my/login.html`. The `LOGIN_URL` env default in `packages/configuration/config.py` should probably be updated. See `docs/site-flow/2026-05-08-download-modal-flow.md`.
 
 2. **`tools/inspection/` partial-cleanup follow-up.** The 2026-05-08 audit deleted 7 broken/stale scripts and the `archive/` directory. Four scripts remain (`debug_track_discovery.py`, `inspect_key_controls.py`, `simple_page_test.py`, `verify_solo_button_detection.py`). They compile but haven't been used recently. If you don't reach for them in the next month, consider deleting too. See `docs/audits/2026-05-08-tools-inspection-audit.md`.
 
+3. **Optional: `--force` CLI flag for clean re-runs.** Today's skip-existing change makes the default behavior idempotent. If you ever want to force re-download a song without manually deleting the folder, a `--force` flag that re-enables the old `clear_song_folder` call would take ~10 lines. Not strictly needed (manual delete works fine), but worth knowing about.
+
 ### Investigated and ruled out
 
-- **Phase 8.3 — Moving `DOWNLOAD_FOLDER` out of Dropbox.** Tested 2026-05-08 with both an end-to-end profiler comparison (noisy, server jitter dominated) and a targeted filesystem micro-benchmark. Result: **Dropbox adds 0.18ms per song to filesystem ops** — completely negligible. The 14s/track of server-side mix-generation dwarfs everything else. Don't bother changing.
+- **Phase 8.3 — Moving `DOWNLOAD_FOLDER` out of Dropbox.** Tested 2026-05-08 with both an end-to-end profiler comparison (noisy, server jitter dominated) and a targeted filesystem micro-benchmark (`/tmp/fs_bench.py`) plus a watchdog event-latency benchmark (`/tmp/watchdog_bench.py`). Results: Dropbox adds 0.18ms per song to FS operations and ~1.4ms to watchdog event delivery — both within noise, completely negligible. The 14s/track of server-side mix-generation dwarfs everything else. Don't bother changing. See `docs/spikes/2026-05-08-phase-8-research.md`.
 
 ---
 
