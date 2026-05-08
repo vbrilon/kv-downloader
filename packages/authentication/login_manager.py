@@ -142,24 +142,6 @@ class LoginManager:
         
         return True
     
-    def _emergency_cookie_fallback(self):
-        """Emergency fallback for logout failures"""
-        try:
-            self.driver.delete_all_cookies()
-            self.driver.refresh()
-            
-            try:
-                self.wait.until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
-            except TimeoutException:
-                pass
-            
-            return True
-        except (Exception, WebDriverException) as e:
-            logging.debug(f"Cookie fallback failed: {e}")
-            return False
-    
     def click_login_link(self):
         """Find and click the login link"""
         try:
@@ -442,10 +424,17 @@ class LoginManager:
             session_data = self._load_and_validate_session_data()
             if not session_data:
                 return False
-            
+
             self._restore_browser_state(session_data)
             return self._verify_session_restoration()
-            
+
+        except (pickle.UnpicklingError, EOFError, ValueError, KeyError) as e:
+            # Corrupt or unreadable pickle — same disposition as an expired
+            # session: remove it so the next run re-authenticates cleanly
+            # instead of failing identically forever.
+            logging.warning(f"⚠️ Discarding corrupt session file: {e}")
+            self.clear_session()
+            return False
         except Exception as e:
             logging.warning(f"⚠️ Could not load session data: {e}")
             return False

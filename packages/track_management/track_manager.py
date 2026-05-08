@@ -8,7 +8,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import (
     NoSuchElementException,
     ElementClickInterceptedException,
-    TimeoutException
+    InvalidSessionIdException,
+    NoSuchWindowException,
+    TimeoutException,
 )
 from ..utils import safe_click, validation_safe, profile_timing, profile_selenium
 from ..configuration import SOLO_ACTIVATION_DELAY
@@ -208,13 +210,18 @@ class TrackManager:
             track_element = self._find_track_element(track_index)
             if not track_element:
                 return False
-            
+
             solo_button = self._find_solo_button(track_element, track_index)
             if not solo_button:
                 return False
-            
+
             return self._activate_solo_button(solo_button, track_name, track_index)
-            
+
+        except (InvalidSessionIdException, NoSuchWindowException):
+            # Infrastructure failure — Chrome is gone. Don't pretend this is
+            # a product-side "couldn't solo this track"; let the caller see
+            # it and decide whether to retry, restart Chrome, or abort.
+            raise
         except Exception as e:
             logging.error(f"Error soloing track {track_name}: {e}")
             return False
