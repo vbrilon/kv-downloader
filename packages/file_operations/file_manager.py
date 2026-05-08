@@ -198,6 +198,29 @@ class FileManager:
             # Fallback to base download folder
             return _download_folder()
 
+    def cleanup_partial_downloads(self, song_folder_name):
+        """Remove leftover .crdownload files from a previous interrupted run.
+
+        Does NOT touch completed .mp3 files — those are skipped per-track in
+        the orchestrator so re-runs don't redo finished work.
+        """
+        try:
+            song_path = _download_folder() / song_folder_name
+            if not song_path.exists() or not song_path.is_dir():
+                return
+            removed = []
+            for child in song_path.iterdir():
+                if child.is_file() and child.suffix == '.crdownload':
+                    try:
+                        child.unlink()
+                        removed.append(child.name)
+                    except Exception as e:
+                        logging.warning(f"Could not remove partial download {child.name}: {e}")
+            if removed:
+                logging.info(f"🧹 Removed {len(removed)} stale .crdownload file(s) from {song_folder_name}")
+        except Exception as e:
+            logging.warning(f"Error cleaning partial downloads in {song_folder_name}: {e}")
+
     def cleanup_existing_downloads(self, track_name, download_folder=None):
         """Remove existing files that might conflict with new download"""
         try:

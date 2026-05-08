@@ -227,29 +227,32 @@ class TestKaraokeVersionAutomatorWorkflow:
         mock_log_warning.assert_called_once_with("⚠️ Could not adjust key to -2 - continuing with default key")
     
     def test_prepare_song_folder_with_explicit_name(self):
-        """Test preparing song folder when song has explicit name"""
+        """Preparing the folder must clean partial downloads (not wipe the
+        whole folder) so re-runs can skip already-completed tracks."""
         # Arrange
         song = {'name': 'Explicit_Song_Name', 'url': 'http://example.com'}
-        
+
         # Act
         self.automator._prepare_song_folder(song)
-        
+
         # Assert
-        self.automator.file_manager.clear_song_folder.assert_called_once_with('Explicit_Song_Name')
+        self.automator.file_manager.cleanup_partial_downloads.assert_called_once_with('Explicit_Song_Name')
+        self.automator.file_manager.clear_song_folder.assert_not_called()
         self.automator.download_manager.extract_song_folder_name.assert_not_called()
-    
+
     def test_prepare_song_folder_without_name(self):
-        """Test preparing song folder when song has no explicit name"""
+        """Same as above but with auto-extracted folder name."""
         # Arrange
         song = {'url': 'http://example.com'}
         self.automator.download_manager.extract_song_folder_name.return_value = 'Extracted_Name'
-        
+
         # Act
         self.automator._prepare_song_folder(song)
-        
+
         # Assert
         self.automator.download_manager.extract_song_folder_name.assert_called_once_with('http://example.com')
-        self.automator.file_manager.clear_song_folder.assert_called_once_with('Extracted_Name')
+        self.automator.file_manager.cleanup_partial_downloads.assert_called_once_with('Extracted_Name')
+        self.automator.file_manager.clear_song_folder.assert_not_called()
     
     def test_download_all_tracks(self):
         """Test downloading all tracks for a song"""

@@ -251,9 +251,15 @@ class KaraokeVersionAutomator:
                 logging.warning(f"⚠️ Could not adjust key to {song_key:+d} - continuing with default key")
     
     def _prepare_song_folder(self, song):
-        """Clear and prepare the song folder for downloads"""
+        """Ensure song folder exists; clean up only stale .crdownload files.
+
+        Idempotent re-runs: if a track's final .mp3 already exists, the
+        per-track skip in _download_single_track will skip it. We only sweep
+        partial .crdownload files (from a previous interrupted run), since
+        keeping those around would either waste disk or fool our detection.
+        """
         song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
-        self.file_manager.clear_song_folder(song_folder_name)
+        self.file_manager.cleanup_partial_downloads(song_folder_name)
     
     def _download_all_tracks(self, song, tracks, song_key):
         """Download all tracks for the song (or limited by max_tracks_per_song)"""
@@ -279,6 +285,13 @@ class KaraokeVersionAutomator:
         """
         track_name = self.sanitize_filename(track['name'])
         success = False
+
+        # Skip if already downloaded — makes re-runs idempotent. Only the initial
+        # pass uses this fast path; the retry tier (_attempt_track_download)
+        # always tries the actual download because something must have failed
+        # for it to reach the retry queue.
+        if self._track_file_already_exists(song, track_name):
+            return self._record_skip_existing(song, track, track_name)
 
         if self.progress:
             self.progress.update_track_status(track['index'], 'isolating')
@@ -315,6 +328,44 @@ class KaraokeVersionAutomator:
             self._record_failed_download(song, track, "Failed to solo track")
 
         return success
+
+    def _track_file_already_exists(self, song, track_name):
+        """True if `<song folder>/<track_name>.mp3` is already on disk.
+
+        Used to make re-runs idempotent: tracks that finished in a prior run
+        get skipped instead of redownloaded.
+        """
+        # Read fresh from the config module each call (like file_manager._download_folder)
+        # so tests that monkeypatch packages.configuration.config.DOWNLOAD_FOLDER work.
+        from packages.configuration import config as _config
+        DOWNLOAD_FOLDER = _config.DOWNLOAD_FOLDER
+        song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
+        return (Path(DOWNLOAD_FOLDER) / song_folder_name / f"{track_name}.mp3").exists()
+
+    def _record_skip_existing(self, song, track, track_name):
+        """Mark an already-on-disk track as completed in stats/progress.
+
+        Counts toward 'completed' (not 'failed', not a separate 'skipped' bucket
+        — the user's expectation is that re-runs just look like they "worked").
+        """
+        # Read fresh from the config module each call (like file_manager._download_folder)
+        # so tests that monkeypatch packages.configuration.config.DOWNLOAD_FOLDER work.
+        from packages.configuration import config as _config
+        DOWNLOAD_FOLDER = _config.DOWNLOAD_FOLDER
+        song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
+        existing = Path(DOWNLOAD_FOLDER) / song_folder_name / f"{track_name}.mp3"
+        size = existing.stat().st_size if existing.exists() else 0
+        size_mb = size / (1024 * 1024)
+        logging.info(f"⏭️  Skipping {track_name} — already downloaded ({size_mb:.1f} MB)")
+        self.stats.record_track_start(song['name'], track_name, track['index'])
+        self.stats.record_track_completion(
+            song['name'], track_name,
+            success=True,
+            file_size=size,
+        )
+        if self.progress:
+            self.progress.update_track_status(track['index'], 'completed', progress=100)
+        return True
 
     def _record_failed_download(self, song, track, reason):
         """Record a failed download for later retry

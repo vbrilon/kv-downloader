@@ -320,6 +320,57 @@ def test_apostrophe_titlecase_in_generated_names():
     assert "Don'T" not in artist_song, f"Got the title()-style miscapitalization: {artist_song!r}"
 
 
+def test_cleanup_partial_downloads_removes_only_crdownload(tmp_path, monkeypatch):
+    """cleanup_partial_downloads must wipe .crdownload files but leave .mp3
+    files intact (so re-runs can skip already-completed tracks)."""
+    from packages.file_operations.file_manager import FileManager
+    import packages.configuration.config as cfg
+
+    monkeypatch.setattr(cfg, 'DOWNLOAD_FOLDER', str(tmp_path))
+
+    song_dir = tmp_path / "Test Song"
+    song_dir.mkdir()
+    (song_dir / "Bass.mp3").write_bytes(b"x" * 100)              # finished
+    (song_dir / "Drum Kit.mp3").write_bytes(b"x" * 100)          # finished
+    (song_dir / "Piano.mp3.crdownload").write_bytes(b"y" * 50)   # partial
+    (song_dir / "Vocal.mp3.crdownload").write_bytes(b"y" * 50)   # partial
+
+    FileManager().cleanup_partial_downloads("Test Song")
+
+    remaining = sorted(p.name for p in song_dir.iterdir())
+    assert remaining == ["Bass.mp3", "Drum Kit.mp3"], f"Got {remaining}"
+
+
+def test_cleanup_partial_downloads_handles_missing_folder(tmp_path, monkeypatch):
+    """Not an error if the song folder doesn't exist yet."""
+    from packages.file_operations.file_manager import FileManager
+    import packages.configuration.config as cfg
+
+    monkeypatch.setattr(cfg, 'DOWNLOAD_FOLDER', str(tmp_path))
+    # Should not raise
+    FileManager().cleanup_partial_downloads("Nonexistent Song")
+
+
+def test_track_file_already_exists(tmp_path, monkeypatch):
+    """_track_file_already_exists checks the right path: <DOWNLOAD_FOLDER>/<song name>/<track>.mp3."""
+    import packages.configuration.config as cfg
+    monkeypatch.setattr(cfg, 'DOWNLOAD_FOLDER', str(tmp_path))
+
+    # Build only the parts of KaraokeVersionAutomator we need — full init wants a real driver.
+    from karaoke_automator import KaraokeVersionAutomator
+    automator = KaraokeVersionAutomator.__new__(KaraokeVersionAutomator)
+    # download_manager.extract_song_folder_name is the fallback; not used here
+    # because song['name'] is set.
+    automator.download_manager = None
+
+    song = {'name': 'Test Song', 'url': 'https://example.com/song'}
+    (tmp_path / "Test Song").mkdir()
+    (tmp_path / "Test Song" / "Bass.mp3").write_bytes(b"x" * 100)
+
+    assert automator._track_file_already_exists(song, "Bass") is True
+    assert automator._track_file_already_exists(song, "Drum Kit") is False
+
+
 if __name__ == "__main__":
     print("📁 SONG FOLDER FUNCTIONALITY TESTS")
     print("="*60)
