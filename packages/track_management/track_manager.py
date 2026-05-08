@@ -86,7 +86,11 @@ class TrackManager:
         for i, track_element in enumerate(track_elements):
             try:
                 caption_element = track_element.find_element(By.CSS_SELECTOR, TRACK_CAPTION_SELECTOR)
-                track_name = caption_element.text.strip()
+                # Some captions (e.g. "Intro count\n      Click") have embedded
+                # newlines + leading whitespace between sibling elements; collapse
+                # any run of whitespace to a single space so progress display and
+                # filenames render cleanly on one line.
+                track_name = ' '.join(caption_element.text.split())
                 data_index = track_element.get_attribute("data-index")
                 
                 logging.debug(f"Processing track element {i}: data-index='{data_index}', name='{track_name}'")
