@@ -7,9 +7,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import (
+    InvalidSessionIdException,
     NoSuchElementException,
+    NoSuchWindowException,
+    TimeoutException,
     WebDriverException,
-    TimeoutException
 )
 from ..utils import safe_click_with_scroll, profile_timing, profile_selenium
 from ..configuration.selectors import DOWNLOAD_BUTTON_SELECTORS
@@ -63,15 +65,17 @@ class DownloadManager:
         song_name = song_folder
         
         # Update progress tracker
-        # Use provided track_index if available, otherwise try to find by name
+        # Use provided track_index if available, otherwise try to find by name.
+        # `tracks` is not part of the IProgressTracker contract — adapters may
+        # not expose it — so look it up defensively rather than assuming.
         if track_index is None:
-            # Find track by name to get index (fallback method)
-            for track in self.progress_tracker.tracks:
+            tracks = getattr(self.progress_tracker, 'tracks', None) or []
+            for track in tracks:
                 if track_name.lower() in track['name'].lower() or track['name'].lower() in track_name.lower():
                     track_index = track['index']
                     logging.debug(f"Found track index {track_index} for {track_name}")
                     break
-            
+
             if track_index is None:
                 logging.warning(f"Could not find track index for {track_name}")
         
@@ -251,7 +255,11 @@ class DownloadManager:
                 return False
             
             return True
-            
+
+        except (InvalidSessionIdException, NoSuchWindowException):
+            # Chrome is gone — propagate so callers can distinguish this from
+            # a per-track product failure and decide whether to abort.
+            raise
         except Exception as e:
             # Handle specific error types
             if str(e) == "SONG_NOT_PURCHASED":
@@ -262,15 +270,15 @@ class DownloadManager:
                 logging.error("Could not find download button - unknown error")
             else:
                 logging.error(f"Error downloading mix: {e}")
-            
+
             # Update progress tracker to failed
             if self.progress_tracker and track_index:
                 self.progress_tracker.update_track_status(track_index, 'failed')
-            
+
             # Record failure in stats
-            self.stats_reporter.record_track_completion(song_name, track_name, success=False, 
+            self.stats_reporter.record_track_completion(song_name, track_name, success=False,
                                                        error_message=str(e))
-            
+
             return False
     
     @profile_timing("_navigate_and_find_download_button", "download_management", "method")

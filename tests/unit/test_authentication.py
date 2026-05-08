@@ -442,18 +442,17 @@ class TestSessionPersistence(TestCase):
     
     @patch('packages.authentication.login_manager.logging.warning')
     def test_load_session_corrupted_file(self, mock_log_warning):
-        """Test loading corrupted session file"""
-        # Create corrupted file
+        """Corrupt session files must be discarded so the next run can
+        re-authenticate cleanly instead of failing identically forever."""
         with open(self.session_file, 'w') as f:
             f.write("corrupted data")
 
         result = self.manager.load_session()
 
         self.assertFalse(result)
-        # Production logs a warning when pickle.load fails
         mock_log_warning.assert_called_once()
-        # Production leaves the corrupted file in place; clear_session is the user-facing remover
-        self.assertTrue(self.session_file.exists())
+        self.assertFalse(self.session_file.exists(),
+                         "Corrupt session file should be cleared by load_session")
 
 
 class TestCookieManagement(TestCase):
@@ -473,15 +472,6 @@ class TestCookieManagement(TestCase):
         self.mock_driver.delete_all_cookies.assert_called_once()
         self.mock_driver.refresh.assert_called_once()
     
-    def test_emergency_cookie_fallback_refresh_check(self):
-        """Test emergency cookie fallback clears cookies and refreshes the page"""
-        result = self.manager._emergency_cookie_fallback()
-
-        self.assertTrue(result)
-        self.mock_driver.delete_all_cookies.assert_called_once()
-        self.mock_driver.refresh.assert_called_once()
-
-
 class TestLoginFormInteraction(TestCase):
     """Test login form interaction and submission"""
     
