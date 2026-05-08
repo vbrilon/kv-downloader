@@ -137,7 +137,11 @@ def test_finalize_solo_activation_does_not_call_mixer_state_check(mocker):
 
 def test_ensure_only_track_active_finds_target_with_string_index(mocker):
     """data-index comes from the DOM as a string. ensure_only_track_active must
-    handle string indices correctly (the prior int == str comparison silently failed)."""
+    handle string indices correctly (the prior int == str comparison silently failed).
+
+    The activation goes through js_click_with_scroll (so off-screen targets are
+    scroll-into-view'd then JS-clicked) — verify it's invoked with the target button.
+    """
     from packages.track_management.track_manager import TrackManager
 
     tm = mocker.Mock(spec=TrackManager)
@@ -146,18 +150,21 @@ def test_ensure_only_track_active_finds_target_with_string_index(mocker):
 
     btn0 = mocker.Mock()
     btn3 = mocker.Mock()
-    btn3.click = mocker.Mock()
     tm.driver.find_elements = mocker.Mock(return_value=[btn0, mocker.Mock(), mocker.Mock(), btn3])
     # Production code now uses the module-level is_solo_button_active, not a
     # method on TrackManager — patch it at the module where it's looked up.
     mocker.patch('packages.track_management.track_manager.is_solo_button_active', return_value=False)
 
     mocker.patch('packages.track_management.track_manager.WebDriverWait')
+    mock_js_click = mocker.patch('packages.track_management.track_manager.js_click_with_scroll', return_value=True)
 
     result = TrackManager.ensure_only_track_active(tm, "3", "https://song-url")
 
     assert result is True
-    btn3.click.assert_called_once()
+    # The target button (btn3) must have been the click target.
+    mock_js_click.assert_called_once()
+    args, _ = mock_js_click.call_args
+    assert args[1] is btn3, f"Expected target button (btn3) to be clicked, got {args[1]}"
 
 
 if __name__ == "__main__":

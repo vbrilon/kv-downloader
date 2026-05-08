@@ -12,7 +12,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
 )
-from ..utils import safe_click, profile_timing, profile_selenium, is_solo_button_active
+from ..utils import safe_click, js_click_with_scroll, profile_timing, profile_selenium, is_solo_button_active
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
@@ -465,7 +465,7 @@ class TrackManager:
                     # Use enhanced detection to identify active solo buttons
                     if is_solo_button_active(button):
                         logging.info("Clicking to deactivate active solo button")
-                        button.click()
+                        js_click_with_scroll(self.driver, button, "active solo button")
                         active_solos += 1
                         # Brief wait for UI update with enhanced detection
                         try:
@@ -551,7 +551,7 @@ class TrackManager:
                     try:
                         button = solo_buttons[track_index]
                         logging.debug(f"Deactivating track {track_index}")
-                        button.click()
+                        js_click_with_scroll(self.driver, button, f"conflicting solo button (track {track_index})")
                         
                         # Brief wait for deactivation with enhanced detection
                         try:
@@ -571,7 +571,7 @@ class TrackManager:
             if target_index_int not in active_tracks:
                 if target_button:
                     logging.debug(f"Activating target track {target_index}")
-                    target_button.click()
+                    js_click_with_scroll(self.driver, target_button, f"target solo button (track {target_index})")
                     
                     # Brief wait for activation
                     try:
