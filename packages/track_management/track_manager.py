@@ -431,33 +431,21 @@ class TrackManager:
     
     @profile_timing("_finalize_solo_activation", "track_management", "method")
     def _finalize_solo_activation(self, track_name, track_index=None):
-        """Finalize solo activation with comprehensive audio server sync verification"""
+        """Wait for audio server sync via DOM polling; brief safety buffer if needed."""
         logging.info(f"⏳ Waiting for audio server to process solo state for {track_name}...")
-        
-        # Phase 1: Wait for audio server processing indicators to clear
-        audio_server_ready = self._wait_for_audio_server_sync(track_index) if track_index is not None else False
-        
-        # Phase 2: Verify mixer state configuration
-        mixer_state_valid = self._verify_mixer_state_configuration()
 
-        # Phase 4: Intelligent fallback - much shorter since we have deterministic detection
-        if not audio_server_ready and not mixer_state_valid:
-            # Use very short fallback since our deterministic method should have worked
-            fallback_timeout = 1.0  # Just 1 second safety buffer
-            logging.info(f"⏳ Fallback: Using {fallback_timeout}s safety buffer (deterministic detection may have missed edge case)...")
-            time.sleep(fallback_timeout)
-        elif audio_server_ready:
-            # If deterministic detection worked, just add tiny safety buffer
-            safety_buffer = 0.2
-            logging.debug(f"⏳ Deterministic detection succeeded, adding {safety_buffer}s safety buffer...")
-            time.sleep(safety_buffer)
+        audio_server_ready = (
+            self._wait_for_audio_server_sync(track_index)
+            if track_index is not None
+            else False
+        )
 
-        # Final assessment
-        overall_success = audio_server_ready or mixer_state_valid
-        if overall_success:
-            logging.info(f"✅ Audio server sync verification successful for {track_name}")
+        if audio_server_ready:
+            time.sleep(0.2)  # Tiny safety buffer after deterministic detection
+            logging.info(f"✅ Audio server sync verified for {track_name}")
         else:
-            logging.warning(f"⚠️ Audio server sync verification had issues for {track_name} - using fallback timing")
+            time.sleep(1.0)  # Fallback safety buffer when DOM detection didn't conclude
+            logging.warning(f"⚠️ Audio server sync inconclusive for {track_name} — using fallback")
 
         return True
     
@@ -517,78 +505,6 @@ class TrackManager:
             # Return False on any error - don't crash the polling loop
             return False
 
-    def _verify_mixer_state_configuration(self):
-        """Verify mixer state configuration matches expected solo state"""
-        try:
-            logging.debug("🔍 Verifying mixer state configuration...")
-            
-            # Method 1: Check for mixer object availability via JavaScript
-            try:
-                mixer_available = self.driver.execute_script("""
-                    return typeof mixer !== 'undefined' && mixer !== null;
-                """)
-                
-                if mixer_available:
-                    # Try to get mixer state information
-                    mixer_state = self.driver.execute_script("""
-                        try {
-                            // Check if mixer has state-related properties
-                            if (typeof mixer.getState === 'function') {
-                                return mixer.getState();
-                            } else if (typeof mixer.currentState !== 'undefined') {
-                                return mixer.currentState;
-                            } else if (typeof mixer.state !== 'undefined') {
-                                return mixer.state;
-                            }
-                            return 'mixer_available_no_state';
-                        } catch (e) {
-                            return 'mixer_error: ' + e.message;
-                        }
-                    """)
-                    
-                    logging.debug(f"🎛️ Mixer state: {mixer_state}")
-                    
-                    # If we got any state information, consider it valid
-                    if mixer_state and str(mixer_state) != 'null':
-                        logging.debug("✅ Mixer state configuration verified")
-                        return True
-                        
-            except Exception as js_error:
-                logging.debug(f"JavaScript mixer check failed: {js_error}")
-            
-            # Method 2: Check DOM for mixer-related status elements
-            try:
-                # Look for mixer status indicators in the DOM
-                mixer_elements = self.driver.find_elements(By.CSS_SELECTOR, 
-                    ".mixer, .mixer-status, .track-mixer, .audio-mixer")
-                
-                if mixer_elements:
-                    logging.debug(f"✅ Found {len(mixer_elements)} mixer DOM elements")
-                    return True
-                    
-            except Exception as dom_error:
-                logging.debug(f"DOM mixer check failed: {dom_error}")
-            
-            # Method 3: Check for track state consistency
-            try:
-                # Verify at least one solo button is active
-                active_solos = self.driver.find_elements(By.CSS_SELECTOR, 
-                    "button.track__solo.active, button.track__solo.is-active, button.track__solo.selected")
-                
-                if active_solos:
-                    logging.debug(f"✅ Found {len(active_solos)} active solo button(s)")
-                    return True
-                    
-            except Exception as solo_error:
-                logging.debug(f"Solo button check failed: {solo_error}")
-            
-            logging.debug("⚠️ Mixer state verification inconclusive - using fallback")
-            return False
-            
-        except Exception as e:
-            logging.warning(f"⚠️ Error during mixer state verification: {e}")
-            return False
-    
     def clear_all_solos(self, song_url):
         """Clear all solo buttons (un-mute all tracks)"""
         logging.info("Clearing all solo buttons...")
