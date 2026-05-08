@@ -63,34 +63,27 @@ def test_key_parsing_formats():
     
     print("🧪 TESTING KEY PARSING FUNCTIONALITY")
     print("="*60)
-    
-    passed = 0
-    failed = 0
-    
+
+    failures = []
+
     for input_value, expected, description in test_cases:
         try:
             result = config_manager._validate_key_value(input_value, "Test Song")
-            
-            if result == expected:
-                print(f"✅ {description}: {input_value} → {result}")
-                passed += 1
-            else:
-                print(f"❌ {description}: {input_value} → {result} (expected {expected})")
-                failed += 1
-                
         except Exception as e:
+            failures.append(f"{description}: {input_value!r} → ERROR: {e}")
             print(f"💥 {description}: {input_value} → ERROR: {e}")
-            failed += 1
-    
+            continue
+
+        if result == expected:
+            print(f"✅ {description}: {input_value} → {result}")
+        else:
+            failures.append(f"{description}: {input_value!r} → {result!r} (expected {expected!r})")
+            print(f"❌ {description}: {input_value} → {result} (expected {expected})")
+
     print("\n" + "="*60)
-    print(f"📊 RESULTS: {passed} passed, {failed} failed")
-    
-    if failed == 0:
-        print("🎉 ALL TESTS PASSED!")
-        return True
-    else:
-        print(f"⚠️  {failed} tests failed")
-        return False
+    print(f"📊 RESULTS: {len(test_cases) - len(failures)} passed, {len(failures)} failed")
+
+    assert not failures, "Key parsing failures:\n  - " + "\n  - ".join(failures)
 
 
 def test_key_parsing_integration():
@@ -124,17 +117,24 @@ def test_key_parsing_integration():
         ]
         
         print(f"Loaded {len(songs)} songs from test configuration")
-        
-        all_passed = True
+
+        assert len(songs) == len(expected_results), (
+            f"Expected {len(expected_results)} songs, got {len(songs)}"
+        )
+
+        mismatches = []
         for song, (expected_name, expected_key) in zip(songs, expected_results):
             if song['name'] == expected_name and song['key'] == expected_key:
                 print(f"✅ {expected_name}: key={song['key']}")
             else:
+                mismatches.append(
+                    f"{expected_name}: expected (name={expected_name!r}, key={expected_key}), "
+                    f"got (name={song['name']!r}, key={song['key']})"
+                )
                 print(f"❌ {expected_name}: expected key={expected_key}, got key={song['key']}")
-                all_passed = False
-        
-        return all_passed
-        
+
+        assert not mismatches, "Key parsing integration mismatches:\n  - " + "\n  - ".join(mismatches)
+
     finally:
         # Clean up temporary file
         YAMLTestHelper.cleanup_temp_file(temp_file_path)
@@ -144,20 +144,17 @@ if __name__ == "__main__":
     print("🎹 KEY PARSING ENHANCEMENT TESTS")
     print("Testing support for multiple key format inputs")
     print()
-    
-    # Run unit tests
-    unit_tests_passed = test_key_parsing_formats()
-    
-    # Run integration tests  
-    integration_tests_passed = test_key_parsing_integration()
-    
-    # Final result
-    print("\n" + "="*60)
-    if unit_tests_passed and integration_tests_passed:
-        print("🎉 ALL KEY PARSING TESTS PASSED!")
-        print("✅ Enhanced key parsing is working correctly")
-        sys.exit(0)
-    else:
+
+    try:
+        test_key_parsing_formats()
+        test_key_parsing_integration()
+    except AssertionError as e:
+        print("\n" + "="*60)
         print("❌ SOME TESTS FAILED!")
-        print("⚠️  Key parsing enhancement needs attention")
+        print(f"⚠️  {e}")
         sys.exit(1)
+
+    print("\n" + "="*60)
+    print("🎉 ALL KEY PARSING TESTS PASSED!")
+    print("✅ Enhanced key parsing is working correctly")
+    sys.exit(0)

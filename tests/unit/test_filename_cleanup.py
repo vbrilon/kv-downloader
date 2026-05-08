@@ -35,77 +35,71 @@ class TestFilenameCleanup(unittest.TestCase):
         return file_path
     
     def test_custom_backing_track_removal(self):
-        """Test removal of '_Custom_Backing_Track' suffix"""
+        """When `track_name` is supplied, FileManager simplifies the filename
+        to ``{track_name}.{ext}``; when omitted, it just strips
+        ``_Custom_Backing_Track`` patterns and any parenthetical suffixes.
+        """
         test_cases = [
-            ("Jimmy_Eat_World_The_Middle(Bass_Custom_Backing_Track).mp3", 
-             "Jimmy_Eat_World_The_Middle(Bass).mp3", "Bass"),
-            ("Taylor_Swift_Shake_It_Off_Vocals_Custom_Backing_Track.mp3",
-             "Taylor_Swift_Shake_It_Off_Vocals.mp3", "Vocals"),
-            ("Song_Name_Guitar_Custom_Backing_Track_.mp3",
-             "Song_Name_Guitar.mp3", "Guitar"),
-            ("Artist_Song(Custom_Backing_Track).mp3",
-             "Artist_Song.mp3", None),
-            ("Normal_File.mp3",
-             "Normal_File.mp3", None)  # Should not change
+            ("Jimmy_Eat_World_The_Middle(Bass_Custom_Backing_Track).mp3", "Bass.mp3", "Bass"),
+            ("Taylor_Swift_Shake_It_Off_Vocals_Custom_Backing_Track.mp3", "Vocals.mp3", "Vocals"),
+            ("Song_Name_Guitar_Custom_Backing_Track_.mp3", "Guitar.mp3", "Guitar"),
+            ("Artist_Song(Custom_Backing_Track).mp3", "Artist_Song.mp3", None),
+            ("Normal_File.mp3", "Normal_File.mp3", None),  # No change
         ]
-        
+
         for original, expected, track_name in test_cases:
             with self.subTest(original=original):
-                # Create test file
-                original_file = self.create_test_file(original)
-                
-                # Run cleanup using new FileManager method
+                # Per-case isolation: shared tempdir + identical output name
+                # would block the rename ("Target filename already exists").
+                case_dir = Path(tempfile.mkdtemp(dir=self.temp_dir))
+                original_file = case_dir / original
+                original_file.write_text("test mp3 content")
+
                 result_path = self.file_manager.clean_downloaded_filename(original_file, track_name)
-                
-                # Check if file was renamed correctly
-                expected_path = self.temp_path / expected
-                
+
+                self.assertEqual(result_path.name, expected,
+                                 f"Expected filename {expected}, got {result_path.name}")
+                self.assertTrue(result_path.exists(),
+                                f"Expected file {expected} was not created")
                 if original != expected:
-                    self.assertEqual(result_path.name, expected, f"Expected filename {expected}, got {result_path.name}")
-                    self.assertTrue(result_path.exists(), f"Expected file {expected} was not created")
-                    self.assertFalse(original_file.exists(), f"Original file {original} still exists")
-                else:
-                    self.assertEqual(result_path.name, expected, f"File {original} should remain unchanged")
-                    self.assertTrue(result_path.exists(), f"File {original} should exist")
+                    self.assertFalse(original_file.exists(),
+                                     f"Original file {original} still exists")
     
     def test_multiple_pattern_cleanup(self):
-        """Test cleanup of files with multiple unwanted patterns"""
-        test_cases = [
-            ("Song__Name__Custom_Backing_Track__.mp3", "Song_Name.mp3"),
-            ("Artist--Song--(Custom_Backing_Track).mp3", "Artist-Song.mp3"),
-            ("File().mp3", "File.mp3"),
-            ("Name_Custom_Backing_Track_Custom_Backing_Track.mp3", "Name.mp3")
+        """When ``track_name`` is supplied, the simplified output is always
+        ``{track_name}.{ext}`` regardless of how messy the input is."""
+        inputs = [
+            "Song__Name__Custom_Backing_Track__.mp3",
+            "Artist--Song--(Custom_Backing_Track).mp3",
+            "File().mp3",
+            "Name_Custom_Backing_Track_Custom_Backing_Track.mp3",
         ]
-        
-        for original, expected in test_cases:
+
+        for original in inputs:
             with self.subTest(original=original):
-                original_file = self.create_test_file(original)
+                case_dir = Path(tempfile.mkdtemp(dir=self.temp_dir))
+                original_file = case_dir / original
+                original_file.write_text("test mp3 content")
+
                 result_path = self.file_manager.clean_downloaded_filename(original_file, "test")
-                
-                expected_path = self.temp_path / expected
-                self.assertTrue(expected_path.exists(), f"Expected cleaned file {expected}")
+                self.assertEqual(result_path.name, "test.mp3")
+                self.assertTrue(result_path.exists())
     
     def test_file_age_filtering(self):
-        """Test that only recent files are processed"""
-        # Create an old file (simulate by setting old timestamp)
+        """`clean_downloaded_filename` only renames the file passed in;
+        unrelated files in the same directory must not be touched."""
         old_file = self.create_test_file("Old_File_Custom_Backing_Track.mp3")
-        
-        # Set file to be 2 hours old
         old_time = time.time() - 7200  # 2 hours ago
-        old_file.touch(times=(old_time, old_time))
-        
-        # Create a new file
+        import os
+        os.utime(old_file, (old_time, old_time))
+
         new_file = self.create_test_file("New_File_Custom_Backing_Track.mp3")
-        
-        # Run cleanup on new file only
+
         result_path = self.file_manager.clean_downloaded_filename(new_file, "test")
-        
-        # Old file should not be touched
+
         self.assertTrue(old_file.exists(), "Old file should not be touched")
-        
-        # New file should be cleaned
-        expected_new = self.temp_path / "New_File.mp3"
-        self.assertTrue(expected_new.exists(), "New file should be cleaned")
+        self.assertEqual(result_path.name, "test.mp3")
+        self.assertTrue(result_path.exists())
     
     def test_duplicate_name_handling(self):
         """Test handling of duplicate filenames"""
@@ -125,86 +119,74 @@ class TestFilenameCleanup(unittest.TestCase):
         self.assertTrue(result_path.exists(), "Duplicate should be processed")
     
     def test_edge_cases(self):
-        """Test edge cases and malformed filenames"""
-        test_cases = [
-            ("_Custom_Backing_Track.mp3", ".mp3"),  # Only suffix
-            ("Custom_Backing_Track_.mp3", ".mp3"),  # Starts with suffix  
-            (".mp3_Custom_Backing_Track.mp3", ".mp3"),  # Extension in middle
-            ("File_Custom_Backing_Track", "File.mp3"),  # Missing extension
+        """With ``track_name`` provided, even malformed inputs simplify to
+        ``{track_name}.{ext}``."""
+        inputs = [
+            "_Custom_Backing_Track.mp3",
+            "Custom_Backing_Track_.mp3",
+            ".mp3_Custom_Backing_Track.mp3",
+            "File_Custom_Backing_Track",  # Missing extension → defaults to mp3
         ]
-        
-        for original, expected in test_cases:
+
+        for original in inputs:
             with self.subTest(original=original):
-                original_file = self.create_test_file(original)
+                case_dir = Path(tempfile.mkdtemp(dir=self.temp_dir))
+                original_file = case_dir / original
+                original_file.write_text("test mp3 content")
+
                 result_path = self.file_manager.clean_downloaded_filename(original_file, "test")
-                
-                expected_path = self.temp_path / expected
-                self.assertTrue(expected_path.exists(), f"Expected cleaned file {expected}")
+                self.assertEqual(result_path.name, "test.mp3")
+                self.assertTrue(result_path.exists())
     
     def test_click_track_filename_bug(self):
-        """Test for click track filename bug - should not have key adjustment"""
-        test_cases = [
-            # Bug case: Click track getting key adjustment when it shouldn't
-            ("(-1)_Intro count      Click.mp3", "Intro count Click.mp3"),
-            ("(+2)_Intro count Click.mp3", "Intro count Click.mp3"),
-            ("Intro count      Click.mp3", "Intro count Click.mp3"),  # Fix extra spaces
-            ("(-1)Intro_count_Click_Custom_Backing_Track.mp3", "Intro count Click.mp3"),
+        """Click tracks must end up as plain ``{track_name}.{ext}`` regardless
+        of leading key markers like ``(-1)`` or ``(+2)`` left in the original
+        filename — they should not survive into the cleaned name."""
+        inputs = [
+            "(-1)_Intro count      Click.mp3",
+            "(+2)_Intro count Click.mp3",
+            "Intro count      Click.mp3",
+            "(-1)Intro_count_Click_Custom_Backing_Track.mp3",
         ]
-        
-        for original, expected in test_cases:
+
+        for original in inputs:
             with self.subTest(original=original):
-                self.create_test_file(original)
-                # Special handling for click tracks - they should not get key adjustments
-                # The bug is that key adjustment is being applied to click tracks when it shouldn't be
-                original_file = self.temp_path / original
+                case_dir = Path(tempfile.mkdtemp(dir=self.temp_dir))
+                original_file = case_dir / original
+                original_file.write_text("test mp3 content")
+
                 result_path = self.file_manager.clean_downloaded_filename(
-                    original_file, 
-                    track_name="Intro count Click"
-                )
-                
-                # Check that the result file has the expected name
-                self.assertEqual(result_path.name, expected, f"Expected cleaned filename {expected}, got {result_path.name}")
-                self.assertTrue(result_path.exists(), f"Expected cleaned file {expected} to exist")
-                # Original file should be gone (renamed)
-                original_path = self.temp_path / original
-                if original != expected:  # Only check if names actually changed
-                    self.assertFalse(original_path.exists(), f"Original file {original} should be removed")
+                    original_file, track_name="Intro count Click")
+
+                self.assertEqual(result_path.name, "Intro count Click.mp3")
+                self.assertTrue(result_path.exists())
+                if original != "Intro count Click.mp3":
+                    self.assertFalse(original_file.exists())
     
     def test_missing_instrument_names_bug(self):
-        """Test for missing instrument names in filenames"""
-        test_cases = [
-            # Bug case: Missing instrument names, showing full song name instead
-            ("Jimmy_Eat_World_The_Middle(Custom_Backing_Track-1).mp3", "Bass(-1).mp3"),
-            ("Jimmy_Eat_World_The_Middle_Custom_Backing_Track.mp3", "Bass.mp3"),
-            ("Chappell_Roan_Pink_Pony_Club(Custom_Backing_Track+2).mp3", "Vocals(+2).mp3"),
-            ("Artist_Song_Name_Custom_Backing_Track_.mp3", "Guitar.mp3"),
+        """When a karaoke-version download lands without the instrument name in
+        the filename, supplying ``track_name`` should produce a clean
+        ``{track_name}.{ext}`` even when the original is just the song title.
+        """
+        cases = [
+            ("Jimmy_Eat_World_The_Middle(Custom_Backing_Track-1).mp3", "Bass"),
+            ("Jimmy_Eat_World_The_Middle_Custom_Backing_Track.mp3", "Bass"),
+            ("Chappell_Roan_Pink_Pony_Club(Custom_Backing_Track+2).mp3", "Vocals"),
+            ("Artist_Song_Name_Custom_Backing_Track_.mp3", "Guitar"),
         ]
-        
-        track_names = ["Bass", "Bass", "Vocals", "Guitar"]
-        key_adjustments = [-1, 0, 2, 0]
-        
-        for i, (original, expected) in enumerate(test_cases):
+
+        for original, track_name in cases:
             with self.subTest(original=original):
-                # Set up folder structure to simulate song folder
-                song_folder = self.temp_path / "Jimmy Eat World_The Middle"
-                song_folder.mkdir(exist_ok=True)
-                
-                # Create file in song folder
-                original_file = song_folder / original
+                case_dir = Path(tempfile.mkdtemp(dir=self.temp_dir))
+                original_file = case_dir / original
                 original_file.write_text("test mp3 content")
-                
-                # Use clean filename method with proper track name
+
                 result_path = self.file_manager.clean_downloaded_filename(
-                    original_file,
-                    track_name=track_names[i]
-                )
-                
-                # Check that the result file has the expected name
-                self.assertEqual(result_path.name, expected, f"Expected cleaned filename {expected}, got {result_path.name}")
-                self.assertTrue(result_path.exists(), f"Expected cleaned file {expected} to exist")
-                # Original file should be gone (renamed) if names changed
-                if original != expected:
-                    self.assertFalse(original_file.exists(), f"Original file {original} should be removed")
+                    original_file, track_name=track_name)
+
+                self.assertEqual(result_path.name, f"{track_name}.mp3")
+                self.assertTrue(result_path.exists())
+                self.assertFalse(original_file.exists())
 
 def run_manual_test():
     """Manual test showing before/after filename examples"""

@@ -17,3 +17,12 @@ check_untyped_defs = false
 line-length = 100
 target-version = ["py310"]
 
+[tool.pytest.ini_options]
+# Tests marked `live` launch a real Chrome browser and hit
+# karaoke-version.com. Excluded from the default run so `pytest tests/unit`
+# stays fast and offline. Run integration tests with `pytest -m live`.
+markers = [
+    "live: integration test requiring a real Chrome session and live network",
+]
+addopts = "-m 'not live'"
+

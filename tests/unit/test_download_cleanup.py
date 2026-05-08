@@ -11,264 +11,173 @@ from pathlib import Path
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from karaoke_automator import KaraokeVersionAutomator
-from packages.configuration import *
+from packages.configuration import DOWNLOAD_FOLDER
+from packages.file_operations.file_manager import FileManager
 
-def create_test_files():
-    """Create test files to simulate existing downloads"""
-    download_folder = Path(DOWNLOAD_FOLDER)
-    download_folder.mkdir(exist_ok=True)
-    
-    test_files = [
-        "bass_test_old.mp3",
-        "custombackingtrack_jimmy_eat_world_the_middle.mp3", 
-        "guitar_isolated_test.mp3",
-        "old_download.mp3"
-    ]
-    
-    created_files = []
-    for filename in test_files:
-        file_path = download_folder / filename
-        file_path.write_text("test content")  # Create fake MP3 file
-        created_files.append(file_path)
+
+def _create_aged_test_files(folder, filenames, age_seconds=60):
+    """Create files in folder with mtime aged past the cleanup safety guard."""
+    folder = Path(folder)
+    folder.mkdir(exist_ok=True)
+    aged_mtime = time.time() - age_seconds
+    created = []
+    for filename in filenames:
+        file_path = folder / filename
+        file_path.write_text("test content")
+        os.utime(file_path, (aged_mtime, aged_mtime))
+        created.append(file_path)
         print(f"Created test file: {filename}")
-    
-    return created_files
+    return created
+
 
 def test_download_cleanup():
-    """Test that download cleanup removes existing files"""
+    """Test that the cleanup helper removes matching/backing-track files
+    while preserving unrelated files."""
     print("🧹 TESTING DOWNLOAD CLEANUP FUNCTIONALITY")
     print("Testing removal of existing files before new downloads")
     print("="*60)
-    
+
+    download_folder = Path(DOWNLOAD_FOLDER)
+
+    # Files: bass_cleanup_test (matches), *_backing_track_*.mp3 (suffix match —
+    # the cleanup helper looks for the literal substrings 'custom_backing_track'
+    # or 'backing_track'), unrelated_song.mp3 (no token overlap, no suffix →
+    # preserved).
+    target_track = "bass_cleanup_test"
+    test_filenames = [
+        "bass_cleanup_test.mp3",                                  # matches track tokens
+        "jimmy_eat_world_the_middle_custom_backing_track.mp3",    # backing-track suffix
+        "unrelated_song.mp3",                                     # preserved
+    ]
+
+    created = _create_aged_test_files(download_folder, test_filenames)
     try:
-        # Step 1: Create test files
-        print("1️⃣ Creating test files to simulate existing downloads...")
-        test_files = create_test_files()
-        print(f"✅ Created {len(test_files)} test files")
-        
-        # Verify files exist
-        existing_count = len([f for f in test_files if f.exists()])
-        print(f"📁 {existing_count} files exist before cleanup")
-        
-        # Step 2: Initialize automator
-        print("\n2️⃣ Initializing automator...")
-        automator = KaraokeVersionAutomator(headless=True)
-        
-        if not automator.login():
-            print("❌ Login failed")
-            return False
-        
-        # Step 3: Test cleanup during download
-        print("3️⃣ Testing cleanup during download process...")
-        song_url = "https://www.karaoke-version.com/custombackingtrack/jimmy-eat-world/the-middle.html"
-        tracks = automator.get_available_tracks(song_url)
-        
-        if not tracks:
-            print("❌ No tracks found")
-            return False
-        
-        # Find bass track
-        bass_tracks = [t for t in tracks if 'bass' in t['name'].lower()]
-        if not bass_tracks:
-            print("❌ No bass track found")
-            return False
-        
-        bass_track = bass_tracks[0]
-        print(f"Found bass track: {bass_track['name']}")
-        
-        # Solo bass track
-        if not automator.solo_track(bass_track, song_url):
-            print("❌ Failed to solo bass track")
-            return False
-        
-        print("✅ Bass track soloed")
-        
-        # Initiate download with cleanup (this should remove existing files)
-        print("4️⃣ Initiating download with cleanup enabled...")
-        time.sleep(2)  # Wait for UI update
-        
-        success = automator.track_handler.download_current_mix(
-            song_url, 
-            track_name="bass_cleanup_test",
-            cleanup_existing=True  # This should trigger cleanup
-        )
-        
-        if success:
-            print("✅ Download initiated successfully")
-        else:
-            print("❌ Download failed")
-            return False
-        
-        # Step 4: Verify cleanup occurred
-        print("5️⃣ Verifying cleanup results...")
-        remaining_files = [f for f in test_files if f.exists()]
-        removed_count = len(test_files) - len(remaining_files)
-        
+        file_manager = FileManager()
+        file_manager.cleanup_existing_downloads(target_track, download_folder)
+
+        remaining = {f.name for f in created if f.exists()}
+        removed = {f.name for f in created if not f.exists()}
+
         print(f"📊 Cleanup results:")
-        print(f"  - Files before: {len(test_files)}")
-        print(f"  - Files removed: {removed_count}")
-        print(f"  - Files remaining: {len(remaining_files)}")
-        
-        if removed_count > 0:
-            print("✅ Cleanup functionality is working!")
-            cleanup_success = True
-        else:
-            print("⚠️  No files were removed - check cleanup logic")
-            cleanup_success = False
-        
-        # Test without cleanup
-        print("\n6️⃣ Testing download without cleanup...")
-        
-        # Create new test file
-        test_file_no_cleanup = Path(DOWNLOAD_FOLDER) / "no_cleanup_test.mp3"
-        test_file_no_cleanup.write_text("test")
-        print(f"Created: {test_file_no_cleanup.name}")
-        
-        # Download without cleanup
-        success_no_cleanup = automator.track_handler.download_current_mix(
-            song_url,
-            track_name="no_cleanup_test", 
-            cleanup_existing=False  # No cleanup
+        print(f"  Files before:  {len(created)}")
+        print(f"  Files removed: {len(removed)} ({sorted(removed)})")
+        print(f"  Files left:    {len(remaining)} ({sorted(remaining)})")
+
+        assert "bass_cleanup_test.mp3" in removed, (
+            "Track-name match should have been cleaned"
         )
-        
-        if success_no_cleanup and test_file_no_cleanup.exists():
-            print("✅ Download without cleanup preserves existing files")
-            no_cleanup_success = True
-        else:
-            print("⚠️  Download without cleanup test inconclusive")
-            no_cleanup_success = True  # Don't fail for this
-        
-        return cleanup_success and no_cleanup_success
-        
-    except Exception as e:
-        print(f"❌ Error during cleanup test: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+        assert "jimmy_eat_world_the_middle_custom_backing_track.mp3" in removed, (
+            "Backing-track-suffixed file should have been cleaned"
+        )
+        assert "unrelated_song.mp3" in remaining, (
+            "Unrelated file (no token overlap, no backing-track suffix) "
+            "should not have been removed"
+        )
+
+        # Files newer than the 30s safety guard must NOT be removed even when
+        # they match the track name — this avoids deleting active downloads.
+        recent_match = download_folder / f"{target_track}_recent.mp3"
+        recent_match.write_text("recent")  # mtime = now
+        try:
+            file_manager.cleanup_existing_downloads(target_track, download_folder)
+            assert recent_match.exists(), (
+                "Recent (<30s old) matching file was removed; the safety guard "
+                "must protect in-progress downloads"
+            )
+            print("✅ Safety guard preserved a fresh file matching the track name")
+        finally:
+            if recent_match.exists():
+                recent_match.unlink()
+
     finally:
-        # Cleanup test files
-        try:
-            print("\n🧹 Cleaning up test files...")
-            download_folder = Path(DOWNLOAD_FOLDER)
-            for file_path in download_folder.glob("*.mp3"):
-                if file_path.stat().st_size < 1000:  # Only remove small test files
+        for file_path in created:
+            try:
+                if file_path.exists():
                     file_path.unlink()
-                    print(f"Removed: {file_path.name}")
-        except:
-            pass
-        
-        try:
-            automator.driver.quit()
-        except:
-            pass
+            except Exception:
+                pass
 
 def test_cleanup_patterns():
-    """Test different cleanup patterns and safety measures"""
+    """Test pattern matching: only files that match the track tokens (or carry
+    the backing-track suffix) and that are older than the 30s safety guard
+    should be removed."""
     print("\n🔍 TESTING CLEANUP PATTERNS AND SAFETY")
     print("Testing pattern matching and file age safety checks")
     print("="*50)
-    
+
+    download_folder = Path(DOWNLOAD_FOLDER)
+    download_folder.mkdir(exist_ok=True)
+    current_time = time.time()
+
+    # (filename, age_seconds, expected_removed)
+    # cleanup target is "bass_track" → tokens {"bass", "track"}.
+    test_scenarios = [
+        ("bass_track_aged.mp3",       60,    True),   # matches token, aged → removed
+        ("bass_track_recent.mp3",     0,     False),  # matches token, fresh → preserved by safety guard
+        ("important_backup.mp3",      60,    False),  # no token overlap, no suffix → preserved
+        ("song_x_custom_backing_track.mp3",  60,    True),   # backing-track suffix, aged → removed
+        ("old_unrelated.mp3",         7200,  False),  # 2h old but no token/suffix match → preserved
+    ]
+
+    created_files = []
+    for filename, age_seconds, _expected in test_scenarios:
+        file_path = download_folder / filename
+        file_path.write_text("test content")
+        old_time = current_time - age_seconds
+        os.utime(file_path, (old_time, old_time))
+        created_files.append((file_path, age_seconds))
+        print(f"Created: {filename} (age: {age_seconds/3600:.2f}h)")
+
     try:
-        download_folder = Path(DOWNLOAD_FOLDER)
-        download_folder.mkdir(exist_ok=True)
-        
-        # Create files with different ages
-        current_time = time.time()
-        
-        test_scenarios = [
-            ("recent_file.mp3", 0),       # Just created (should be removed)
-            ("old_file.mp3", 7200),       # 2 hours old (should be preserved)
-            ("bass_track.mp3", 0),        # Recent, matching pattern (should be removed)
-            ("important_backup.mp3", 0),  # Recent but we'll test pattern matching
-        ]
-        
-        created_files = []
-        for filename, age_seconds in test_scenarios:
-            file_path = download_folder / filename
-            file_path.write_text("test content")
-            
-            # Set file modification time
-            old_time = current_time - age_seconds
-            os.utime(file_path, (old_time, old_time))
-            
-            created_files.append((file_path, age_seconds))
-            print(f"Created: {filename} (age: {age_seconds/3600:.1f}h)")
-        
-        # Test cleanup with automator
-        automator = KaraokeVersionAutomator(headless=True)
-        
+        file_manager = FileManager()
+
         print("\n🧹 Testing cleanup patterns...")
-        automator.track_handler._cleanup_existing_downloads("bass_track")
-        
-        # Check results
-        preserved_files = []
-        removed_files = []
-        
-        for file_path, original_age in created_files:
-            if file_path.exists():
-                preserved_files.append((file_path.name, original_age))
-            else:
-                removed_files.append((file_path.name, original_age))
-        
+        file_manager.cleanup_existing_downloads("bass_track", download_folder)
+
+        actual_removed = {fp.name for fp, _ in created_files if not fp.exists()}
+        actual_preserved = {fp.name for fp, _ in created_files if fp.exists()}
+
         print(f"\n📊 Pattern cleanup results:")
-        print(f"Files removed: {len(removed_files)}")
-        for filename, age in removed_files:
-            print(f"  - {filename} (age: {age/3600:.1f}h)")
-        
-        print(f"Files preserved: {len(preserved_files)}")
-        for filename, age in preserved_files:
-            print(f"  - {filename} (age: {age/3600:.1f}h)")
-        
-        # Verify safety: old files should be preserved
-        old_files_preserved = any(age >= 7200 for _, age in preserved_files)
-        recent_files_removed = any(age < 3600 for _, age in removed_files)
-        
-        if old_files_preserved:
-            print("✅ Safety check passed: Old files preserved")
-        else:
-            print("⚠️  Safety check: No old files to test")
-        
-        if recent_files_removed:
-            print("✅ Cleanup working: Recent files removed")
-        else:
-            print("⚠️  Cleanup may not be working as expected")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error during pattern test: {e}")
-        return False
+        print(f"Files removed:   {sorted(actual_removed)}")
+        print(f"Files preserved: {sorted(actual_preserved)}")
+
+        violations = []
+        for filename, age_seconds, expected_removed in test_scenarios:
+            was_removed = filename in actual_removed
+            if was_removed != expected_removed:
+                violations.append(
+                    f"{filename} (age={age_seconds}s): expected "
+                    f"{'removed' if expected_removed else 'preserved'}, "
+                    f"got {'removed' if was_removed else 'preserved'}"
+                )
+
+        assert not violations, (
+            "Cleanup pattern violations:\n  - " + "\n  - ".join(violations)
+        )
+
     finally:
-        # Cleanup
-        try:
-            for file_path, _ in created_files:
+        for file_path, _ in created_files:
+            try:
                 if file_path.exists():
                     file_path.unlink()
-        except:
-            pass
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     print("🧹 DOWNLOAD CLEANUP FUNCTIONALITY TESTS")
     print("="*60)
-    
-    # Test 1: Basic cleanup functionality
-    cleanup_success = test_download_cleanup()
-    
-    # Test 2: Cleanup patterns and safety
-    pattern_success = test_cleanup_patterns()
-    
-    print("\n" + "="*60)
-    print("🏁 DOWNLOAD CLEANUP TEST RESULTS:")
-    print(f"Basic Cleanup: {'SUCCESS' if cleanup_success else 'FAILED'}")
-    print(f"Pattern Safety: {'SUCCESS' if pattern_success else 'FAILED'}")
-    
-    if cleanup_success and pattern_success:
-        print("\n🎉 DOWNLOAD CLEANUP FUNCTIONALITY IS WORKING!")
-        print("✅ Existing files removed before new downloads")
-        print("✅ Safety measures prevent removing old/important files")
-        print("✅ Pattern matching works correctly")
-    else:
-        print("\n⚠️  Some cleanup functionality needs attention")
-    
+
+    failures = []
+    for name, fn in [
+        ("Basic Cleanup", test_download_cleanup),
+        ("Pattern Safety", test_cleanup_patterns),
+    ]:
+        try:
+            fn()
+            print(f"{name}: SUCCESS")
+        except AssertionError as e:
+            failures.append((name, e))
+            print(f"{name}: FAILED — {e}")
+
     print("="*60)
+    sys.exit(0 if not failures else 1)

@@ -9,6 +9,7 @@ import pytest
 import logging
 from unittest.mock import Mock, patch, call
 from tests.mock_standards import MockPatterns
+from packages.configuration.config import BETWEEN_TRACKS_PAUSE
 
 
 class TestKaraokeVersionAutomatorWorkflow:
@@ -276,7 +277,7 @@ class TestKaraokeVersionAutomatorWorkflow:
         
         # Verify sleep was called after each track (including the last one)
         assert mock_sleep.call_count == 2  # Called after each of the two tracks
-        mock_sleep.assert_called_with(2)
+        mock_sleep.assert_called_with(BETWEEN_TRACKS_PAUSE)
     
     @patch('time.sleep')
     def test_download_single_track_success(self, mock_sleep):

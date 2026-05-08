@@ -300,33 +300,51 @@ class TestDownloadFunctionality(unittest.TestCase):
         """Test download button discovery and interaction"""
         song_url = "https://example.com/song"
         track_name = "test_track"
-        
+
         # Mock download button found
         mock_download_button = Mock()
         mock_download_button.is_displayed.return_value = True
         mock_download_button.is_enabled.return_value = True
         mock_download_button.text = "Download\nMP3"
         mock_download_button.get_attribute.return_value = "mixer.getMix();return false;"
-        
+
         self.mock_driver.find_element.return_value = mock_download_button
         self.mock_driver.window_handles = ['window1']  # Mock window handles
         self.mock_driver.current_url = song_url
-        
+
         # Set up mock file manager
         mock_file_manager = Mock()
         mock_file_manager.setup_song_folder.return_value = Path("/tmp/test")
         mock_file_manager.wait_for_download_to_start.return_value = True
 
-        download_manager = DownloadManager(self.mock_driver, Mock(), Mock(), mock_file_manager, Mock(), Mock())
-        
+        # progress_tracker.tracks must be iterable for _setup_download_context's fallback lookup
+        mock_progress_tracker = Mock()
+        mock_progress_tracker.tracks = []
+
+        download_manager = DownloadManager(self.mock_driver, Mock(), mock_progress_tracker, mock_file_manager, Mock(), Mock())
+
+        # Bypass track-selection verification (covered by track_manager tests) and the
+        # post-click WebDriverWait polling (which does not tolerate a bare Mock driver)
+        # so this test stays focused on download-button discovery and click behavior.
+        # safe_click_with_scroll is replaced with safe_click so the real click/JS-fallback
+        # logic is still exercised against the mock button.
+        # WebDriverWait is patched so its `.until(...)` returns the mock button (used by
+        # _find_download_button) and is otherwise inert (used post-click for popup polling).
+        from packages.utils.click_handlers import safe_click
+
         with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
-             patch.object(download_manager, 'start_completion_monitoring'):
-            
+             patch.object(download_manager, 'start_completion_monitoring'), \
+             patch.object(download_manager, '_validate_pre_download_requirements', return_value=True), \
+             patch('packages.download_management.download_manager.safe_click_with_scroll', side_effect=safe_click), \
+             patch('packages.download_management.download_manager.WebDriverWait') as mock_wait_cls:
+
+            mock_wait_cls.return_value.until.return_value = mock_download_button
+
             result = download_manager.download_current_mix(song_url, track_name)
-            
+
             self.assertTrue(result)
             mock_download_button.click.assert_called_once()
-    
+
     def test_download_with_click_interception(self):
         """Test download with click interception handling"""
         song_url = "https://example.com/song"
@@ -349,13 +367,31 @@ class TestDownloadFunctionality(unittest.TestCase):
         mock_file_manager.setup_song_folder.return_value = Path("/tmp/test")
         mock_file_manager.wait_for_download_to_start.return_value = True
 
-        download_manager = DownloadManager(self.mock_driver, Mock(), Mock(), mock_file_manager, Mock(), Mock())
-        
+        # progress_tracker.tracks must be iterable for _setup_download_context's fallback lookup
+        mock_progress_tracker = Mock()
+        mock_progress_tracker.tracks = []
+
+        download_manager = DownloadManager(self.mock_driver, Mock(), mock_progress_tracker, mock_file_manager, Mock(), Mock())
+
+        # Bypass track-selection verification (covered by track_manager tests) and the
+        # post-click WebDriverWait polling (which does not tolerate a bare Mock driver)
+        # so this test stays focused on click-interception fallback behavior.
+        # safe_click_with_scroll is replaced with safe_click so the real click/JS-fallback
+        # logic is still exercised against the mock button.
+        # WebDriverWait is patched so its `.until(...)` returns the mock button (used by
+        # _find_download_button) and is otherwise inert (used post-click for popup polling).
+        from packages.utils.click_handlers import safe_click
+
         with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
-             patch.object(download_manager, 'start_completion_monitoring'):
-            
+             patch.object(download_manager, 'start_completion_monitoring'), \
+             patch.object(download_manager, '_validate_pre_download_requirements', return_value=True), \
+             patch('packages.download_management.download_manager.safe_click_with_scroll', side_effect=safe_click), \
+             patch('packages.download_management.download_manager.WebDriverWait') as mock_wait_cls:
+
+            mock_wait_cls.return_value.until.return_value = mock_download_button
+
             result = download_manager.download_current_mix(song_url, track_name)
-            
+
             self.assertTrue(result)
             # Should have tried regular click, then JavaScript click
             mock_download_button.click.assert_called_once()

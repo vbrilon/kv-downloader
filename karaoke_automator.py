@@ -16,9 +16,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# CRITICAL: Initialize profiler BEFORE importing instrumented modules
-# This ensures decorators capture the correct profiler state
 from packages.utils import setup_logging, initialize_profiler, get_profiler, profile_timing
+from packages.configuration import ConfigurationManager
+from packages.configuration.config import BETWEEN_TRACKS_PAUSE
+from packages.browser import ChromeManager
+from packages.authentication import LoginManager
+from packages.progress import ProgressTracker, StatsReporter
+from packages.file_operations import FileManager
+from packages.track_management import TrackManager
+from packages.download_management import DownloadManager
+from packages.di.factory import create_container_with_dependencies, create_download_manager_factory
 
 # Setup logging (will be reconfigured based on debug mode)
 logging.basicConfig(
@@ -568,24 +575,13 @@ if __name__ == "__main__":
     parser.add_argument('--max-tracks', type=int, default=None,
                        help='Maximum tracks per song to process (default: all tracks)')
     args = parser.parse_args()
-    
-    # CRITICAL: Initialize profiler immediately after argument parsing
-    # This must happen BEFORE importing any instrumented modules
+
+    # Toggling the profiler reconfigures the existing singleton in place,
+    # so decorators captured at module import time pick up the new setting.
     if args.profile:
         initialize_profiler(enabled=True, enable_memory=True, enable_detailed_logging=True)
         print("🔍 Performance profiling enabled")
-    
-    # Now import instrumented modules AFTER profiler initialization
-    from packages.configuration import ConfigurationManager
-    from packages.configuration.config import BETWEEN_TRACKS_PAUSE
-    from packages.browser import ChromeManager
-    from packages.authentication import LoginManager
-    from packages.progress import ProgressTracker, StatsReporter
-    from packages.file_operations import FileManager
-    from packages.track_management import TrackManager
-    from packages.download_management import DownloadManager
-    from packages.di.factory import create_container_with_dependencies, create_download_manager_factory
-    
+
     # Handle baseline testing commands
     if args.list_baselines:
         from packages.utils import list_baselines
