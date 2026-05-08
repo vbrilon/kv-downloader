@@ -21,8 +21,7 @@ from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_T
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
                                     DOWNLOAD_CHECK_INTERVAL, TRACK_SELECTION_MAX_RETRIES, 
                                     RETRY_VERIFICATION_DELAY, LOG_INTERVAL_SECONDS, 
-                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO,
-                                    DOWNLOAD_MONITORING_INITIAL_WAIT)
+                                    PROGRESS_UPDATE_LOG_INTERVAL, TRACK_MATCH_MIN_RATIO)
 
 
 class DownloadManager:
