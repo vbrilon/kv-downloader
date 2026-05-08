@@ -13,9 +13,8 @@ from selenium.common.exceptions import (
     TimeoutException,
     WebDriverException,
 )
-from ..utils import js_click_with_scroll, profile_timing, profile_selenium
+from ..utils import js_click_with_scroll, profile_timing, profile_selenium, is_solo_button_active, ACTIVE_SOLO_CLASS_TOKENS
 from ..configuration.selectors import DOWNLOAD_BUTTON_SELECTORS
-from ..track_management.track_manager import ACTIVE_SOLO_CLASS_TOKENS
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
 from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_TIMEOUT, 
                                     WEBDRIVER_BRIEF_TIMEOUT, DOWNLOAD_MAX_WAIT, 
@@ -1149,8 +1148,8 @@ class DownloadManager:
                     # Find solo button within this track
                     solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
                     
-                    # Use enhanced solo button detection (same logic as track_manager.py)
-                    is_solo_active = self._is_solo_button_active_enhanced(solo_button)
+                    # Use the shared solo button detector (single source of truth)
+                    is_solo_active = is_solo_button_active(solo_button)
                     
                     if is_solo_active:
                         verification_results['solo_button_active'] = True
@@ -1244,49 +1243,3 @@ class DownloadManager:
         except Exception as e:
             logging.error(f"❌ Error during track selection verification: {e}")
             return False  # Fail safely
-    
-    def _is_solo_button_active_enhanced(self, solo_button):
-        """Enhanced solo button active state detection with multiple approaches
-        
-        This method mirrors the enhanced detection logic from track_manager.py
-        to ensure consistent detection across both solo activation and download verification.
-        
-        Args:
-            solo_button: WebElement representing the solo button
-            
-        Returns:
-            bool: True if button is in active state
-        """
-        try:
-            # Method 1: CSS class detection by exact token match (see
-            # track_manager.ACTIVE_SOLO_CLASS_TOKENS for why substring matching
-            # is wrong — "active" lives inside "inactive").
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            class_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
-            # Method 2: ARIA attribute detection
-            aria_pressed = solo_button.get_attribute('aria-pressed')
-            aria_active = aria_pressed == 'true' if aria_pressed else False
-
-            # Method 3: Data attribute detection
-            data_state = (solo_button.get_attribute('data-state') or '').lower()
-            data_active = data_state in ('active', 'on', 'selected')
-
-            is_active = class_active or aria_active or data_active
-
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("Download verification - Solo button state detection:")
-                logging.debug(f"  Classes: {sorted(class_tokens)} -> Active: {class_active}")
-                logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
-                logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
-                logging.debug(f"  Final result: {is_active}")
-
-            return is_active
-
-        except Exception as e:
-            logging.debug(f"Error in enhanced solo button detection (download verification): {e}")
-            try:
-                fallback_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-                return bool(fallback_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-            except Exception:
-                return False

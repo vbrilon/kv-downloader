@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for `_is_solo_button_active` token-vs-substring matching.
+"""Regression tests for `is_solo_button_active` token-vs-substring matching.
 
 Background: an earlier implementation used Python `in` against the raw class
 string, treating "active" / "on" / "selected" / "is-active" as substrings. That
@@ -24,8 +24,7 @@ from unittest.mock import Mock
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from packages.track_management import TrackManager
-from packages.download_management.download_manager import DownloadManager
+from packages.utils import is_solo_button_active
 
 
 def _button(class_attr, *, aria_pressed=None, data_state=None, style=""):
@@ -44,89 +43,71 @@ def _button(class_attr, *, aria_pressed=None, data_state=None, style=""):
     return btn
 
 
-class TestTrackManagerSoloDetection(unittest.TestCase):
-    def setUp(self):
-        self.tm = TrackManager(Mock(), Mock())
+class TestSoloDetection(unittest.TestCase):
+    """The canonical predicate is `packages.utils.is_solo_button_active`.
+
+    Both track activation and download verification call into this single
+    function — see packages/utils/solo_state.py for the source of truth.
+    """
 
     # ----- inactive states must NOT report active -------------------------
 
     def test_inactive_class_is_not_active(self):
         """`inactive` must not match the `active` needle (substring bug)."""
         btn = _button("track__solo inactive")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     def test_track_solo_modifier_inactive_is_not_active(self):
         btn = _button("track__solo track__solo--inactive")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     def test_button_class_is_not_active(self):
         """`button` ends in `on` and must not match the `on` needle."""
         btn = _button("track__solo button")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     def test_icon_class_is_not_active(self):
         """`icon` ends in `on` and must not match the `on` needle."""
         btn = _button("track__solo icon icon-solo")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     def test_bare_solo_button_is_not_active(self):
         btn = _button("track__solo")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     def test_empty_class_is_not_active(self):
         btn = _button("")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     def test_aria_pressed_false_is_not_active(self):
         btn = _button("track__solo", aria_pressed="false")
-        self.assertFalse(self.tm._is_solo_button_active(btn))
+        self.assertFalse(is_solo_button_active(btn))
 
     # ----- active states MUST report active -------------------------------
 
     def test_is_active_class_reports_active(self):
         btn = _button("track__solo is-active")
-        self.assertTrue(self.tm._is_solo_button_active(btn))
+        self.assertTrue(is_solo_button_active(btn))
 
     def test_active_token_reports_active(self):
         btn = _button("track__solo active")
-        self.assertTrue(self.tm._is_solo_button_active(btn))
+        self.assertTrue(is_solo_button_active(btn))
 
     def test_selected_token_reports_active(self):
         btn = _button("track__solo selected")
-        self.assertTrue(self.tm._is_solo_button_active(btn))
+        self.assertTrue(is_solo_button_active(btn))
 
     def test_modifier_active_token_reports_active(self):
         btn = _button("track__solo track__solo--active")
-        self.assertTrue(self.tm._is_solo_button_active(btn))
+        self.assertTrue(is_solo_button_active(btn))
 
     def test_aria_pressed_true_reports_active(self):
         btn = _button("track__solo", aria_pressed="true")
-        self.assertTrue(self.tm._is_solo_button_active(btn))
+        self.assertTrue(is_solo_button_active(btn))
 
     def test_data_state_active_reports_active(self):
         btn = _button("track__solo", data_state="active")
-        self.assertTrue(self.tm._is_solo_button_active(btn))
-
-
-class TestDownloadManagerSoloDetection(unittest.TestCase):
-    """The download verifier carries an independent copy of the same logic."""
-
-    def setUp(self):
-        # DownloadManager has many dependencies; only `_is_solo_button_active`
-        # is exercised here, so all collaborators can be Mocks.
-        self.dm = DownloadManager(Mock(), Mock(), Mock(), Mock(), Mock(), Mock())
-
-    def test_inactive_class_is_not_active(self):
-        btn = _button("track__solo inactive")
-        self.assertFalse(self.dm._is_solo_button_active_enhanced(btn))
-
-    def test_button_class_is_not_active(self):
-        btn = _button("track__solo button")
-        self.assertFalse(self.dm._is_solo_button_active_enhanced(btn))
-
-    def test_is_active_class_reports_active(self):
-        btn = _button("track__solo is-active")
-        self.assertTrue(self.dm._is_solo_button_active_enhanced(btn))
+        self.assertTrue(is_solo_button_active(btn))
 
 
 def test_finalize_solo_activation_does_not_call_phase3_validation(mocker):
@@ -167,7 +148,9 @@ def test_ensure_only_track_active_finds_target_with_string_index(mocker):
     btn3 = mocker.Mock()
     btn3.click = mocker.Mock()
     tm.driver.find_elements = mocker.Mock(return_value=[btn0, mocker.Mock(), mocker.Mock(), btn3])
-    tm._is_solo_button_active = mocker.Mock(return_value=False)
+    # Production code now uses the module-level is_solo_button_active, not a
+    # method on TrackManager — patch it at the module where it's looked up.
+    mocker.patch('packages.track_management.track_manager.is_solo_button_active', return_value=False)
 
     mocker.patch('packages.track_management.track_manager.WebDriverWait')
 

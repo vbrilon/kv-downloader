@@ -12,7 +12,7 @@ from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
 )
-from ..utils import safe_click, profile_timing, profile_selenium
+from ..utils import safe_click, profile_timing, profile_selenium, is_solo_button_active
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
@@ -24,17 +24,6 @@ from ..configuration.config import (WEBDRIVER_DEFAULT_TIMEOUT, WEBDRIVER_SHORT_T
                                     TRACK_INTERACTION_DELAY, SOLO_BUTTON_MAX_RETRIES,
                                     SOLO_ACTIVATION_MAX_WAIT, SOLO_CHECK_INTERVAL,
                                     SOLO_ACTIVATION_DELAY_SIMPLE, SOLO_ACTIVATION_DELAY_COMPLEX)
-
-
-# Exact CSS class tokens that signal an active solo button. Compared as
-# whole tokens against the split class list — never as substrings, since
-# "active" appears inside "inactive" and "on" appears inside "button"/"icon".
-ACTIVE_SOLO_CLASS_TOKENS = frozenset({
-    "is-active",
-    "active",
-    "selected",
-    "track__solo--active",
-})
 
 
 class TrackManager:
@@ -217,7 +206,7 @@ class TrackManager:
 
             # Fast path: ensure_only_track_active should have already activated.
             # Only click if the button isn't active yet.
-            if not self._is_solo_button_active(solo_button):
+            if not is_solo_button_active(solo_button):
                 safe_click(self.driver, solo_button, f"solo button for {track_name}")
 
             return self._activate_solo_button_verify_only(solo_button, track_name, track_index)
@@ -319,7 +308,7 @@ class TrackManager:
         while waited < max_wait:
             try:
                 # Check immediately without waiting first
-                if self._is_solo_button_active(solo_button):
+                if is_solo_button_active(solo_button):
                     logging.info(f"✅ Solo button became active for {track_name} (after {waited:.1f}s)")
                     return True
                 
@@ -340,51 +329,6 @@ class TrackManager:
         logging.warning(f"⚠️ Solo button not active after {max_wait}s for {track_name} (type: {track_type})")
         logging.warning(f"   Track-specific timeout was {track_type_timeout}s, actual timeout used: {max_wait}s")
         return False
-    
-    def _is_solo_button_active(self, solo_button):
-        """Enhanced solo button active state detection with multiple approaches
-        
-        Args:
-            solo_button: WebElement representing the solo button
-            
-        Returns:
-            bool: True if button is in active state
-        """
-        try:
-            # Method 1: CSS class detection by exact token match.
-            # `in` against the raw class string would treat "active" as a
-            # substring of "inactive" and "on" as a substring of "button"/"icon",
-            # producing false positives for every inactive solo button.
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            class_active = bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
-            # Method 2: ARIA attribute detection
-            aria_pressed = solo_button.get_attribute('aria-pressed')
-            aria_active = aria_pressed == 'true' if aria_pressed else False
-
-            # Method 3: Data attribute detection
-            data_state = (solo_button.get_attribute('data-state') or '').lower()
-            data_active = data_state in ('active', 'on', 'selected')
-
-            is_active = class_active or aria_active or data_active
-
-            # Enhanced logging for debugging click track issues
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                logging.debug("Solo button state detection:")
-                logging.debug(f"  Classes: {sorted(class_tokens)} -> Active: {class_active}")
-                logging.debug(f"  ARIA pressed: '{aria_pressed}' -> Active: {aria_active}")
-                logging.debug(f"  Data state: '{data_state}' -> Active: {data_active}")
-                logging.debug(f"  Final result: {is_active}")
-
-            return is_active
-
-        except Exception as e:
-            logging.debug(f"Error in enhanced solo button detection: {e}")
-            try:
-                fallback_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-                return bool(fallback_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-            except Exception:
-                return False
     
     def _retry_solo_activation(self, solo_button, track_name, track_index=None):
         """Retry solo activation with aggressive clicking"""
@@ -412,11 +356,11 @@ class TrackManager:
         """Wait for solo button activation after retry"""
         try:
             WebDriverWait(self.driver, WEBDRIVER_SHORT_TIMEOUT).until(
-                lambda driver: self._is_solo_button_active(solo_button)
+                lambda driver: is_solo_button_active(solo_button)
             )
             return True
         except TimeoutException:
-            return self._is_solo_button_active(solo_button)
+            return is_solo_button_active(solo_button)
     
     def _handle_solo_failure(self, solo_button, track_name):
         """Handle failed solo activation"""
@@ -489,17 +433,11 @@ class TrackManager:
         try:
             track_selector = f".track[data-index='{expected_solo_index}']"
             track_elements = self.driver.find_elements(By.CSS_SELECTOR, track_selector)
-            
             if not track_elements:
                 return False
-                
-            track_element = track_elements[0]
-            solo_button = track_element.find_element(By.CSS_SELECTOR, "button.track__solo")
-            class_tokens = set((solo_button.get_attribute('class') or '').lower().split())
-            return bool(class_tokens & ACTIVE_SOLO_CLASS_TOKENS)
-
+            solo_button = track_elements[0].find_element(By.CSS_SELECTOR, "button.track__solo")
+            return is_solo_button_active(solo_button)
         except Exception:
-            # Return False on any error - don't crash the polling loop
             return False
 
     def clear_all_solos(self, song_url):
@@ -525,14 +463,14 @@ class TrackManager:
             for button in solo_buttons:
                 try:
                     # Use enhanced detection to identify active solo buttons
-                    if self._is_solo_button_active(button):
+                    if is_solo_button_active(button):
                         logging.info("Clicking to deactivate active solo button")
                         button.click()
                         active_solos += 1
                         # Brief wait for UI update with enhanced detection
                         try:
                             WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                                lambda driver: not self._is_solo_button_active(button)
+                                lambda driver: not is_solo_button_active(button)
                             )
                         except TimeoutException:
                             pass  # Continue even if state change not detected
@@ -587,7 +525,7 @@ class TrackManager:
             # Scan for currently active tracks using enhanced detection
             for i, button in enumerate(solo_buttons):
                 try:
-                    if self._is_solo_button_active(button):
+                    if is_solo_button_active(button):
                         active_tracks.append(i)
                         logging.debug(f"Found active track: {i}")
 
@@ -618,7 +556,7 @@ class TrackManager:
                         # Brief wait for deactivation with enhanced detection
                         try:
                             WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                                lambda driver: not self._is_solo_button_active(button)
+                                lambda driver: not is_solo_button_active(button)
                             )
                         except TimeoutException:
                             pass  # Continue even if state change not detected immediately
@@ -638,7 +576,7 @@ class TrackManager:
                     # Brief wait for activation
                     try:
                         WebDriverWait(self.driver, WEBDRIVER_MICRO_TIMEOUT).until(
-                            lambda driver: self._is_solo_button_active(target_button)
+                            lambda driver: is_solo_button_active(target_button)
                         )
                     except TimeoutException:
                         pass  # Continue even if state change not detected immediately

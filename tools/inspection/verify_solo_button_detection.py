@@ -6,13 +6,13 @@ Why this exists:
   causing the "soloing every track in the song before settling on the right
   one" UI behavior. Root cause was substring matching ("active" in "inactive",
   "on" in "button"/"icon"). Detection is now token-based — see
-  packages/track_management/track_manager.py:ACTIVE_SOLO_CLASS_TOKENS.
+  packages/utils/solo_state.py:ACTIVE_SOLO_CLASS_TOKENS.
 
 What this script does:
   1. Logs in (reuses session if available).
   2. Navigates to a song page (CLI arg or first URL in songs.yaml).
   3. Captures the class lists of every solo button while all are inactive,
-     and asserts ``_is_solo_button_active`` returns False for each. Failure
+     and asserts ``is_solo_button_active`` returns False for each. Failure
      here would mean false positives are still occurring on the real site.
   4. Clicks track 0's solo button, waits for activation, then re-checks all
      buttons:
@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
 from karaoke_automator import KaraokeVersionAutomator
-from packages.track_management.track_manager import ACTIVE_SOLO_CLASS_TOKENS
+from packages.utils import ACTIVE_SOLO_CLASS_TOKENS
 
 
 def _resolve_song_url(cli_args):
