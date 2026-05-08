@@ -392,9 +392,24 @@ class TestClickHandlersConfiguration(TestCase):
         self.assertLess(WEBDRIVER_BRIEF_TIMEOUT, 10)  # Should be brief
 
 
+def test_js_click_with_scroll_skips_native_click(mocker):
+    """js_click_with_scroll must not call element.click(), only execute_script."""
+    from packages.utils.click_handlers import js_click_with_scroll
+    driver = mocker.Mock()
+    element = mocker.Mock()
+
+    js_click_with_scroll(driver, element, "download button")
+
+    element.click.assert_not_called()
+    # First execute_script call is scrollIntoView, second is the click
+    assert driver.execute_script.call_count == 2
+    click_call = driver.execute_script.call_args_list[1]
+    assert "arguments[0].click()" in click_call[0][0]
+
+
 if __name__ == "__main__":
     # Setup basic logging for tests
     logging.basicConfig(level=logging.WARNING)
-    
+
     import unittest
     unittest.main()

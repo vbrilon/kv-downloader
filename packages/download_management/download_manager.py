@@ -13,7 +13,7 @@ from selenium.common.exceptions import (
     TimeoutException,
     WebDriverException,
 )
-from ..utils import safe_click_with_scroll, profile_timing, profile_selenium
+from ..utils import safe_click_with_scroll, js_click_with_scroll, profile_timing, profile_selenium
 from ..configuration.selectors import DOWNLOAD_BUTTON_SELECTORS
 from ..track_management.track_manager import ACTIVE_SOLO_CLASS_TOKENS
 from ..di.interfaces import IProgressTracker, IFileManager, IChromeManager, IStatsReporter
@@ -178,7 +178,7 @@ class DownloadManager:
         
         # Scroll to download button and click
         logging.info("Clicking download button...")
-        safe_click_with_scroll(self.driver, download_button, "download button")
+        js_click_with_scroll(self.driver, download_button, "download button")
         
         # Wait for any immediate UI response or popup to appear
         try:

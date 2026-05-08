@@ -326,16 +326,16 @@ class TestDownloadFunctionality(unittest.TestCase):
         # Bypass track-selection verification (covered by track_manager tests) and the
         # post-click WebDriverWait polling (which does not tolerate a bare Mock driver)
         # so this test stays focused on download-button discovery and click behavior.
-        # safe_click_with_scroll is replaced with safe_click so the real click/JS-fallback
-        # logic is still exercised against the mock button.
+        # The download button uses js_click_with_scroll (JS-only, no native click)
+        # because empirically the native click is always intercepted on this site.
         # WebDriverWait is patched so its `.until(...)` returns the mock button (used by
         # _find_download_button) and is otherwise inert (used post-click for popup polling).
-        from packages.utils.click_handlers import safe_click
+        from packages.utils.click_handlers import js_click_with_scroll
 
         with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
              patch.object(download_manager, 'start_completion_monitoring'), \
              patch.object(download_manager, '_validate_pre_download_requirements', return_value=True), \
-             patch('packages.download_management.download_manager.safe_click_with_scroll', side_effect=safe_click), \
+             patch('packages.download_management.download_manager.js_click_with_scroll', side_effect=js_click_with_scroll), \
              patch('packages.download_management.download_manager.WebDriverWait') as mock_wait_cls:
 
             mock_wait_cls.return_value.until.return_value = mock_download_button
@@ -343,25 +343,33 @@ class TestDownloadFunctionality(unittest.TestCase):
             result = download_manager.download_current_mix(song_url, track_name)
 
             self.assertTrue(result)
-            mock_download_button.click.assert_called_once()
+            # Native click is deliberately skipped on the download button
+            mock_download_button.click.assert_not_called()
+            # Two execute_script calls: scrollIntoView and the JS click
+            self.assertEqual(self.mock_driver.execute_script.call_count, 2)
+            self.mock_driver.execute_script.assert_any_call(
+                "arguments[0].click();", mock_download_button
+            )
 
     def test_download_with_click_interception(self):
-        """Test download with click interception handling"""
+        """Download button uses JS-only click, so native interception is never seen."""
         song_url = "https://example.com/song"
         track_name = "test_track"
-        
-        # Mock download button that has click interception
+
+        # Mock download button. Even if the native click would be intercepted, the
+        # download path skips the native click entirely and goes straight to JS,
+        # so click.side_effect must never fire.
         mock_download_button = Mock()
         mock_download_button.is_displayed.return_value = True
         mock_download_button.is_enabled.return_value = True
         mock_download_button.text = "Download\nMP3"
         mock_download_button.get_attribute.return_value = "mixer.getMix();"
         mock_download_button.click.side_effect = Exception("element click intercepted")
-        
+
         self.mock_driver.find_element.return_value = mock_download_button
         self.mock_driver.window_handles = ['window1']  # Mock window handles
         self.mock_driver.current_url = song_url
-        
+
         # Set up mock file manager
         mock_file_manager = Mock()
         mock_file_manager.setup_song_folder.return_value = Path("/tmp/test")
@@ -375,17 +383,15 @@ class TestDownloadFunctionality(unittest.TestCase):
 
         # Bypass track-selection verification (covered by track_manager tests) and the
         # post-click WebDriverWait polling (which does not tolerate a bare Mock driver)
-        # so this test stays focused on click-interception fallback behavior.
-        # safe_click_with_scroll is replaced with safe_click so the real click/JS-fallback
-        # logic is still exercised against the mock button.
+        # so this test stays focused on confirming the JS-only click path.
         # WebDriverWait is patched so its `.until(...)` returns the mock button (used by
         # _find_download_button) and is otherwise inert (used post-click for popup polling).
-        from packages.utils.click_handlers import safe_click
+        from packages.utils.click_handlers import js_click_with_scroll
 
         with patch.object(download_manager, 'extract_song_folder_name', return_value="Test Song"), \
              patch.object(download_manager, 'start_completion_monitoring'), \
              patch.object(download_manager, '_validate_pre_download_requirements', return_value=True), \
-             patch('packages.download_management.download_manager.safe_click_with_scroll', side_effect=safe_click), \
+             patch('packages.download_management.download_manager.js_click_with_scroll', side_effect=js_click_with_scroll), \
              patch('packages.download_management.download_manager.WebDriverWait') as mock_wait_cls:
 
             mock_wait_cls.return_value.until.return_value = mock_download_button
@@ -393,9 +399,12 @@ class TestDownloadFunctionality(unittest.TestCase):
             result = download_manager.download_current_mix(song_url, track_name)
 
             self.assertTrue(result)
-            # Should have tried regular click, then JavaScript click
-            mock_download_button.click.assert_called_once()
-            self.mock_driver.execute_script.assert_called_with("arguments[0].click();", mock_download_button)
+            # Native click is deliberately skipped to avoid the always-intercepted overhead
+            mock_download_button.click.assert_not_called()
+            # JavaScript click is invoked directly
+            self.mock_driver.execute_script.assert_any_call(
+                "arguments[0].click();", mock_download_button
+            )
 
 if __name__ == '__main__':
     # Create test suite

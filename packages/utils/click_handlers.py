@@ -89,3 +89,20 @@ def safe_click_with_scroll(driver: WebDriver, element: WebElement, element_descr
     except Exception as e:
         logging.error(f"Failed to scroll and click {element_description}: {e}")
         raise e
+
+
+def js_click_with_scroll(driver: WebDriver, element: WebElement, element_description: str = "element") -> bool:
+    """Scroll into view then click via JavaScript, skipping the native click attempt.
+
+    Use this when empirical evidence shows the native click is always intercepted
+    (e.g. the karaoke-version download button), so the exception round-trip from
+    safe_click is pure overhead.
+    """
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+        driver.execute_script("arguments[0].click();", element)
+        logging.debug(f"✅ {element_description} clicked via JavaScript (direct)")
+        return True
+    except Exception as e:
+        logging.error(f"JS click failed on {element_description}: {e}")
+        return False
