@@ -16,29 +16,29 @@
 
 **Conclusion: SKIP.** There is no faster path. The existing JS click `arguments[0].click()` already fires the same `onclick="mixer.getMix();return false;"` handler — which IS the API call. Spending engineering effort on calling `getMix()` directly via `execute_script` would yield zero perceptible improvement, and we'd still need to wait for the modal to populate to extract the download URL.
 
-## 8.3 — Move downloads out of Dropbox-synced folder
+## 8.3 — Move downloads out of Dropbox-synced folder — **TESTED, RULED OUT**
 
-**Current state:** `.env` has `DOWNLOAD_FOLDER=/Users/victorbrilon/Library/CloudStorage/Dropbox/New_Song_Tracks`.
+**Original hypothesis:** Dropbox-synced folders add measurable filesystem overhead (sync events, CloudStorage extension serialization) to the hot path.
 
-**Why this matters:** Every file create / delete (including `shutil.rmtree` in `clear_song_folder` and the `clean_downloaded_filename` rename step) triggers Dropbox sync events. macOS's CloudStorage layer can serialize file operations on the sync daemon, occasionally adding tens-to-hundreds of milliseconds to filesystem operations.
+**Tests run (2026-05-08):**
 
-**Effect on the hot path:**
-- `clear_song_folder` runs once per song. Cost is roughly proportional to file count being removed. Probably small.
-- `clean_downloaded_filename` runs once per track (renames the downloaded file). Each rename triggers a Dropbox sync event. Again, small but adds up across 15 tracks.
-- `_get_file_info` / `_scan_directory_cached` poll the song folder during `_monitor_download_progress`. Each scan iterates the directory and does `stat()` on each file. Dropbox-synced folders sometimes return slower stat results during heavy sync activity.
+1. **End-to-end profiler comparison** (`bin/python karaoke_automator.py --profile --max-tracks 5` on each path). Result was noisy: local came out *slower* (31.0s vs 20.3s/track) but driven by a single Shaker-track outlier (17.6s → 46.4s on identical config). Server-side mix-generation jitter dominated the signal — single-run comparison is unreliable for this question.
 
-**Recommendation: viable, low-risk, low-effort.**
+2. **Targeted filesystem micro-benchmark** (`/tmp/fs_bench.py`, 10 iterations each, all the file ops kv-downloader does in the hot path: mkdir, 6MB write, two renames, 12 stat-polls, rmtree). This isolates filesystem from server interaction.
 
-Steps to validate:
-1. Edit `.env` to change `DOWNLOAD_FOLDER` to a local path:
-   ```
-   DOWNLOAD_FOLDER=/Users/victorbrilon/karaoke-downloads-staging
-   ```
-2. Run the same `python karaoke_automator.py --profile --max-tracks 5` benchmark.
-3. Compare the `mean per-track` to the current 22.5s baseline.
-4. If meaningfully faster, add a habit (or a wrap script) to `rsync -a /tmp/staging/ ~/Dropbox/New_Song_Tracks/` after each session — the move is incremental, and Dropbox handles it as a single batch.
+   | Phase | Local median | Dropbox median | Delta |
+   |---|---|---|---|
+   | mkdir | 0.03ms | 0.03ms | ~0 |
+   | write 6MB | 2.21ms | 2.34ms | +0.14ms |
+   | rename .crdownload | 0.06ms | 0.08ms | +0.02ms |
+   | 12× stat polls | 0.28ms | 0.29ms | +0.01ms |
+   | rename cleanup | 0.04ms | 0.04ms | ~0 |
+   | rmtree | 0.11ms | 0.11ms | ~0 |
+   | **TOTAL per song** | **2.72ms** | **2.90ms** | **+0.18ms** |
 
-I have NOT made this change because it touches the user's machine config (`.env`) and download habits. It's a one-line change you can apply yourself when you want to test it; if it shows a real speedup on a 5-track run, the answer is "yes, do it." If not, leave it as-is.
+**Conclusion:** Dropbox adds ~0.18ms per song to filesystem operations. **Negligible.** The 14s of server-side mix-generation per track dwarfs every filesystem cost we touch.
+
+**Verdict: do not pursue.** Hypothesis disproven empirically. The macOS File Provider extension is fast enough that local-vs-Dropbox is invisible at the granularity our hot path operates at.
 
 ## Other spikes from PLAN.md (not pursued)
 
