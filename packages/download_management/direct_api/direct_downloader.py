@@ -122,9 +122,13 @@ class DirectDownloader:
         max_wait: float = 60.0,
         poll_interval: float = 2.0,
         level: int = 100,
+        fetch_max_attempts: int = 3,
+        fetch_retry_backoff: float = 1.0,
     ) -> DownloadResult:
         """Solo position `target_pos` on the server, wait for the mix to
-        render, fetch the MP3 to `dest`."""
+        render, fetch the MP3 to `dest`. Transient CDN failures are
+        retried up to `fetch_max_attempts` times with exponential
+        backoff (`fetch_retry_backoff` * 2**attempt)."""
         t0 = time.monotonic()
 
         # 1. Snapshot baseline hash on first call.
@@ -142,8 +146,10 @@ class DirectDownloader:
         new_url = self._poll_for_fresh_url(max_wait, poll_interval)
         new_hash = url_hash(new_url)
 
-        # 4. Fetch the MP3 to disk.
-        size = self._fetch_mp3(new_url, dest)
+        # 4. Fetch the MP3 to disk (with transient-failure retries).
+        size = self._fetch_mp3_with_retry(
+            new_url, dest, fetch_max_attempts, fetch_retry_backoff
+        )
 
         self._last_hash = new_hash
         return DownloadResult(
@@ -205,6 +211,31 @@ class DirectDownloader:
                 )
             if poll_interval > 0:
                 time.sleep(poll_interval)
+
+    def _fetch_mp3_with_retry(
+        self,
+        url: str,
+        dest: Path,
+        max_attempts: int,
+        backoff: float,
+    ) -> int:
+        last_err: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self._fetch_mp3(url, dest)
+            except MP3FetchError as e:
+                last_err = e
+                if attempt < max_attempts:
+                    sleep_s = backoff * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"MP3 fetch attempt {attempt}/{max_attempts} failed: "
+                        f"{e}; retrying in {sleep_s:.1f}s"
+                    )
+                    if sleep_s > 0:
+                        time.sleep(sleep_s)
+        raise MP3FetchError(
+            f"MP3 fetch failed after {max_attempts} attempts: {last_err}"
+        ) from last_err
 
     def _fetch_mp3(self, url: str, dest: Path) -> int:
         headers = {

@@ -269,26 +269,39 @@ class TestDirectDownloaderErrors:
             )
 
     def test_fetch_network_error_raises_mp3_fetch_error(self, tmp_path):
+        # All 3 retry attempts fail with a network error → final
+        # MP3FetchError mentions both the underlying cause and the
+        # exhausted-attempts state.
         session = MagicMock()
         session.get.side_effect = [
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
             _mock_response(200, "ok"),
             _mock_response(200, _begin_download_html(CDN_URL_NEW)),
             ConnectionError("connection reset"),
+            ConnectionError("connection reset"),
+            ConnectionError("connection reset"),
         ]
         dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
         with pytest.raises(MP3FetchError) as exc:
             dl.download_track(
-                target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0
+                target_pos=3,
+                dest=tmp_path / "t.mp3",
+                poll_interval=0.0,
+                fetch_retry_backoff=0.0,
             )
-        assert "connection" in str(exc.value).lower()
+        msg = str(exc.value).lower()
+        assert "connection reset" in msg
+        assert "3 attempts" in msg
 
     def test_fetch_returns_5xx_raises_mp3_fetch_error(self, tmp_path):
+        # All 3 retry attempts return 5xx → exhausted, raise.
         session = MagicMock()
         session.get.side_effect = [
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
             _mock_response(200, "ok"),
             _mock_response(200, _begin_download_html(CDN_URL_NEW)),
+            _mock_response(503, "Service Unavailable"),
+            _mock_response(503, "Service Unavailable"),
             _mock_response(503, "Service Unavailable"),
         ]
         dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
@@ -296,6 +309,70 @@ class TestDirectDownloaderErrors:
             dl.download_track(
                 target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0
             )
+
+
+class TestRetryBehavior:
+    """Phase 4 hardening: transient failures should be retried before
+    giving up on a track."""
+
+    def test_mp3_fetch_retries_on_network_error(self, tmp_path):
+        # First two fetch attempts fail with ConnectionError; third succeeds.
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),  # snapshot
+            _mock_response(200, "ok"),                                # basket
+            _mock_response(200, _begin_download_html(CDN_URL_NEW)),  # poll
+            ConnectionError("transient 1"),                           # fetch attempt 1
+            ConnectionError("transient 2"),                           # fetch attempt 2
+            _mock_response(200, content=b"mp3-success"),             # fetch attempt 3
+        ]
+        dl = DirectDownloader(TEMPLATE_PARAMS["prodid"] and session,
+                              TEMPLATE_PARAMS, SONG_URL)
+        result = dl.download_track(
+            target_pos=3,
+            dest=tmp_path / "t.mp3",
+            poll_interval=0.0,
+            fetch_retry_backoff=0.0,
+        )
+        assert result.size_bytes == len(b"mp3-success")
+        assert (tmp_path / "t.mp3").read_bytes() == b"mp3-success"
+
+    def test_mp3_fetch_gives_up_after_max_retries(self, tmp_path):
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(CDN_URL_NEW)),
+            ConnectionError("attempt 1"),
+            ConnectionError("attempt 2"),
+            ConnectionError("attempt 3"),
+        ]
+        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        with pytest.raises(MP3FetchError):
+            dl.download_track(
+                target_pos=3,
+                dest=tmp_path / "t.mp3",
+                poll_interval=0.0,
+                fetch_retry_backoff=0.0,
+            )
+
+    def test_mp3_fetch_5xx_retries_then_succeeds(self, tmp_path):
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(CDN_URL_NEW)),
+            _mock_response(503, "Service Unavailable"),
+            _mock_response(200, content=b"mp3-ok"),
+        ]
+        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        result = dl.download_track(
+            target_pos=3,
+            dest=tmp_path / "t.mp3",
+            poll_interval=0.0,
+            fetch_retry_backoff=0.0,
+        )
+        assert (tmp_path / "t.mp3").read_bytes() == b"mp3-ok"
 
 
 class TestStateAcrossCalls:
