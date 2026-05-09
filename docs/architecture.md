@@ -5,9 +5,9 @@ this before making structural changes (new modules, cross-cutting
 refactors, dependency-injection rewiring, error-handling overhauls).
 
 For user-facing setup (install, songs.yaml format, CLI flags), see the
-top-level `README.md`. For perf-tuning history and the current
-performance budget, see `docs/PERF.md`. For verified DOM selectors and
-download-modal behavior, see `docs/site-flow/`.
+top-level `README.md`. For the current per-track performance budget and
+reliability data, see `docs/baselines/` (newest file wins). For verified
+DOM selectors and download-modal behavior, see `docs/site-flow/`.
 
 ---
 
@@ -80,7 +80,7 @@ Multi-tier (System → Component → Method → Operation) timing collection.
   in `logs/performance/baselines/`. CLI: `--baseline-test`,
   `--ab-test`, `--list-baselines`.
 
-For the current perf budget and per-track timing, see `docs/PERF.md`.
+For the current perf budget and per-track timing, see `docs/baselines/`.
 
 ---
 

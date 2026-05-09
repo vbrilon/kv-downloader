@@ -26,20 +26,16 @@ setup, direct-HTTP per-track downloads.
 |---|---|
 | User-facing setup (install, songs.yaml format, CLI flags) | `README.md` |
 | Anything structural — new package, refactor, DI rewiring, error-handling change | [`docs/architecture.md`](docs/architecture.md) |
-| Perf tuning, regressions, current per-track budget, A/B baselines | [`docs/PERF.md`](docs/PERF.md) |
-| Phased roadmap (what's done, what's next, ownership of each phase) | [`docs/PLAN.md`](docs/PLAN.md) |
-| Long-term architecture recommendations (library/CLI split, profiler injection, etc.) | [`docs/RECS.md`](docs/RECS.md) |
+| Current per-track perf budget + reliability data | [`docs/baselines/`](docs/baselines/) — newest file wins |
 | Working on a specific in-flight feature | [`docs/plans/`](docs/plans/) — newest plan wins |
 | Site DOM behavior, modal open/close, hidden inputs, mixer init script | [`docs/site-flow/`](docs/site-flow/) |
 | Updating a CSS/XPath selector | [`docs/site-flow/selectors.md`](docs/site-flow/selectors.md) **and** `packages/configuration/selectors.py` |
 | How basket.php params are captured from the page (direct-API foundation) | [`docs/site-flow/2026-05-09-mixer-state-capture.md`](docs/site-flow/2026-05-09-mixer-state-capture.md) |
 | Building or parsing a `trackslevels` query value | [`docs/site-flow/trackslevels-format.md`](docs/site-flow/trackslevels-format.md) |
 | Why same-input MP3 renders produce different SHA-256s (don't write equality tests) | [`docs/site-flow/mp3-encoder-nondeterminism.md`](docs/site-flow/mp3-encoder-nondeterminism.md) |
-| Investigating a past bug or perf regression | [`docs/investigations/`](docs/investigations/) |
+| Investigating a past bug — has someone already chased this? | [`docs/investigations/`](docs/investigations/) |
 | Research spike before designing a feature | [`docs/spikes/`](docs/spikes/) |
 | Validating a fix end-to-end against the live site | [`docs/validation/`](docs/validation/) |
-| Comparing perf runs / capturing baselines | [`docs/baselines/`](docs/baselines/) |
-| Audit results (tools cleanup, code-health passes) | [`docs/audits/`](docs/audits/) |
 
 ## Working agreements (project-specific)
 
