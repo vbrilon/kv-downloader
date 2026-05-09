@@ -92,14 +92,35 @@ packages/
 - **Performance Instrumentation**: 5 key methods profiled with comprehensive optimization results
 
 ### Download Management System (packages/download_management/) - INSTRUMENTED
-- **Modular Download Flow**: `download_current_mix()` orchestrates 4 focused methods:
+
+**Default path: direct-API** (`packages/download_management/direct_api/`).
+Each song captures the basket template once from the page's inline
+`mixer.setLevels` script, then per-track downloads are three HTTP calls
+(`basket.php` → `begin_download.html` poll → CDN MP3 fetch). No UI click
+or Chrome download manager involvement. ~2x faster per track than the
+legacy Selenium path. Modules:
+- `direct_api/trackslevels.py` — pure functions for the trackslevels
+  query-param string. Preserves bare-numeric edge slots (precount flag);
+  changing them returns HTTP 500 from the server.
+- `direct_api/direct_downloader.py` — `DirectDownloader.download_track()`
+  per track. Maintains `_last_hash` so subsequent calls only need to
+  wait for the CDN URL hash to flip. 3x retry with exponential backoff
+  on transient CDN failures.
+- `direct_api/session_capture.py` — `capture_session(driver, song_url)`
+  reads cookies, UA, and the basket template from the live page. Pure
+  parser is unit-tested; Selenium glue verified by smoke runs.
+
+**Fallback: legacy Selenium flow** in `download_manager.py`. Active when
+`--legacy-selenium-download` is passed, or when `capture_session` raises
+(site structure changed). Original orchestration:
+- `download_current_mix()` orchestrates 4 focused methods:
   - `_navigate_and_find_download_button()`: Page navigation and button finding
   - `_validate_pre_download_requirements()`: Pre-download validation with retry
   - `_execute_download_action()`: Download execution and progress tracking
   - `_monitor_download_completion()`: Download monitoring and completion handling (INSTRUMENTED)
-- **Performance Optimization**: 30s initial wait before active monitoring (server generation time)
-- **Cross-Browser Mode Compatibility**: Handles timing differences between headless and visible modes
-- **File Processing Pipeline**: Download detection → File cleanup/renaming → Validation with updated paths
+- 30s initial wait before active monitoring (server generation time)
+- Cross-browser mode compatibility (headless vs visible)
+- File Processing Pipeline: Download detection → File cleanup/renaming → Validation with updated paths
 
 ### Session Management & Authentication (packages/authentication/) - INSTRUMENTED
 - **Chrome Profile Reuse**: Persistent authentication via `chrome_profile/`

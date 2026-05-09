@@ -38,7 +38,7 @@ logging.basicConfig(
 class KaraokeVersionAutomator:
     """Main automation class that coordinates all functionality"""
     
-    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", max_tracks_per_song=None, direct_api=False):
+    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", max_tracks_per_song=None, direct_api=True):
         """
         Initialize automator
 
@@ -47,7 +47,8 @@ class KaraokeVersionAutomator:
             show_progress (bool): Show progress bar during downloads (True) or use simple logging (False)
             config_file (str): Path to songs configuration file
             max_tracks_per_song (int): Maximum tracks to process per song (None = all tracks)
-            direct_api (bool): Use direct-API HTTP path instead of Selenium per-track downloads
+            direct_api (bool): Use direct-API HTTP path (default). Set False to fall back
+                to the legacy Selenium per-track download flow.
         """
         self.headless = headless
         self.show_progress = show_progress
@@ -750,9 +751,10 @@ if __name__ == "__main__":
                        help='List available baseline configurations and exit')
     parser.add_argument('--max-tracks', type=int, default=None,
                        help='Maximum tracks per song to process (default: all tracks)')
-    parser.add_argument('--direct-api', action='store_true',
-                       help='Use the direct-HTTP download path (basket.php + begin_download.html) '
-                            'instead of clicking the UI download button. ~37%% faster per track.')
+    parser.add_argument('--legacy-selenium-download', action='store_true',
+                       help='Opt out of the direct-HTTP download path and use the legacy Selenium '
+                            'click-driven flow instead. ~2x slower per track but useful for '
+                            'A/B comparison or if the site changes the inline mixer init script.')
     args = parser.parse_args()
 
     # Toggling the profiler reconfigures the existing singleton in place,
@@ -836,7 +838,7 @@ if __name__ == "__main__":
             headless=headless_mode,
             show_progress=True,
             max_tracks_per_song=args.max_tracks,
-            direct_api=args.direct_api,
+            direct_api=not args.legacy_selenium_download,
         )
         
         # Override login method if force login requested

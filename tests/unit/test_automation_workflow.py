@@ -255,17 +255,23 @@ class TestKaraokeVersionAutomatorWorkflow:
         self.automator.file_manager.clear_song_folder.assert_not_called()
     
     def test_download_all_tracks(self):
-        """Test downloading all tracks for a song"""
+        """Test downloading all tracks for a song via the legacy
+        per-track Selenium dispatch."""
         # Arrange
         song = {'name': 'Test Song', 'url': 'http://example.com'}
         tracks = [
             {'name': 'Track 1', 'index': 0},
             {'name': 'Track 2', 'index': 1}
         ]
-        
+
+        # Force legacy dispatch — direct-API is the default, but this
+        # test specifically exercises the per-track Selenium fan-out.
+        # Direct-API integration is covered by the smoke run + the
+        # _download_all_tracks_direct_api unit tests.
+        self.automator.direct_api = False
         # Mock the single track download method
         self.automator._download_single_track = Mock()
-        
+
         # Act
         with patch('time.sleep') as mock_sleep:
             self.automator._download_all_tracks(song, tracks, 2)
