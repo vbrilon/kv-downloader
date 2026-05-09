@@ -103,7 +103,18 @@ python karaoke_automator.py --force-login
 
 # Clear saved session and exit
 python karaoke_automator.py --clear-session
+
+# Opt out of the direct-HTTP path and use the legacy Selenium click flow
+# (slower; useful for A/B comparison or if the site changes the inline
+# mixer init script)
+python karaoke_automator.py --legacy-selenium-download
 ```
+
+The default download path is the **direct-HTTP API** (`basket.php` →
+`begin_download.html` → CDN MP3). It is ~2x faster per track than
+clicking the UI download button. If the site changes the inline mixer
+init script and capture fails, the run automatically falls back to the
+legacy Selenium path for that song.
 
 ---
 

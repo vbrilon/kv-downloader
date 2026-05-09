@@ -38,19 +38,22 @@ logging.basicConfig(
 class KaraokeVersionAutomator:
     """Main automation class that coordinates all functionality"""
     
-    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", max_tracks_per_song=None):
+    def __init__(self, headless=False, show_progress=True, config_file="songs.yaml", max_tracks_per_song=None, direct_api=True):
         """
         Initialize automator
-        
+
         Args:
             headless (bool): Run browser in headless mode (True) or visible mode (False)
             show_progress (bool): Show progress bar during downloads (True) or use simple logging (False)
             config_file (str): Path to songs configuration file
             max_tracks_per_song (int): Maximum tracks to process per song (None = all tracks)
+            direct_api (bool): Use direct-API HTTP path (default). Set False to fall back
+                to the legacy Selenium per-track download flow.
         """
         self.headless = headless
         self.show_progress = show_progress
         self.max_tracks_per_song = max_tracks_per_song
+        self.direct_api = direct_api
         self.config_manager = ConfigurationManager(config_file)
         self.progress = ProgressTracker(show_display=show_progress) if show_progress else None
         self.stats = StatsReporter()  # Always track stats
@@ -271,10 +274,133 @@ class KaraokeVersionAutomator:
             tracks_to_process = limited_tracks
         else:
             tracks_to_process = tracks
-            
+
+        if self.direct_api:
+            self._download_all_tracks_direct_api(song, tracks_to_process, song_key)
+            return
+
         for track in tracks_to_process:
             self._download_single_track(song, track, song_key)
             time.sleep(BETWEEN_TRACKS_PAUSE)  # Brief pause between tracks
+
+    @profile_timing("_download_all_tracks_direct_api", "system", "method")
+    def _download_all_tracks_direct_api(self, song, tracks_to_process, song_key):
+        """Direct-API path: capture the session once, then download every
+        track via HTTP (basket.php → begin_download.html → CDN MP3) without
+        Selenium round-trips for solo/click/wait."""
+        from packages.download_management.direct_api.session_capture import (
+            capture_session, CaptureError,
+        )
+        from packages.download_management.direct_api.direct_downloader import (
+            DirectDownloader, BasketUpdateError, MixGenTimeout, MP3FetchError,
+        )
+        import requests
+
+        try:
+            ctx = capture_session(self.driver, song['url'])
+        except CaptureError as e:
+            logging.error(
+                f"❌ direct-API capture failed: {e} — falling back to legacy "
+                f"Selenium download for this song"
+            )
+            for track in tracks_to_process:
+                self._download_single_track(song, track, song_key)
+                time.sleep(BETWEEN_TRACKS_PAUSE)
+            return
+
+        # User-supplied key adjustment overrides the captured static default.
+        # The static script always has setPitch("0"); ensure_intro_count_enabled
+        # already ran (precount=1).
+        ctx.template_params['pitch'] = str(song_key)
+        logging.info(
+            f"🎯 direct-API capture: prodid={ctx.template_params['prodid']}, "
+            f"s={ctx.template_params['s']}, pitch={ctx.template_params['pitch']}, "
+            f"{len(ctx.cookies)} cookies"
+        )
+
+        session = requests.Session()
+        for k, v in ctx.cookies.items():
+            session.cookies.set(k, v)
+        session.headers.update({
+            "User-Agent": ctx.ua or "Mozilla/5.0",
+            "Accept": "*/*",
+            "Referer": song['url'],
+            "X-Requested-With": "XMLHttpRequest",
+        })
+
+        downloader = DirectDownloader(
+            session, ctx.template_params, song['url']
+        )
+
+        song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
+        song_path = self.file_manager.setup_song_folder(song_folder_name, clear_existing=False)
+
+        for track in tracks_to_process:
+            self._download_single_track_direct_api(
+                song, track, song_key, downloader, song_path
+            )
+            time.sleep(BETWEEN_TRACKS_PAUSE)
+
+    @profile_timing("_download_single_track_direct_api", "system", "method")
+    def _download_single_track_direct_api(self, song, track, song_key, downloader, song_path):
+        """Single-track download via DirectDownloader.
+
+        The mapping data-index → trackslevels position: data-index N maps to
+        target_pos N for N in 1..N-1. data-index 0 is the click/precount
+        track — handled by setting all trackslevels to 0 (precount=1 in
+        template_params produces the click-only mix server-side).
+        """
+        from packages.download_management.direct_api.direct_downloader import (
+            BasketUpdateError, MixGenTimeout, MP3FetchError,
+        )
+        from packages.download_management.direct_api.trackslevels import (
+            InvalidPositionError,
+        )
+
+        track_name = self.sanitize_filename(track['name'])
+
+        if self._track_file_already_exists(song, track_name):
+            return self._record_skip_existing(song, track, track_name)
+
+        if self.progress:
+            self.progress.update_track_status(track['index'], 'downloading')
+        self.stats.record_track_start(song['name'], track_name, track['index'])
+
+        dest = song_path / f"{track_name}.mp3"
+        try:
+            data_index = int(track['index'])
+            if data_index == 0:
+                # Click track: all .id segments at level=0; precount=1
+                # in template renders just the click. Use any non-edge
+                # position as the "target" with level=0.
+                result = downloader.download_track(
+                    target_pos=1, dest=dest, level=0
+                )
+            else:
+                result = downloader.download_track(
+                    target_pos=data_index, dest=dest
+                )
+            logging.info(
+                f"✅ direct-API: {track_name} → {result.size_bytes:,} bytes "
+                f"in {result.elapsed_s:.1f}s"
+            )
+            if self.progress:
+                self.progress.update_track_status(track['index'], 'completed', progress=100)
+            self.stats.record_track_completion(
+                song['name'], track_name, success=True,
+                file_size=result.size_bytes,
+            )
+            return True
+        except (BasketUpdateError, MixGenTimeout, MP3FetchError, InvalidPositionError) as e:
+            logging.error(f"❌ direct-API failed for {track_name}: {e}")
+            if self.progress:
+                self.progress.update_track_status(track['index'], 'failed')
+            self.stats.record_track_completion(
+                song['name'], track_name, success=False,
+                error_message=str(e),
+            )
+            self._record_failed_download(song, track, str(e))
+            return False
     
     @profile_timing("_download_single_track", "system", "method")
     def _download_single_track(self, song, track, song_key):
@@ -625,6 +751,10 @@ if __name__ == "__main__":
                        help='List available baseline configurations and exit')
     parser.add_argument('--max-tracks', type=int, default=None,
                        help='Maximum tracks per song to process (default: all tracks)')
+    parser.add_argument('--legacy-selenium-download', action='store_true',
+                       help='Opt out of the direct-HTTP download path and use the legacy Selenium '
+                            'click-driven flow instead. ~2x slower per track but useful for '
+                            'A/B comparison or if the site changes the inline mixer init script.')
     args = parser.parse_args()
 
     # Toggling the profiler reconfigures the existing singleton in place,
@@ -705,9 +835,10 @@ if __name__ == "__main__":
     
     try:
         automator = KaraokeVersionAutomator(
-            headless=headless_mode, 
+            headless=headless_mode,
             show_progress=True,
-            max_tracks_per_song=args.max_tracks
+            max_tracks_per_song=args.max_tracks,
+            direct_api=not args.legacy_selenium_download,
         )
         
         # Override login method if force login requested

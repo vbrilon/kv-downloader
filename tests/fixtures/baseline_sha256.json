@@ -1,0 +1,22 @@
+{
+  "_comment": "Baseline SHA-256 from legacy Selenium download path. Generated 2026-05-08 against bryan-adams/18-til-i-die.html with --max-tracks 3. Used by Phase 3 of the direct-API rewrite to verify direct-API produces equivalent files. Note: server-side MP3 encoding may include timestamp metadata or encoder nondeterminism, so a strict SHA match across runs is not guaranteed. Phase 3 should fall back to (a) file size within +/-5% and (b) audio content validation if SHAs differ.",
+  "_song": "18 Til I Die",
+  "_song_url": "https://www.karaoke-version.com/custombackingtrack/bryan-adams/18-til-i-die.html",
+  "_generated_at": "2026-05-08",
+  "_generated_via": "bin/python karaoke_automator.py --max-tracks 3",
+  "_avg_track_time_seconds": 24.2,
+  "tracks": {
+    "Intro count Click": {
+      "sha256": "cc1df089dbc5addf2618c7227d0bfc4f8af3218ed7e626c8c46c9b2398f74189",
+      "size_bytes": 8654285
+    },
+    "Drum Kit": {
+      "sha256": "d2796e6c200dd1663420698f9d2be6e4cdc3ad36a7501e2dab50ba74945ca3a3",
+      "size_bytes": 8654285
+    },
+    "Bass": {
+      "sha256": "752cff40ef4b8779eb2ccd477209280c04331977cbf9d146e725991ac4a44184",
+      "size_bytes": 8654285
+    }
+  }
+}
