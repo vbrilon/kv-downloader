@@ -113,33 +113,57 @@ single track to a destination path. No Selenium dependency.
 **Deliverable:** `capture_session(driver, song_url) -> SessionContext` that
 returns everything `DirectDownloader` needs (cookies, basket template, UA).
 
+**Q1 resolved (2026-05-08 probes — `tools/probe_dom_*.py`):** the entire
+basket template is reachable from the page's inline init script. The
+`#mixprod_loader`-adjacent `<script>` block (single inline script per
+page, identifiable by `mixer.setLevels(...)` + `mixer.getMixCallback`)
+contains every literal we need:
+
+```js
+mixer.setPitch("0");
+mixer.setLevels("1,0.2,0.3,100.4,...,0.13,0");      // trackslevels template
+mixer.setPannings("1,0.2,0.3,...,-100.12,0.13,0");  // pannings string
+mixer.getMixCallback = function () {
+    mixer.parameters.bkac = "editf";
+    mixer.parameters.s = 40852;
+    mixer.parameters.prodid = 21279320;
+};
+// + mixer.parameters.{precount,famid,method,pitch} set during init
+```
+
+Plus `mixer.parameters` (live JS) holds `{famid, method, precount}` and
+`mixer.getPannings()` returns the pannings string. **Zero UI clicks
+needed for capture** — capture cost drops from ~14s to ~0s/song.
+
 **Files:**
 - `packages/download_management/direct_api/session_capture.py`
   - `@dataclass class SessionContext: cookies: dict; template_params: dict; ua: str`
   - `capture_session(driver, song_url, log) -> SessionContext`
-    - Trigger one UI download via existing `DownloadManager` click logic
-    - Watch the perf log for the `basket.php` URL
-    - Parse query params → `template_params`
+    - Navigate to `song_url` if not already there; wait for `.track`
+    - Read inline script source: `document.querySelectorAll('script:not([src])')`
+      then find the one containing `mixer.setLevels`
+    - Regex-extract: `prodid`, `s`, `bkac`, `pannings` (from setPannings),
+      `trackslevels` template (from setLevels), `pitch` (from setPitch)
+    - Read live: `mixer.parameters` for `famid`, `method`, `precount`
     - Snapshot `driver.get_cookies()` → `cookies`
     - Read `navigator.userAgent` → `ua`
-- ChromeManager: add an `enable_perf_logging: bool = False` constructor
-  param. When True, sets the `goog:loggingPrefs` capability before driver
-  init. (The probes use a monkeypatch — replace that with the real param.)
+    - On capture failure (script not found / regex miss): raise
+      `CaptureError`; caller can fall back to legacy Selenium download
+- ChromeManager: NO perf-logging param needed (deferred since we don't
+  use perf log anymore for capture).
 
 **Tests:**
-- Unit-test the URL parser with sample URLs
+- Unit-test the script-source parser with the captured fixture from
+  `logs/probe_script_source.log` (already saved 2026-05-08)
+- Test: missing `mixer.setLevels` line → CaptureError
+- Test: malformed regex match → CaptureError with diagnostic message
 - Smoke test (manual): run against the configured song, assert
-  `template_params` has the expected keys (`prodid`, `s`, `pannings`,
-  `pitch`, `precount`, `bkac`, `famid`, `method`, `trackslevels`)
+  `template_params` has the expected keys
 
-**Open questions to investigate during this phase:**
-- **Q1.** Can we read `prodid` + `pannings` directly from the page DOM
-  (hidden form fields, JS variables) and skip the UI download click? Would
-  drop the per-song setup time from ~16s to ~2s. Worth ~14s/song.
-  Investigate by `view-source:` on the song page and grepping for `prodid`.
+**Open questions:**
 - **Q2.** Does the basket template change between sessions for the same
   song+account? If stable, we can cache it on disk and skip capture
-  entirely on repeat runs.
+  entirely on repeat runs. (Lower priority now that capture is ~0s.)
 
 ### Phase 3: Wire as feature-flagged path (~0.5 day)
 
@@ -263,9 +287,15 @@ Before declaring each phase done:
   from a real session and the bytes match a known-good baseline
 - **Phase 2:** `capture_session` returns a `template_params` dict with all
   expected keys against three different songs (track counts varying)
-- **Phase 3:** `--direct-api` produces SHA-256-identical files vs legacy
-  for at least 5 tracks across 2 songs; per-track wall time at least 30%
-  faster on average
+- **Phase 3:** `--direct-api` produces files of **identical size** to
+  legacy for the same set of tracks (per-track exact-size match), all
+  tracks pass `FileManager.validate_audio_content`, and per-track wall
+  time is at least 30% faster on average. **SHA-256 equality is NOT
+  required** — empirically (2026-05-08), two consecutive legacy runs
+  produced different SHAs for the same track due to server-side encoder
+  nondeterminism (probable ID3 timestamp + per-render variation). The
+  size gate is the strict equivalence test; SHA difference across runs
+  is normal and not a regression.
 - **Phase 4:** all five failure modes in the recovery table verified by
   fault injection (mock or real); no regressions vs Phase 3 timing
 - **Phase 5:** 5 consecutive full-song runs with default-on, no warnings,
