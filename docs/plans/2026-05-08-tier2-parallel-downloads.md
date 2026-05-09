@@ -10,59 +10,73 @@ Phase 0 was executed using probe scripts in `tools/`:
 - `probe_concurrent_tabs.py` — multi-tab in a single Chrome (Approach A)
 - `probe_concurrent_processes.py` — multiple Chrome processes (Approach B)
 - `probe_direct_fetch.py` — multi-tab + direct URL fetch via `requests`
-  (the test that produced the conclusive evidence)
+- `probe_network_capture.py` — full HTTP/CDP capture during one download
+- `probe_direct_api.py` — direct API calls to `basket.php`/`begin_download.html`
 - `diag_solo_only.py` — production-path solo verifier
+- `diag_basket_http.py` — header/cookie diagnostic for basket.php replay
 
-### Finding
+### Bottom line
 
-When two tabs in the same Chrome session solo *different* tracks and click download
-nearly simultaneously, the server returns the **same** mix to both — specifically the
-mix corresponding to whichever solo button was clicked **last**.
+Single-account parallel downloads are structurally infeasible — but the
+investigation surfaced a **direct-API workflow that's ~37% faster sequentially
+than the current Selenium flow**. See `PLAN.md` ("Direct-API rewrite") for the
+follow-up.
 
-### Evidence (`probe_direct_fetch.py`, run 2026-05-08 16:13)
+### Mechanism (precise)
 
-- Tab 0 soloed Drum Kit (DOM verified: `is-active` token on track 1's solo button)
-- Tab 1 soloed Bass (DOM verified: `is-active` on track 2; all other tracks inactive)
-- Server-side mix-gen ran for real durations (33.9s and 17.8s — not a cached default)
-- **Both modal anchors resolved to the same URL**, ending in
-  `Bryan_Adams_18_til_I_Die(Bass_Custom_Backing_Track).mp3`. The filename literally
-  encodes "Bass" — i.e., Tab 0 was served the Bass mix despite its DOM correctly
-  showing Drum Kit soloed.
-- Direct-fetch SHA-256 identical for both files: `42ef7aebca3f9d83…`
+The download flow is two HTTP calls:
 
-### Mechanism
+1. `GET /basket.php?…&trackslevels=…&pannings=…&prodid=PRODID` — updates the
+   server-side basket for `PRODID` (account+song) AND triggers async mix-gen.
+   Returns 200 + empty body in <1s.
+2. `GET /my/begin_download.html?id=PRODID` — returns the modal HTML containing
+   the `c*.recis.io` MP3 URL. Polled in a loop; the URL hash changes once the
+   new mix is ready (~7–14s after basket.php).
 
-Clicking a solo button on Karaoke-Version.com fires an API call that updates
-the **account's** mixer state on the server. `mixer.getMix()` (the download trigger)
-reads the current account state when the mix-gen job runs, *not* the state at the
-moment of the request. When Tab 1's solo of Bass updated the server's view, Tab 0's
-already-queued mix-gen job read the new "Bass" state at execution time. Result:
-both jobs produce the same Bass mix.
+`prodid` is constant per account+song — it's the user's "product" entry baked
+into the page template, not regenerated per request. The site's mixer JS
+(`f988d05cfcaaccd3056572849b57d779.js`) only ever calls `/basket.php`; there's
+no alternate `bkac` value, no separate `createf` endpoint, no way to spawn
+parallel mixer slots from the same account.
+
+### Why parallelism fails (verified via `probe_direct_api.py` race test)
+
+When `basket.php(B)` arrives during an in-flight mix-gen for `basket.php(A)`,
+the server **cancels A and runs only B**. Race test fired both baskets
+within 0.3s, then polled `begin_download.html` for 60s. Only ONE new hash
+appeared, and its filename encoded basket B's solo selection (`(Bass_…)`).
+A's mix never appeared — it was cancelled.
 
 ### Why both Approach A (multi-tab) and Approach B (multi-process) fail
 
-Both approaches authenticate as the same Karaoke-Version account. The server's
-state is keyed on the account, not the session/cookie/process — so a second Chrome
-instance does not give us a second mixer lane. Concurrent solos clobber each other
-regardless of how many client-side processes or tabs we run. The collapse happens at
-N=2; scaling to N=5 or N=10 doesn't change the outcome.
+Both approaches authenticate as the same account → same `prodid` →
+basket-cancel semantics apply equally. A second Chrome instance does not
+give us a second mixer slot.
+
+### What the original investigation got partially wrong
+
+The earlier multi-tab probe blamed "server tracks mixer state per-account,
+last-write-wins" — close, but imprecise. The actual mechanism is per-prodid
+basket cancellation triggered by basket.php overwrites. Same end result.
 
 ### Workarounds considered, not pursued
 
-1. **Multiple Karaoke-Version accounts** — one parallel lane per account. Likely
-   violates the ToS, multiplies licensing cost, and adds non-trivial operational
-   complexity (account rotation, login state per worker, per-account purchase
-   tracking). Not recommended.
-2. **Overlap next-track's mix-gen with current-track's file download** — a modest
-   1–2s/track pipeline win, not parallelism. Worth considering as a small Tier 1.5
-   if the per-track floor still bothers us, but the gain is small enough it likely
-   isn't worth the complexity.
+1. **Multiple Karaoke-Version accounts** — one parallel lane per account.
+   Likely violates ToS, multiplies licensing cost, adds operational
+   complexity. Not recommended.
+2. **Direct-API rewrite (sequential, no parallelism)** — promoted to PLAN.md
+   as the highest-value remaining optimization. ~37% faster per track even
+   without parallelism, by eliminating Selenium's solo-click + audio-sync +
+   modal-handling + Chrome-download-manager overhead.
+3. **Pipelining next-track basket with current-track file fetch** — also
+   in PLAN.md. Stacks with direct-API for ~50–60% combined reduction.
 
 ### Recommendation
 
-Accept the per-track wall-time floor (~16s post-Tier-1). Tier 1 plus the click-track
-fix is the floor. Do **not** re-attempt parallel downloads on a single account.
-The probes left in `tools/` are sufficient to re-run if site behavior ever changes.
+Single-account parallelism is dead. Pursue the direct-API rewrite (PLAN.md)
+plus pipelining for ~50–60% reduction on a 15-track song without any
+multi-account complexity. Re-run the probes only if the site changes its API
+shape.
 
 ---
 
