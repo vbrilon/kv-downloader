@@ -2,15 +2,18 @@
 three HTTP calls (basket.php → begin_download.html polling → MP3 fetch).
 
 Lifecycle:
-    dl = DirectDownloader(session, template_params, song_url)
-    for pos in (1, 2, 3, ...):
-        result = dl.download_track(pos, dest=Path(...), max_wait=60)
+    dl = DirectDownloader(session, template_params, mixer_tracks, song_url)
+    for K in range(len(mixer_tracks)):
+        result = dl.download_track(target_index=K, dest=Path(...), max_wait=60)
 
 The instance maintains `_last_hash` across calls so repeat downloads only
 need to wait for the CDN URL hash to flip — no extra round-trips.
 
-See `tools/probe_direct_api.py` for the original end-to-end probe that
-validated this flow.
+`target_index` is the DOM data-index (== position in mixer.tracks); the
+trackslevels position used internally is target_index + 1 (the Mixer JS
+class uses N positions for N tracks, with a leading bare flag at pos 0).
+This off-by-one mapping was verified empirically — see
+docs/site-flow/trackslevels-format.md.
 """
 
 import logging
@@ -18,10 +21,10 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urlencode
 
-from .trackslevels import build_trackslevels
+from .trackslevels import MixerTrack, build_trackslevels
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +109,16 @@ class DirectDownloader:
     BASKET_URL = "https://www.karaoke-version.com/basket.php"
     BEGIN_URL = "https://www.karaoke-version.com/my/begin_download.html"
 
-    def __init__(self, session, template_params: Dict[str, str], song_url: str):
+    def __init__(
+        self,
+        session,
+        template_params: Dict[str, str],
+        mixer_tracks: List[MixerTrack],
+        song_url: str,
+    ):
         self.session = session
         self.template_params = dict(template_params)
+        self.mixer_tracks = mixer_tracks
         self.song_url = song_url
         self._last_hash: Optional[str] = None
 
@@ -116,7 +126,7 @@ class DirectDownloader:
 
     def download_track(
         self,
-        target_pos: int,
+        target_index: int,
         dest: Path,
         *,
         max_wait: float = 60.0,
@@ -125,9 +135,9 @@ class DirectDownloader:
         fetch_max_attempts: int = 3,
         fetch_retry_backoff: float = 1.0,
     ) -> DownloadResult:
-        """Solo position `target_pos` on the server, wait for the mix to
-        render, fetch the MP3 to `dest`. Transient CDN failures are
-        retried up to `fetch_max_attempts` times with exponential
+        """Solo `mixer_tracks[target_index]` on the server, wait for the
+        mix to render, fetch the MP3 to `dest`. Transient CDN failures
+        are retried up to `fetch_max_attempts` times with exponential
         backoff (`fetch_retry_backoff` * 2**attempt)."""
         t0 = time.monotonic()
 
@@ -138,7 +148,7 @@ class DirectDownloader:
 
         # 2. Overwrite the server-side basket with our trackslevels.
         new_levels = build_trackslevels(
-            self.template_params["trackslevels"], target_pos, level=level
+            self.mixer_tracks, target_index=target_index, level=level
         )
         self._call_basket(new_levels)
 

@@ -138,27 +138,54 @@ class TestParseMixerScript:
 # ----------------------------------------------------------------------
 
 
+# Synthetic mixer.tracks payload matching the 18-til-i-die fixture
+# (13 tracks: Click + 12 real). Returned by the mocked execute_script
+# call that reads window.mixer.tracks.
+FAKE_MIXER_TRACKS_JS_RESULT = [
+    {"index": i,
+     "src_id": i + 1,
+     "is_click": (i == 0),
+     "description": f"Track {i}"}
+    for i in range(13)
+]
+
+
+def _make_driver_for_capture(real_script, cookies=None,
+                             current_url=None,
+                             mixer_tracks_result=None,
+                             ua="UA/1.0"):
+    """Build a MagicMock driver that returns the right values for each
+    execute_script call capture_session makes. Order:
+      1. _FIND_SCRIPT_JS → inline script source
+      2. _READ_MIXER_TRACKS_JS → mixer.tracks list (or None if absent)
+      3. navigator.userAgent → ua string
+    """
+    driver = MagicMock()
+    driver.current_url = (
+        current_url or
+        "https://www.karaoke-version.com/custombackingtrack/"
+        "bryan-adams/18-til-i-die.html"
+    )
+    driver.get_cookies.return_value = cookies or []
+    if mixer_tracks_result is None:
+        mixer_tracks_result = FAKE_MIXER_TRACKS_JS_RESULT
+    driver.execute_script.side_effect = [
+        real_script,
+        mixer_tracks_result,
+        ua,
+    ]
+    return driver
+
+
 class TestCaptureSession:
     def test_returns_session_context_with_real_inputs(self, real_script, tmp_path):
-        # Mock the driver: returns the real script for execute_script,
-        # cookies, and userAgent.
-        driver = MagicMock()
-        driver.current_url = (
-            "https://www.karaoke-version.com/custombackingtrack/"
-            "bryan-adams/18-til-i-die.html"
+        driver = _make_driver_for_capture(
+            real_script,
+            cookies=[
+                {"name": "session_id", "value": "abc123"},
+                {"name": "csrf", "value": "xyz789"},
+            ],
         )
-
-        def fake_execute_script(js, *args):
-            # capture_session calls execute_script to find the mixer init
-            # script source (we don't care about exact JS string; just
-            # return the fixture).
-            return real_script
-
-        driver.execute_script.side_effect = fake_execute_script
-        driver.get_cookies.return_value = [
-            {"name": "session_id", "value": "abc123"},
-            {"name": "csrf", "value": "xyz789"},
-        ]
 
         ctx = capture_session(
             driver,
@@ -171,17 +198,16 @@ class TestCaptureSession:
         assert ctx.template_params["prodid"] == "21279320"
         assert ctx.template_params["trackslevels"].startswith("1,0.2")
         assert ctx.template_params["method"] == "ajax"
-        # User-agent comes from `navigator.userAgent` on the second
-        # execute_script call. Mock returns the same fixture for both
-        # calls; document this as a known mock simplification rather
-        # than asserting on the value.
-        assert ctx.ua is not None
+        assert ctx.ua == "UA/1.0"
+        assert len(ctx.mixer_tracks) == 13
+        assert ctx.mixer_tracks[0].is_click is True
+        assert ctx.mixer_tracks[1].src_id == 2
 
     def test_navigates_when_not_on_song_page(self, real_script):
-        driver = MagicMock()
-        driver.current_url = "https://www.karaoke-version.com/somewhere-else"
-        driver.execute_script.return_value = real_script
-        driver.get_cookies.return_value = []
+        driver = _make_driver_for_capture(
+            real_script,
+            current_url="https://www.karaoke-version.com/somewhere-else",
+        )
 
         target_url = (
             "https://www.karaoke-version.com/custombackingtrack/"
@@ -189,18 +215,14 @@ class TestCaptureSession:
         )
         capture_session(driver, song_url=target_url, log=MagicMock())
 
-        # Must navigate to the song page before reading the script.
         driver.get.assert_called_with(target_url)
 
     def test_does_not_navigate_when_already_on_song_page(self, real_script):
-        driver = MagicMock()
         target_url = (
             "https://www.karaoke-version.com/custombackingtrack/"
             "bryan-adams/18-til-i-die.html"
         )
-        driver.current_url = target_url
-        driver.execute_script.return_value = real_script
-        driver.get_cookies.return_value = []
+        driver = _make_driver_for_capture(real_script, current_url=target_url)
 
         capture_session(driver, song_url=target_url, log=MagicMock())
         driver.get.assert_not_called()
@@ -213,3 +235,35 @@ class TestCaptureSession:
 
         with pytest.raises(CaptureError):
             capture_session(driver, song_url="https://x", log=MagicMock())
+
+    def test_raises_when_mixer_tracks_never_populates(self, real_script):
+        # First call returns the inline script; subsequent reads return
+        # None. _read_mixer_tracks should poll-then-give-up.
+        driver = MagicMock()
+        driver.current_url = (
+            "https://www.karaoke-version.com/custombackingtrack/"
+            "bryan-adams/18-til-i-die.html"
+        )
+        driver.get_cookies.return_value = []
+        # Order: 1 script-source call, then unbounded mixer.tracks polls
+        # (all None), no UA call (we never get there).
+        driver.execute_script.side_effect = (
+            [real_script] + [None] * 100
+        )
+
+        # Patch the polling deadline to 0 so the test is fast.
+        from packages.download_management.direct_api import session_capture
+        orig = session_capture._read_mixer_tracks
+        try:
+            session_capture._read_mixer_tracks = lambda d, l, max_wait=0.1: orig(
+                d, l, max_wait=0.1
+            )
+            with pytest.raises(CaptureError) as exc:
+                capture_session(
+                    driver,
+                    song_url=driver.current_url,
+                    log=MagicMock(),
+                )
+            assert "mixer.tracks" in str(exc.value)
+        finally:
+            session_capture._read_mixer_tracks = orig

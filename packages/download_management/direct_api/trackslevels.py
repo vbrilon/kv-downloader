@@ -3,42 +3,61 @@
 The trackslevels string encodes which tracks are soloed (and at what
 volume) when the karaoke-version server renders a custom mix.
 
-Format (verified against bryan-adams/18-til-i-die, 2026-05-08):
+Format (verified empirically 2026-05-09 against bryan-adams/18-til-i-die
+AND led-zeppelin/good-times-bad-times):
 
-    "1,0.2,0.3,100.4,...,0.13,0"
+    "1,<level>.<id>,<level>.<id>,...,<level>.<id>,0"
 
-  - Comma-separated segments, one per slot.
-  - Bare-numeric edge slots (positions 0 and N-1) encode site-level flags
-    (e.g. precount). Changing them returns HTTP 500 — preserve verbatim.
-  - Middle segments are "<level>.<id>". `level` = 0..100, `id` = the
-    server-side track id (NOT the position).
+  - Comma-separated segments
+  - Leading bare "1" and trailing bare "0" are flag slots; touching them
+    returns HTTP 500
+  - Middle segments are "<level>.<id>" with level ∈ 0..100 and
+    id = mixer.tracks[K].src_id + 1 (where src_id comes from the K-th
+    track's source URL, e.g. ".../2.mp3" → src_id=2)
 
-To solo position N: set position N to "<level>.<id>", every other middle
-segment to "0.<id>", leave edges alone.
+Position-to-track mapping (verified empirically against both songs):
+
+    trackslevels position N solos mixer.tracks[N-1]
+
+The captured trackslevels template from the page is INCOMPLETE — it
+omits the slot for the LAST DOM track. So we build trackslevels from
+scratch using `mixer.tracks` (the page's own canonical track list,
+read via JS) instead of the captured template.
 """
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 
 class InvalidTemplateError(ValueError):
-    """The trackslevels template is malformed."""
+    """mixer_tracks list is empty/malformed, or a captured template
+    cannot be parsed."""
 
 
 class InvalidPositionError(ValueError):
-    """The target position is out of range or refers to a bare-numeric
-    edge slot (which is a flag, not a soloable track)."""
+    """The target index is out of range."""
 
 
-# (pos, track_id_or_None, level_str)  — id is None for bare-numeric edges,
-# in which case level_str holds the raw numeric value.
+@dataclass
+class MixerTrack:
+    """One entry from the page's window.mixer.tracks array."""
+    index: int        # DOM data-index (== position in mixer.tracks)
+    src_id: int       # extracted from mixer.tracks[K].url like ".../2.mp3"
+    is_click: bool    # mixer.tracks[K].isClick
+    description: str  # human-readable track caption (HTML stripped)
+
+
+# (pos, track_id_or_None, level_str). id is None for bare-numeric edges;
+# in that case level_str holds the raw numeric value.
 Segment = Tuple[int, Optional[str], str]
 
 
 def parse_segments(template: str) -> List[Segment]:
-    """Decompose a trackslevels template into structured segments.
+    """Decompose a trackslevels string into structured segments.
 
-    Returns a list of (position, id_or_None, level_str). Bare-numeric edge
-    slots have id=None and level_str=the raw numeric value.
+    Useful for inspecting a captured template (the static page-source
+    setLevels value) for debugging or test fixtures. Not used by the
+    runtime build path — that builds from mixer.tracks instead.
     """
     if not template or not template.strip():
         raise InvalidTemplateError("template is empty")
@@ -58,41 +77,49 @@ def parse_segments(template: str) -> List[Segment]:
     return out
 
 
-def build_trackslevels(
-    template: str,
-    target_pos: int,
-    level: int = 100,
-) -> str:
-    """Build a trackslevels string that solos `target_pos` at `level`.
+# Empirically (both probed songs), the leading flag is always "1" and
+# the trailing flag is "0". Override only if a future probe finds otherwise.
+LEADING_FLAG = "1"
+TRAILING_FLAG = "0"
 
-    Every other id-bearing segment is set to "0.<id>". Bare-numeric edge
-    slots are preserved verbatim (changing them returns HTTP 500).
+
+def build_trackslevels(
+    mixer_tracks: List[MixerTrack],
+    target_index: int,
+    level: int = 100,
+    leading_flag: str = LEADING_FLAG,
+    trailing_flag: str = TRAILING_FLAG,
+) -> str:
+    """Build a trackslevels value that solos `mixer_tracks[target_index]`
+    at `level`, with every other track at level=0.
+
+    Args:
+        mixer_tracks: window.mixer.tracks in DOM order, captured by
+            session_capture
+        target_index: DOM data-index of the track to solo
+        level: volume 0..100 for the target slot
+        leading_flag: bare slot at position 0 (default "1")
+        trailing_flag: bare slot at the last position (default "0")
+
+    Returns:
+        e.g. "1,0.2,100.3,0.4,0.5,0" for a 4-track song soloing index 1
 
     Raises:
-        InvalidTemplateError: template is empty or malformed
-        InvalidPositionError: target_pos is out of range or points at a
-            bare-numeric edge slot
+        InvalidTemplateError: mixer_tracks is empty
+        InvalidPositionError: target_index out of range
     """
-    segments = parse_segments(template)
-
-    if target_pos < 0 or target_pos >= len(segments):
+    if not mixer_tracks:
+        raise InvalidTemplateError("mixer_tracks is empty")
+    if target_index < 0 or target_index >= len(mixer_tracks):
         raise InvalidPositionError(
-            f"target_pos {target_pos} out of range [0, {len(segments) - 1}]"
+            f"target_index {target_index} out of range "
+            f"[0, {len(mixer_tracks) - 1}]"
         )
 
-    target_seg = segments[target_pos]
-    if target_seg[1] is None:
-        raise InvalidPositionError(
-            f"target_pos {target_pos} is a bare-numeric edge slot "
-            f"(value {target_seg[2]!r}); cannot solo a flag slot"
-        )
-
-    out_segments: List[str] = []
-    for i, (_pos, sid, raw_level) in enumerate(segments):
-        if sid is None:
-            out_segments.append(raw_level)
-        elif i == target_pos:
-            out_segments.append(f"{level}.{sid}")
-        else:
-            out_segments.append(f"0.{sid}")
-    return ",".join(out_segments)
+    parts = [leading_flag]
+    for i, track in enumerate(mixer_tracks):
+        track_id = track.src_id + 1
+        slot_level = level if i == target_index else 0
+        parts.append(f"{slot_level}.{track_id}")
+    parts.append(trailing_flag)
+    return ",".join(parts)

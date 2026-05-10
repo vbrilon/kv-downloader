@@ -329,7 +329,7 @@ class KaraokeVersionAutomator:
         })
 
         downloader = DirectDownloader(
-            session, ctx.template_params, song['url']
+            session, ctx.template_params, ctx.mixer_tracks, song['url']
         )
 
         song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
@@ -345,10 +345,10 @@ class KaraokeVersionAutomator:
     def _download_single_track_direct_api(self, song, track, song_key, downloader, song_path):
         """Single-track download via DirectDownloader.
 
-        The mapping data-index → trackslevels position: data-index N maps to
-        target_pos N for N in 1..N-1. data-index 0 is the click/precount
-        track — handled by setting all trackslevels to 0 (precount=1 in
-        template_params produces the click-only mix server-side).
+        DOM `data-index` is passed straight through as `target_index`; the
+        downloader builds trackslevels from `mixer.tracks` so the mapping
+        is canonical (no per-song special cases — including for the click
+        track, which is just mixer.tracks[0] like any other track).
         """
         from packages.download_management.direct_api.direct_downloader import (
             BasketUpdateError, MixGenTimeout, MP3FetchError,
@@ -369,17 +369,9 @@ class KaraokeVersionAutomator:
         dest = song_path / f"{track_name}.mp3"
         try:
             data_index = int(track['index'])
-            if data_index == 0:
-                # Click track: all .id segments at level=0; precount=1
-                # in template renders just the click. Use any non-edge
-                # position as the "target" with level=0.
-                result = downloader.download_track(
-                    target_pos=1, dest=dest, level=0
-                )
-            else:
-                result = downloader.download_track(
-                    target_pos=data_index, dest=dest
-                )
+            result = downloader.download_track(
+                target_index=data_index, dest=dest
+            )
             logging.info(
                 f"✅ direct-API: {track_name} → {result.size_bytes:,} bytes "
                 f"in {result.elapsed_s:.1f}s"
