@@ -27,7 +27,7 @@ setup, direct-HTTP per-track downloads.
 | User-facing setup (install, songs.yaml format, CLI flags) | `README.md` |
 | Anything structural — new package, refactor, DI rewiring, error-handling change | [`docs/architecture.md`](docs/architecture.md) |
 | Current per-track perf budget + reliability data | [`docs/baselines/`](docs/baselines/) — newest file wins |
-| Working on a specific in-flight feature | [`docs/plans/`](docs/plans/) — newest plan wins |
+| Working on a specific in-flight feature, OR brainstorming a new design/feature (check for cancelled approaches first) | [`docs/plans/`](docs/plans/) — newest plan wins; cancelled plans include rationale ("don't retry this") |
 | Site DOM behavior, modal open/close, hidden inputs, mixer init script | [`docs/site-flow/`](docs/site-flow/) |
 | Updating a CSS/XPath selector | [`docs/site-flow/selectors.md`](docs/site-flow/selectors.md) **and** `packages/configuration/selectors.py` |
 | How basket.php params are captured from the page (direct-API foundation) | [`docs/site-flow/2026-05-09-mixer-state-capture.md`](docs/site-flow/2026-05-09-mixer-state-capture.md) |
@@ -50,3 +50,9 @@ setup, direct-HTTP per-track downloads.
   AND this index if a new doc topic appears.
 - **No backwards-compat shims**: delete old code outright; don't leave
   `// removed` markers or rename-only aliases.
+- **Check `docs/plans/` before brainstorming a new design or feature.**
+  Plans that landed are pruned; plans that remain are either active
+  or **cancelled with a postmortem explaining why** (e.g. tier2
+  parallel downloads — single-account parallelism is structurally
+  infeasible). Reading the cancellation rationale first prevents
+  re-investigating a dead end.
