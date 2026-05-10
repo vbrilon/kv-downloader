@@ -1,8 +1,12 @@
 # `trackslevels` Format Reference
 
 The `trackslevels` query-param on `basket.php` tells the server which
-tracks to mix at which volumes. Format verified 2026-05-08 against
-`bryan-adams/18-til-i-die`. Code: `packages/download_management/direct_api/trackslevels.py`.
+tracks to mix at which volumes. Format and per-song mapping verified
+empirically 2026-05-09 against `bryan-adams/18-til-i-die` AND
+`led-zeppelin/good-times-bad-times`.
+
+Code: `packages/download_management/direct_api/trackslevels.py`,
+`packages/download_management/direct_api/session_capture.py`.
 
 ## Wire format
 
@@ -10,93 +14,105 @@ Comma-separated segments, one per slot. Two kinds:
 
 | Shape | Meaning |
 |---|---|
-| `<level>.<id>` | A track slot. `level` ∈ 0..100 (volume %), `id` is the server-side track id (NOT the data-index). |
+| `<level>.<id>` | A track slot. `level` ∈ 0..100 (volume %), `id` is the per-song server-side track id. |
 | `<bare-number>` | A *flag* slot — leading `1` is the precount-enabled flag, trailing `0` is currently unknown but server-required. |
 
-Example template captured for an 18-Til-I-Die page (13 audible
-tracks):
+Example string captured from led-zeppelin/good-times-bad-times's inline
+`mixer.setLevels(...)`:
 
 ```
-1,0.2,0.3,100.4,0.5,0.6,0.7,0.8,0.9,0.10,0.11,0.12,0.13,0
-^ ^^^ ^^^ ^^^^^                                       ^^^^ ^
-│ │   │   │                                           │    │
-│ │   │   │                                           │    └ trailing edge (bare; leave alone)
-│ │   │   │                                           └ pos 12, id=13, level=0
-│ │   │   └ pos 3, id=4, level=100  (Drum Kit was seeded soloed when captured)
-│ │   └ pos 2, id=3, level=0
-│ └ pos 1, id=2, level=0
-└ pos 0: precount flag (bare; leave alone)
+1,0.2,0.3,0.4,0.5,0.6,0.7,100.8,0
+^   ^                       ^^^^ ^
+│   │                       │    │
+│   │                       │    └ trailing edge (bare; leave alone)
+│   └ pos 1, id=2, level=0
+└ pos 0: leading edge (bare; leave alone)
 ```
 
-So this 14-slot template encodes 12 audible tracks (positions 1..12)
-plus 2 flag slots (positions 0 and 13).
+9 segments → 7 audible slots (positions 1..7) + 2 bare flag edges.
 
 ## ⚠️ Critical: bare-numeric slots
 
 **Do NOT change bare-numeric slots.** `basket.php` runs a server-side
 consistency check; modifying position 0 or position N-1 returns HTTP
 500. Verified empirically (`tools/probe_direct_api.py`).
-`build_trackslevels()` enforces this:
 
-- Asks for a soloable position; refuses `target_pos=0` or
-  `target_pos=N-1` with `InvalidPositionError`.
-- Always emits the bare slots verbatim from the template.
+## Authoritative mapping: use `mixer.tracks`, NOT the captured template
 
-## Position ↔ data-index mapping
+The runtime build path uses **the page's own `window.mixer.tracks` array**
+(read via JS in `session_capture._read_mixer_tracks`) — NOT the captured
+`setLevels` template — for two reasons:
 
-For a song with N audible tracks (data-index 0 = the click/precount
-synthetic track, data-index 1..N-1 = real tracks):
+1. **The captured template is incomplete.** It omits the slot for the
+   LAST DOM track. Both probed songs had this property (`bryan-adams/18-til-i-die`:
+   13 DOM tracks, 12 audible slots; `led-zeppelin/good-times-bad-times`:
+   8 DOM tracks, 7 audible slots). To solo the last track we must build
+   an *extended* trackslevels with one more slot — verified accepted by
+   the server in `tools/probe_extended_trackslevels.py`.
 
-| data-index | trackslevels position | id |
-|---|---|---|
-| 0 (Click) | (none — handled via `precount=1`) | (none) |
-| 1 (first real track) | 1 | 2 |
-| 2 | 2 | 3 |
-| … | … | … |
-| N-1 (last real track) | N-1 | N |
+2. **The `<id>` labels in trackslevels are offset by +1 from the source
+   track id.** `mixer.tracks[K]` has its source URL at `…/<src_id>.mp3`
+   (e.g. `/3.mp3` for Bass on Good Times Bad Times). The corresponding
+   trackslevels segment has `id = src_id + 1`. So to solo
+   `mixer.tracks[K]`, we put the level at the segment whose label is
+   `src_id + 1` — which (universally, both songs) is **trackslevels
+   position K+1**.
 
-So **`target_pos == data_index`** for non-click tracks.
+So the universal rule is:
+
+> **trackslevels position K+1 solos `mixer.tracks[K]`** (where K is the
+> DOM `data-index`, 0-based)
+
+`build_trackslevels(mixer_tracks, target_index, level)` constructs the
+full trackslevels from scratch:
+
+```
+1,<level>.<src_id+1>,...,<level>.<src_id+1>,0
+  ^^^^^^^^^^^^^^^^^^
+  one slot per mixer.tracks entry, in DOM order;
+  level = `level` arg at target_index, 0 elsewhere
+```
 
 ## Soloing the click track
 
-The click track (data-index 0) is rendered by setting **all** `.id`
-slots to `0.<id>` while keeping the `precount=1` template param. This
-gives the server "no instruments selected, but precount enabled" — the
-server returns a click-only mix.
-
-In code:
+`mixer.tracks[0]` is the Click row (with `isClick=True`). It's a *real*
+audible slot in the trackslevels — not a separate flag — so soloing it
+is exactly the same operation as any other track:
 
 ```python
-# orchestrator dispatches click track to:
-downloader.download_track(target_pos=1, dest=dest, level=0)
-# build_trackslevels produces all-zero levels except for "0.2" at pos 1,
-# which is the same as every other slot — net effect = silence + click.
+downloader.download_track(target_index=0, dest=dest, level=100)
+# Renders the click track audio (clicks throughout the song).
 ```
 
-## Soloing a real track
+(The previous code had a special case sending `level=0` to produce a
+near-silent file, which the bug-report user described as "empty". After
+the 2026-05-09 fix, the click track download contains the actual click
+audio — useful as a metronome reference.)
 
-```python
-# data-index 3 (e.g. Bass) → target_pos=3, level=100
-build_trackslevels(template, target_pos=3, level=100)
-# → "1,0.2,0.3,100.4,0.5,...,0.13,0"   (only pos 3 has level=100)
-```
+The separate `precount=1` flag (set via the `Intro count` checkbox in
+the UI) adds a 1-2 click count-in to the START of every soloed render —
+orthogonal to which track is soloed.
 
-The function:
+## What `id` really means in trackslevels
 
-1. Parses the template into segments.
-2. Validates `target_pos` is a real-track slot.
-3. Emits each segment verbatim (bare slots), or with `level=requested`
-   at the target, or with `level=0` everywhere else.
+The `<id>` in a `<level>.<id>` segment is `src_id + 1` where `src_id`
+is the per-track source-MP3 number (mixer.tracks[K].url ends in
+`<src_id>.mp3`). The +1 offset is empirical — likely a server-side
+1-based vs 0-based convention. Whatever the reason, our code derives
+ids from `mixer.tracks[K].src_id + 1` so it stays correct without
+caring about the underlying convention.
 
 ## Reference test fixture
 
 `tests/fixtures/mixer_init_script.js` contains the verbatim inline
-script that produced the example template above. The template lives on
-the line:
+script from `bryan-adams/18-til-i-die`. Useful for replaying
+`session_capture.parse_mixer_script` deterministically in tests.
 
-```js
-mixer.setLevels("1,0.2,0.3,100.4,0.5,0.6,0.7,0.8,0.9,0.10,0.11,0.12,0.13,0");
-```
+## Probing tool
 
-If you suspect the format changed, re-run `tools/probe_script_source.py`
-against a song page and diff the output against this fixture.
+`tools/probe_track_mapping.py` — for a given song, calls `basket.php`
+for each non-edge position in the captured template and reports the
+URL filename the server returns (= the actually-soloed-track name),
+plus the `mixer.tracks` info. Run this if the per-track download
+content for a new song looks wrong; it'll surface any
+position-to-track misalignment.

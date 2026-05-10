@@ -1,35 +1,42 @@
 """Capture an authenticated `requests.Session` view of a karaoke-version
-song page — cookies, UA, and the basket.php template params — by reading
-the inline mixer-init script (no UI download click needed).
+song page — cookies, UA, basket.php template params, AND the page's
+canonical mixer.tracks list — by reading inline scripts and probing
+window.mixer (no UI download click needed).
 
 See docs/plans/2026-05-08-direct-api-rewrite.md (Phase 2, Q1 resolved)
-for design rationale.
+for the basket-template capture rationale, and 2026-05-09-track-mapping-fix.md
+for the mixer.tracks addition (closes the off-by-one position bug).
 """
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from .trackslevels import MixerTrack
+
 
 class CaptureError(RuntimeError):
-    """The mixer init script could not be located or parsed. Caller
-    should fall back to legacy Selenium download path."""
+    """The mixer init script could not be located or parsed, or
+    window.mixer.tracks did not populate. Caller should fall back to
+    legacy Selenium download path."""
 
 
 @dataclass
 class SessionContext:
     cookies: Dict[str, str]
     template_params: Dict[str, str]
+    mixer_tracks: List[MixerTrack] = field(default_factory=list)
     ua: Optional[str] = None
 
 
 # ----------------------------------------------------------------------
-# Pure parser
+# Pure parser (static inline-script scrape)
 # ----------------------------------------------------------------------
 
 
@@ -94,6 +101,66 @@ return matches.length ? matches.join('\\n') : null;
 """
 
 
+# Reads window.mixer.tracks (the page's canonical track list, populated
+# by the Mixer JS class once the page initializes). For each track,
+# returns its DOM index, the source-track id (extracted from the per-
+# track audio URL like ".../2.mp3" → src_id=2), the isClick flag, and
+# a cleaned text description.
+_READ_MIXER_TRACKS_JS = r"""
+const m = window.mixer;
+if (!m || !m.tracks || m.tracks.length === 0) return null;
+return m.tracks.map(t => {
+  let srcId = -1;
+  if (t.url) {
+    const match = t.url.match(/\/(\d+)\.mp3/);
+    if (match) srcId = parseInt(match[1], 10);
+  }
+  return {
+    index: t.index,
+    src_id: srcId,
+    is_click: !!t.isClick,
+    description: typeof t.description === 'string'
+      ? t.description.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+      : '',
+  };
+});
+"""
+
+
+def _read_mixer_tracks(driver, log, max_wait: float = 10.0) -> List[MixerTrack]:
+    """Poll window.mixer.tracks until populated. The Mixer JS class
+    builds the tracks array asynchronously after the inline init script
+    runs — usually within ~100ms but allow up to max_wait for slow
+    pages."""
+    deadline = time.monotonic() + max_wait
+    last_err: Optional[str] = None
+    while time.monotonic() < deadline:
+        try:
+            result = driver.execute_script(_READ_MIXER_TRACKS_JS)
+        except Exception as e:
+            last_err = str(e)
+            result = None
+        if result:
+            tracks = [MixerTrack(**r) for r in result]
+            invalid = [t for t in tracks if t.src_id < 0]
+            if invalid:
+                raise CaptureError(
+                    f"mixer.tracks contained {len(invalid)} entries with "
+                    f"unparseable src_id (URLs missing /<N>.mp3 pattern); "
+                    f"first: index={invalid[0].index} desc={invalid[0].description!r}"
+                )
+            log.info(
+                f"capture_session: read {len(tracks)} mixer.tracks "
+                f"(src_ids={[t.src_id for t in tracks]})"
+            )
+            return tracks
+        time.sleep(0.2)
+    raise CaptureError(
+        f"window.mixer.tracks not populated within {max_wait}s "
+        f"(last_err={last_err!r}) — page structure may have changed"
+    )
+
+
 def capture_session(
     driver,
     song_url: str,
@@ -132,6 +199,8 @@ def capture_session(
         f"{sorted(template_params.keys())}"
     )
 
+    mixer_tracks = _read_mixer_tracks(driver, log)
+
     cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
     log.info(f"capture_session: snapshotted {len(cookies)} cookies")
 
@@ -144,5 +213,6 @@ def capture_session(
     return SessionContext(
         cookies=cookies,
         template_params=template_params,
+        mixer_tracks=mixer_tracks,
         ua=ua,
     )

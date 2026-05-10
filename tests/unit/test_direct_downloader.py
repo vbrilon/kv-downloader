@@ -11,8 +11,9 @@ HTTP calls:
      (stream MP3 to disk)
 
 The downloader is constructed once per session with `template_params`
-captured by `session_capture` and a `requests.Session` carrying the
-authenticated cookies. Every call thereafter is just-HTTP — no Selenium.
+captured from the inline mixer init script, `mixer_tracks` read from
+window.mixer.tracks, and a `requests.Session` carrying the authenticated
+cookies. Every call thereafter is just-HTTP — no Selenium.
 """
 
 from pathlib import Path
@@ -29,11 +30,13 @@ from packages.download_management.direct_api.direct_downloader import (
     extract_mp3_url,
     url_hash,
 )
+from packages.download_management.direct_api.trackslevels import MixerTrack
 
 
 # Real basket-template params captured 2026-05-08 from
-# bryan-adams/18-til-i-die. trackslevels here is the TEMPLATE (carries
-# the bare-numeric edges); per-track basket calls override it.
+# bryan-adams/18-til-i-die. trackslevels here is the static-script
+# value; the runtime path no longer uses it for soloing — it builds
+# trackslevels from MIXER_TRACKS instead.
 TEMPLATE_PARAMS = {
     "prodid": "21279320",
     "s": "40852",
@@ -45,6 +48,25 @@ TEMPLATE_PARAMS = {
     "precount": "1",
     "trackslevels": "1,0.2,0.3,100.4,0.5,0.6,0.7,0.8,0.9,0.10,0.11,0.12,0.13,0",
 }
+
+# mixer.tracks for bryan-adams/18-til-i-die (13 tracks: Click + 12 real).
+# mixer.tracks[K].src_id = K+1, so trackslevels id at position K+1 is
+# src_id+1 = K+2.
+MIXER_TRACKS = [
+    MixerTrack(index=0,  src_id=1,  is_click=True,  description="Intro count Click"),
+    MixerTrack(index=1,  src_id=2,  is_click=False, description="Drum Kit"),
+    MixerTrack(index=2,  src_id=3,  is_click=False, description="Bass"),
+    MixerTrack(index=3,  src_id=4,  is_click=False, description="Electric Guitar (left)"),
+    MixerTrack(index=4,  src_id=5,  is_click=False, description="Electric Guitar (right)"),
+    MixerTrack(index=5,  src_id=6,  is_click=False, description="Electric Guitar (crunch 1)"),
+    MixerTrack(index=6,  src_id=7,  is_click=False, description="Electric Guitar (crunch 2)"),
+    MixerTrack(index=7,  src_id=8,  is_click=False, description="Electric Guitar (clean)"),
+    MixerTrack(index=8,  src_id=9,  is_click=False, description="Distorted Electric Guitar"),
+    MixerTrack(index=9,  src_id=10, is_click=False, description="Lead Electric Guitar (left)"),
+    MixerTrack(index=10, src_id=11, is_click=False, description="Lead Electric Guitar"),
+    MixerTrack(index=11, src_id=12, is_click=False, description="Backing Vocals"),
+    MixerTrack(index=12, src_id=13, is_click=False, description="Lead Vocal"),
+]
 SONG_URL = "https://www.karaoke-version.com/custombackingtrack/bryan-adams/18-til-i-die.html"
 
 CDN_URL_OLD = "https://c1.recis.io/sl/k/aca6624e80abc111/Bryan_Adams_18_til_I_Die.mp3"
@@ -67,8 +89,6 @@ class TestUrlHash:
         assert url_hash(url) == HASH_OLD
 
     def test_raises_on_url_without_hash(self):
-        # Per concern #4 from plan review: fail fast, don't silently hang
-        # the polling loop.
         with pytest.raises(InvalidMP3UrlError):
             url_hash("https://example.com/no-hash-here.mp3")
 
@@ -83,8 +103,6 @@ class TestUrlHash:
 
 class TestExtractMp3Url:
     def test_extracts_from_modal_html(self):
-        # Real shape from begin_download.html response (verbatim from
-        # probe_direct_api logs).
         html = (
             '<div class="modal__content"><a class="begin-download" '
             f'href="{CDN_URL_OLD}">Click here to download</a></div>'
@@ -114,7 +132,6 @@ def _mock_response(status_code=200, text="", content=b""):
         if status_code >= 400
         else MagicMock()
     )
-    # Stream support
     r.iter_content = lambda chunk_size: iter([content])
     r.__enter__ = lambda self: self
     r.__exit__ = lambda self, *a: None
@@ -125,6 +142,10 @@ def _begin_download_html(cdn_url):
     return f'<div class="modal__content"><a href="{cdn_url}">DL</a></div>'
 
 
+def _make_dl(session):
+    return DirectDownloader(session, TEMPLATE_PARAMS, MIXER_TRACKS, SONG_URL)
+
+
 class TestDirectDownloaderHappyPath:
     def test_download_track_full_flow(self, tmp_path):
         session = MagicMock()
@@ -133,24 +154,20 @@ class TestDirectDownloaderHappyPath:
         #   2. call basket.php → 200
         #   3. poll begin_download until hash flips (HASH_NEW)
         #   4. fetch the MP3 bytes
-        # We stage responses in order using `side_effect`.
         mp3_bytes = b"\xff\xfb\x90\x00fake-mp3-data" * 100
         session.get.side_effect = [
-            # Call 1: initial snapshot
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
-            # Call 2: basket.php overwrite
             _mock_response(200, "ok"),
-            # Call 3: first poll — hash hasn't flipped yet
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
-            # Call 4: second poll — hash flipped
             _mock_response(200, _begin_download_html(CDN_URL_NEW)),
-            # Call 5: MP3 fetch
             _mock_response(200, content=mp3_bytes),
         ]
 
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         dest = tmp_path / "track.mp3"
-        result = dl.download_track(target_pos=3, dest=dest, poll_interval=0.0)
+        # target_index=3 → DOM data-index 3 → mixer.tracks[3] (src_id=4) →
+        # trackslevels position 4 with id=5 at level=100
+        result = dl.download_track(target_index=3, dest=dest, poll_interval=0.0)
 
         assert result.path == dest
         assert dest.read_bytes() == mp3_bytes
@@ -166,17 +183,17 @@ class TestDirectDownloaderHappyPath:
             _mock_response(200, _begin_download_html(CDN_URL_NEW)),
             _mock_response(200, content=b"mp3"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
-        dl.download_track(target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0)
+        dl = _make_dl(session)
+        dl.download_track(target_index=3, dest=tmp_path / "t.mp3", poll_interval=0.0)
 
-        # Find the basket.php call (call #2 — the second session.get).
         basket_call = session.get.call_args_list[1]
         url = basket_call.args[0] if basket_call.args else basket_call.kwargs.get("url", "")
         assert "basket.php" in url
-        # pos 3 → id 4 at level 100 → segment "100.4" inside the
-        # trackslevels= query value (which contains other segments too).
         assert "trackslevels=" in url
-        assert "100.4" in url
+        # target_index=3 → mixer.tracks[3].src_id=4 → trackslevels id=5
+        # at position 4, level=100. Segment "100.5" appears in the
+        # trackslevels query value.
+        assert "100.5" in url
         assert "prodid=21279320" in url
 
     def test_fetch_uses_referer_header(self, tmp_path):
@@ -187,11 +204,9 @@ class TestDirectDownloaderHappyPath:
             _mock_response(200, _begin_download_html(CDN_URL_NEW)),
             _mock_response(200, content=b"mp3"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
-        dl.download_track(target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0)
+        dl = _make_dl(session)
+        dl.download_track(target_index=3, dest=tmp_path / "t.mp3", poll_interval=0.0)
 
-        # The MP3 fetch is the last call; CDN's c*.recis.io requires
-        # Referer set to the karaoke-version.com domain.
         fetch_call = session.get.call_args_list[3]
         headers = fetch_call.kwargs.get("headers", {})
         assert "recis.io" in (fetch_call.args[0] or fetch_call.kwargs.get("url", ""))
@@ -207,15 +222,14 @@ class TestDirectDownloaderErrors:
     def test_basket_500_raises_basket_update_error(self, tmp_path):
         session = MagicMock()
         session.get.side_effect = [
-            _mock_response(200, _begin_download_html(CDN_URL_OLD)),  # snapshot
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
             _mock_response(500, "Internal Server Error: bad trackslevels"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(BasketUpdateError) as exc:
             dl.download_track(
-                target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0
+                target_index=3, dest=tmp_path / "t.mp3", poll_interval=0.0
             )
-        # Error must include diagnostic info per plan's hardening table.
         assert "500" in str(exc.value)
         assert "trackslevels" in str(exc.value).lower()
 
@@ -225,27 +239,23 @@ class TestDirectDownloaderErrors:
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
             _mock_response(403, "Forbidden"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(BasketUpdateError):
             dl.download_track(
-                target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0
+                target_index=3, dest=tmp_path / "t.mp3", poll_interval=0.0
             )
 
     def test_polling_never_sees_new_hash_raises_timeout(self, tmp_path):
         session = MagicMock()
-        # Snapshot, basket, then one poll that returns the SAME hash.
-        # max_wait=0 forces the deadline check to trip after exactly one
-        # poll iteration — deterministic and fast.
         session.get.side_effect = [
-            _mock_response(200, _begin_download_html(CDN_URL_OLD)),  # snapshot
-            _mock_response(200, "ok"),                                # basket
-            _mock_response(200, _begin_download_html(CDN_URL_OLD)),  # poll
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
         ]
-
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(MixGenTimeout) as exc:
             dl.download_track(
-                target_pos=3,
+                target_index=3,
                 dest=tmp_path / "t.mp3",
                 max_wait=0.0,
                 poll_interval=0.0,
@@ -255,23 +265,20 @@ class TestDirectDownloaderErrors:
     def test_polling_no_url_in_response_raises_timeout(self, tmp_path):
         session = MagicMock()
         session.get.side_effect = [
-            _mock_response(200, _begin_download_html(CDN_URL_OLD)),  # snapshot
-            _mock_response(200, "ok"),                                # basket
-            _mock_response(200, "<html>no mp3 url here</html>"),     # poll
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
+            _mock_response(200, "ok"),
+            _mock_response(200, "<html>no mp3 url here</html>"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(MixGenTimeout):
             dl.download_track(
-                target_pos=3,
+                target_index=3,
                 dest=tmp_path / "t.mp3",
                 max_wait=0.0,
                 poll_interval=0.0,
             )
 
     def test_fetch_network_error_raises_mp3_fetch_error(self, tmp_path):
-        # All 3 retry attempts fail with a network error → final
-        # MP3FetchError mentions both the underlying cause and the
-        # exhausted-attempts state.
         session = MagicMock()
         session.get.side_effect = [
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
@@ -281,10 +288,10 @@ class TestDirectDownloaderErrors:
             ConnectionError("connection reset"),
             ConnectionError("connection reset"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(MP3FetchError) as exc:
             dl.download_track(
-                target_pos=3,
+                target_index=3,
                 dest=tmp_path / "t.mp3",
                 poll_interval=0.0,
                 fetch_retry_backoff=0.0,
@@ -294,7 +301,6 @@ class TestDirectDownloaderErrors:
         assert "3 attempts" in msg
 
     def test_fetch_returns_5xx_raises_mp3_fetch_error(self, tmp_path):
-        # All 3 retry attempts return 5xx → exhausted, raise.
         session = MagicMock()
         session.get.side_effect = [
             _mock_response(200, _begin_download_html(CDN_URL_OLD)),
@@ -304,10 +310,10 @@ class TestDirectDownloaderErrors:
             _mock_response(503, "Service Unavailable"),
             _mock_response(503, "Service Unavailable"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(MP3FetchError):
             dl.download_track(
-                target_pos=3, dest=tmp_path / "t.mp3", poll_interval=0.0
+                target_index=3, dest=tmp_path / "t.mp3", poll_interval=0.0
             )
 
 
@@ -316,20 +322,18 @@ class TestRetryBehavior:
     giving up on a track."""
 
     def test_mp3_fetch_retries_on_network_error(self, tmp_path):
-        # First two fetch attempts fail with ConnectionError; third succeeds.
         session = MagicMock()
         session.get.side_effect = [
-            _mock_response(200, _begin_download_html(CDN_URL_OLD)),  # snapshot
-            _mock_response(200, "ok"),                                # basket
-            _mock_response(200, _begin_download_html(CDN_URL_NEW)),  # poll
-            ConnectionError("transient 1"),                           # fetch attempt 1
-            ConnectionError("transient 2"),                           # fetch attempt 2
-            _mock_response(200, content=b"mp3-success"),             # fetch attempt 3
+            _mock_response(200, _begin_download_html(CDN_URL_OLD)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(CDN_URL_NEW)),
+            ConnectionError("transient 1"),
+            ConnectionError("transient 2"),
+            _mock_response(200, content=b"mp3-success"),
         ]
-        dl = DirectDownloader(TEMPLATE_PARAMS["prodid"] and session,
-                              TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         result = dl.download_track(
-            target_pos=3,
+            target_index=3,
             dest=tmp_path / "t.mp3",
             poll_interval=0.0,
             fetch_retry_backoff=0.0,
@@ -347,10 +351,10 @@ class TestRetryBehavior:
             ConnectionError("attempt 2"),
             ConnectionError("attempt 3"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         with pytest.raises(MP3FetchError):
             dl.download_track(
-                target_pos=3,
+                target_index=3,
                 dest=tmp_path / "t.mp3",
                 poll_interval=0.0,
                 fetch_retry_backoff=0.0,
@@ -365,9 +369,9 @@ class TestRetryBehavior:
             _mock_response(503, "Service Unavailable"),
             _mock_response(200, content=b"mp3-ok"),
         ]
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
+        dl = _make_dl(session)
         result = dl.download_track(
-            target_pos=3,
+            target_index=3,
             dest=tmp_path / "t.mp3",
             poll_interval=0.0,
             fetch_retry_backoff=0.0,
@@ -378,10 +382,6 @@ class TestRetryBehavior:
 class TestStateAcrossCalls:
     def test_second_track_uses_first_tracks_hash_as_baseline(self, tmp_path):
         session = MagicMock()
-        # Call sequence for two tracks back-to-back:
-        # init: snapshot → HASH_OLD
-        # track 1: basket, poll(=NEW), fetch
-        # track 2: basket, poll(=NEWER), fetch
         HASH_NEWER = "ccc89abcdef01234"
         CDN_URL_NEWER = (
             f"https://c1.recis.io/sl/k/{HASH_NEWER}/Bryan_Adams_18_til_I_Die.mp3"
@@ -397,9 +397,9 @@ class TestStateAcrossCalls:
             _mock_response(200, content=b"mp3-2"),                     # fetch #2
         ]
 
-        dl = DirectDownloader(session, TEMPLATE_PARAMS, SONG_URL)
-        dl.download_track(target_pos=3, dest=tmp_path / "t1.mp3", poll_interval=0.0)
-        dl.download_track(target_pos=4, dest=tmp_path / "t2.mp3", poll_interval=0.0)
+        dl = _make_dl(session)
+        dl.download_track(target_index=3, dest=tmp_path / "t1.mp3", poll_interval=0.0)
+        dl.download_track(target_index=4, dest=tmp_path / "t2.mp3", poll_interval=0.0)
 
         assert (tmp_path / "t1.mp3").read_bytes() == b"mp3-1"
         assert (tmp_path / "t2.mp3").read_bytes() == b"mp3-2"
