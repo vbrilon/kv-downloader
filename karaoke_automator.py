@@ -335,20 +335,71 @@ class KaraokeVersionAutomator:
         song_folder_name = song.get('name') or self.download_manager.extract_song_folder_name(song['url'])
         song_path = self.file_manager.setup_song_folder(song_folder_name, clear_existing=False)
 
+        # Per-track wait budget: target ~30s/track total. The polling
+        # max_wait dominates failure cost; cap it tight so a single bad
+        # render doesn't bleed time. Typical successful render is ~5-10s.
+        DIRECT_API_MAX_WAIT_S = 25.0
+        # If the server stops producing fresh renders (cart/session got
+        # bad), every subsequent track will time out. Bail after 2
+        # consecutive failures rather than spending N*max_wait seconds
+        # on what's almost certainly a server-side issue. User can re-run.
+        CASCADE_ABORT_AFTER_CONSECUTIVE_FAILURES = 2
+
+        consecutive_failures = 0
+        abort_remaining = False
         for track in tracks_to_process:
-            self._download_single_track_direct_api(
-                song, track, song_key, downloader, song_path
+            if abort_remaining:
+                self._record_skip_due_to_cascade_abort(song, track)
+                continue
+
+            success = self._download_single_track_direct_api(
+                song, track, song_key, downloader, song_path,
+                max_wait=DIRECT_API_MAX_WAIT_S,
             )
+            if success:
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= CASCADE_ABORT_AFTER_CONSECUTIVE_FAILURES:
+                    logging.error(
+                        f"❌ {consecutive_failures} consecutive direct-API "
+                        f"failures for '{song['name']}' — likely a "
+                        f"server-side rate-limit or session-state issue. "
+                        f"Aborting remaining tracks; re-run later."
+                    )
+                    abort_remaining = True
             time.sleep(BETWEEN_TRACKS_PAUSE)
 
+    def _record_skip_due_to_cascade_abort(self, song, track):
+        """Mark a track as failed without attempting it — used after the
+        direct-API path has hit the consecutive-failure cap for a song."""
+        track_name = self.sanitize_filename(track['name'])
+        logging.warning(
+            f"⏭️  Skipping {track_name}: aborted after consecutive "
+            f"direct-API failures"
+        )
+        if self.progress:
+            self.progress.update_track_status(track['index'], 'failed')
+        self.stats.record_track_completion(
+            song['name'], track_name, success=False,
+            error_message="skipped due to direct-API cascade abort",
+        )
+
     @profile_timing("_download_single_track_direct_api", "system", "method")
-    def _download_single_track_direct_api(self, song, track, song_key, downloader, song_path):
+    def _download_single_track_direct_api(self, song, track, song_key,
+                                          downloader, song_path,
+                                          *, max_wait: float = 25.0):
         """Single-track download via DirectDownloader.
 
         DOM `data-index` is passed straight through as `target_index`; the
         downloader builds trackslevels from `mixer.tracks` so the mapping
         is canonical (no per-song special cases — including for the click
         track, which is just mixer.tracks[0] like any other track).
+
+        Direct-API failures are NOT auto-retried via legacy Selenium —
+        legacy is also flaky after server-state issues, and per-track
+        retry can balloon a single bad session into many minutes of
+        wasted wait time. The user can re-run.
         """
         from packages.download_management.direct_api.direct_downloader import (
             BasketUpdateError, MixGenTimeout, MP3FetchError,
@@ -370,7 +421,7 @@ class KaraokeVersionAutomator:
         try:
             data_index = int(track['index'])
             result = downloader.download_track(
-                target_index=data_index, dest=dest
+                target_index=data_index, dest=dest, max_wait=max_wait,
             )
             logging.info(
                 f"✅ direct-API: {track_name} → {result.size_bytes:,} bytes "
@@ -391,7 +442,6 @@ class KaraokeVersionAutomator:
                 song['name'], track_name, success=False,
                 error_message=str(e),
             )
-            self._record_failed_download(song, track, str(e))
             return False
     
     @profile_timing("_download_single_track", "system", "method")

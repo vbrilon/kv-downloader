@@ -127,6 +127,23 @@ return m.tracks.map(t => {
 """
 
 
+def _read_live_precount(driver, log) -> Optional[str]:
+    """Return mixer.parameters.precount as a string, or None if it
+    can't be read. Reflects the live UI state (post checkbox-click),
+    unlike the static `mixer.setPrecount(...)` value in the inline
+    script source."""
+    try:
+        v = driver.execute_script(
+            "return (window.mixer && window.mixer.parameters && "
+            "window.mixer.parameters.precount !== undefined) "
+            "? String(window.mixer.parameters.precount) : null;"
+        )
+        return v
+    except Exception as e:
+        log.warning(f"capture_session: could not read live precount: {e}")
+        return None
+
+
 def _read_mixer_tracks(driver, log, max_wait: float = 10.0) -> List[MixerTrack]:
     """Poll window.mixer.tracks until populated. The Mixer JS class
     builds the tracks array asynchronously after the inline init script
@@ -198,6 +215,20 @@ def capture_session(
         f"capture_session: parsed template_params keys="
         f"{sorted(template_params.keys())}"
     )
+
+    # `precount` in the inline script is the page's INITIAL value
+    # (e.g. "0" for songs that don't pre-enable the count-in checkbox).
+    # The orchestrator clicks the checkbox via ensure_intro_count_enabled,
+    # which calls mixer.setPrecount(1) live but does NOT mutate the
+    # script source. Read the live value so basket.php gets the user's
+    # actual precount preference.
+    live_precount = _read_live_precount(driver, log)
+    if live_precount is not None and live_precount != template_params.get("precount"):
+        log.info(
+            f"capture_session: live precount={live_precount!r} overrides "
+            f"static {template_params.get('precount')!r}"
+        )
+        template_params["precount"] = live_precount
 
     mixer_tracks = _read_mixer_tracks(driver, log)
 
