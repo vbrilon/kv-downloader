@@ -51,9 +51,10 @@ further — the audio is correct, that's enough.
   above and is a strict-but-stable check.
 - **Do** validate audio content via existing
   `FileManager.validate_audio_content()` (header parsing + sanity).
-- **Phase 3 validation gate** in
-  `docs/plans/2026-05-08-direct-api-rewrite.md` was relaxed to reflect
-  this; the original "SHA-256-identical" wording was wrong.
+- The original direct-API "SHA-256-identical" validation gate was
+  wrong; size-match was used instead. **Note that size-match is itself
+  insufficient for content correctness** — see
+  `docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md`.
 
 ## Implications for caching
 
