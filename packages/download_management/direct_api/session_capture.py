@@ -3,9 +3,10 @@ song page — cookies, UA, basket.php template params, AND the page's
 canonical mixer.tracks list — by reading inline scripts and probing
 window.mixer (no UI download click needed).
 
-See docs/plans/2026-05-08-direct-api-rewrite.md (Phase 2, Q1 resolved)
-for the basket-template capture rationale, and 2026-05-09-track-mapping-fix.md
-for the mixer.tracks addition (closes the off-by-one position bug).
+See docs/site-flow/2026-05-09-mixer-state-capture.md for the static-
+script scrape design + the live-vs-static rule, and
+docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md
+for why mixer.tracks is the canonical source for track ordering.
 """
 
 import logging
