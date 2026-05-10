@@ -153,12 +153,14 @@ FAKE_MIXER_TRACKS_JS_RESULT = [
 def _make_driver_for_capture(real_script, cookies=None,
                              current_url=None,
                              mixer_tracks_result=None,
+                             live_precount="1",
                              ua="UA/1.0"):
     """Build a MagicMock driver that returns the right values for each
     execute_script call capture_session makes. Order:
       1. _FIND_SCRIPT_JS → inline script source
-      2. _READ_MIXER_TRACKS_JS → mixer.tracks list (or None if absent)
-      3. navigator.userAgent → ua string
+      2. read live mixer.parameters.precount → string or None
+      3. _READ_MIXER_TRACKS_JS → mixer.tracks list (or None if absent)
+      4. navigator.userAgent → ua string
     """
     driver = MagicMock()
     driver.current_url = (
@@ -171,6 +173,7 @@ def _make_driver_for_capture(real_script, cookies=None,
         mixer_tracks_result = FAKE_MIXER_TRACKS_JS_RESULT
     driver.execute_script.side_effect = [
         real_script,
+        live_precount,
         mixer_tracks_result,
         ua,
     ]
@@ -237,18 +240,17 @@ class TestCaptureSession:
             capture_session(driver, song_url="https://x", log=MagicMock())
 
     def test_raises_when_mixer_tracks_never_populates(self, real_script):
-        # First call returns the inline script; subsequent reads return
-        # None. _read_mixer_tracks should poll-then-give-up.
+        # First call returns the inline script; second is the live
+        # precount read; subsequent mixer.tracks reads return None and
+        # _read_mixer_tracks should poll-then-give-up.
         driver = MagicMock()
         driver.current_url = (
             "https://www.karaoke-version.com/custombackingtrack/"
             "bryan-adams/18-til-i-die.html"
         )
         driver.get_cookies.return_value = []
-        # Order: 1 script-source call, then unbounded mixer.tracks polls
-        # (all None), no UA call (we never get there).
         driver.execute_script.side_effect = (
-            [real_script] + [None] * 100
+            [real_script, "1"] + [None] * 100
         )
 
         # Patch the polling deadline to 0 so the test is fast.
@@ -267,3 +269,31 @@ class TestCaptureSession:
             assert "mixer.tracks" in str(exc.value)
         finally:
             session_capture._read_mixer_tracks = orig
+
+    def test_live_precount_overrides_static_value(self, real_script):
+        # Real fixture has mixer.setPrecount("1") so static_precount="1".
+        # Simulate a song where the static is "0" but the user clicked
+        # the checkbox (live="1") — the captured precount must be "1".
+        # We do this by feeding a tweaked script that has setPrecount("0").
+        modified_script = real_script.replace(
+            'mixer.setPrecount("1")', 'mixer.setPrecount("0")'
+        )
+        driver = _make_driver_for_capture(
+            modified_script, live_precount="1",
+        )
+        ctx = capture_session(
+            driver, song_url=driver.current_url, log=MagicMock(),
+        )
+        assert ctx.template_params["precount"] == "1"
+
+    def test_live_precount_unreadable_falls_back_to_static(self, real_script):
+        # If the live read returns None (mixer.parameters absent), keep
+        # the static value rather than crashing.
+        driver = _make_driver_for_capture(
+            real_script, live_precount=None,
+        )
+        ctx = capture_session(
+            driver, song_url=driver.current_url, log=MagicMock(),
+        )
+        # Static fixture has setPrecount("1") → captured stays "1".
+        assert ctx.template_params["precount"] == "1"
