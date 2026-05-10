@@ -34,6 +34,7 @@ setup, direct-HTTP per-track downloads.
 | Building or parsing a `trackslevels` query value | [`docs/site-flow/trackslevels-format.md`](docs/site-flow/trackslevels-format.md) |
 | Why same-input MP3 renders produce different SHA-256s (don't write equality tests) | [`docs/site-flow/mp3-encoder-nondeterminism.md`](docs/site-flow/mp3-encoder-nondeterminism.md) |
 | Investigating a past bug — has someone already chased this? | [`docs/investigations/`](docs/investigations/) |
+| About to touch direct-API code (download_management/direct_api/) or debug a download issue | [`docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md`](docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md) — postmortem + diagnostic playbook + known gaps |
 | Research spike before designing a feature | [`docs/spikes/`](docs/spikes/) |
 | Validating a fix end-to-end against the live site | [`docs/validation/`](docs/validation/) |
 
