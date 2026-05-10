@@ -108,6 +108,33 @@ caring about the underlying convention.
 script from `bryan-adams/18-til-i-die`. Useful for replaying
 `session_capture.parse_mixer_script` deterministically in tests.
 
+## Server-side flakiness: cascade timeouts
+
+Empirically (observed 2026-05-09 during heavy reuse of one song page),
+the server can stop producing fresh renders after several rapid
+basket.php updates in a single session. Symptom: the first failing
+track returns `MixGenTimeout` with `last_url=<old hash>` (server
+serving the cart's previous render); subsequent tracks return
+`last_url=None` (server returns no MP3 URL at all). Looks like
+session-level rate-limiting or cart-state breakdown.
+
+Mitigation in code (`karaoke_automator.py
+_download_all_tracks_direct_api`):
+
+- `max_wait` per direct-API call is bounded to **25s** (typical
+  successful render is 5–10s, so 25s is a generous ceiling).
+- After **2 consecutive direct-API failures** in one song, abort the
+  remaining tracks for that song and surface a "re-run later" message
+  to the user. Keeps worst-case time-to-failure to ~50s instead of
+  N × 25s for N remaining tracks.
+- Direct-API failures are NOT auto-retried via legacy Selenium —
+  the same server-state issue affects both paths, so a retry just
+  doubles the wait.
+
+If you see this happen repeatedly for the same song without unusual
+recent activity, the server may have changed its rate-limit thresholds;
+re-investigate.
+
 ## Probing tool
 
 `tools/probe_track_mapping.py` — for a given song, calls `basket.php`

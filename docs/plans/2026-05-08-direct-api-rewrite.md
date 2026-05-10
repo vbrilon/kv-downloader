@@ -296,6 +296,20 @@ Before declaring each phase done:
   nondeterminism (probable ID3 timestamp + per-render variation). The
   size gate is the strict equivalence test; SHA difference across runs
   is normal and not a regression.
+
+  **⚠️ Lesson learned 2026-05-09 (post-ship): size-equality is necessary
+  but NOT sufficient.** For a fixed-duration song with CBR encoding,
+  every soloed track has the same byte size regardless of which track
+  is soloed (verified — `tests/fixtures/baseline_sha256.json` shows all
+  three 18-til-i-die tracks at exactly 8,654,285 bytes). So size match
+  proves "we got an MP3 of the right duration"; it does NOT prove "we
+  got the right *track*". The off-by-one mapping bug fixed in commit
+  841b38d shipped silently for ~6 months because Phase 3 only checked
+  size. **Going forward, content correctness needs explicit
+  verification** — either via known-good per-track SHA baselines (then
+  ignore-different-from-baseline-but-same-size as encoder noise), or
+  via PCM amplitude-envelope comparison against per-position probe
+  renders (see `docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md`).
 - **Phase 4:** all five failure modes in the recovery table verified by
   fault injection (mock or real); no regressions vs Phase 3 timing
 - **Phase 5:** 5 consecutive full-song runs with default-on, no warnings,

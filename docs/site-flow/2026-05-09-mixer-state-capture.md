@@ -65,15 +65,49 @@ Two of the params we send aren't in the script:
 
 ## Live JS state vs static script source
 
-`mixer.parameters` (live state) only carries `{famid, method, precount}`
-at probe time — `prodid`/`s`/`bkac` are only assigned inside
-`getMixCallback`, which runs when download is clicked. So **live state
-is incomplete**; the static script source is the complete reference.
+The static script source is the *initial* state of the page —
+basically a snapshot baked in at page-load time. The live `window.mixer`
+object reflects the *current* state, which can diverge from the static
+source in two directions:
 
-`mixer.getPannings()` returns the runtime pannings string. That's
-useful when you want the post-user-adjustment pannings, but for the
-default-pannings case, the `mixer.setPannings("...")` literal in the
-script source is identical and easier to extract.
+**Live is incomplete.** `mixer.parameters` at probe time only carries
+`{famid, method, precount}` — `prodid`/`s`/`bkac` are only assigned
+inside `getMixCallback`, which runs when the user clicks download. For
+these params we MUST scrape the static source.
+
+**Live diverges from static for anything UI-mutable.** This is the
+tricky case. Any value that can be changed via a UI interaction
+(checkbox click, slider drag, dropdown select) updates `window.mixer`
+live but does NOT mutate the inline `<script>` source. If we read the
+static value, we capture the page's *initial* state, not what the user
+has set up. **For UI-mutable params, we MUST read live state.**
+
+Concrete examples seen in the wild:
+
+| Param | UI control | Static value | Live value |
+|---|---|---|---|
+| `precount` | "Intro count" checkbox | the page's default (often `"0"`) | `"1"` after `ensure_intro_count_enabled` clicks the checkbox |
+| `pitch` | key adjustment widget | always `"0"` initially | reflects user's current key choice |
+| `pannings` | per-track pan slider | initial pan distribution | post-user-adjustment if anyone moves a slider |
+
+The orchestrator calls `ensure_intro_count_enabled` before
+`capture_session`, so the live `precount` is always `"1"` by the time
+we capture, but the static script source still says `"0"` for songs
+that initialized with the checkbox unchecked. Reading the static value
+silently downloaded tracks without a precount click — the
+2026-05-09 "no intro click on tracks" bug. Fix:
+`session_capture._read_live_precount` reads
+`window.mixer.parameters.precount` and overrides the static value.
+
+**Rule of thumb:** if a value can be changed without reloading the
+page, read it live. Add a `_read_live_<param>` helper that prefers the
+live JS read and falls back to the static value only when the live
+read fails.
+
+`mixer.getPannings()` returns the runtime pannings string. Today our
+code uses the static `mixer.setPannings("...")` literal because no
+codepath touches pan sliders programmatically. If a future feature
+auto-pans (e.g. spread mono drums), switch to the live getter.
 
 ## Probes used to verify
 
