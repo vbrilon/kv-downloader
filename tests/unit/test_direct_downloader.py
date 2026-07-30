@@ -404,3 +404,234 @@ class TestStateAcrossCalls:
         assert (tmp_path / "t1.mp3").read_bytes() == b"mp3-1"
         assert (tmp_path / "t2.mp3").read_bytes() == b"mp3-2"
         assert dl._last_hash == HASH_NEWER
+
+
+# ----------------------------------------------------------------------
+# Track-identity verification (2026-07-30)
+#
+# The server names the rendered MP3 after the track it soloed, e.g.
+# Toto_Hold_the_Line(Lead_Electric_Guitar_Custom_Backing_Track).mp3.
+# Accepting a render on "hash changed" alone let a fresh render of the
+# WRONG track be saved under the requested track's name (see
+# docs/plans/2026-07-30-verify-track-identity.md).
+# ----------------------------------------------------------------------
+
+
+from packages.download_management.direct_api.direct_downloader import (  # noqa: E402
+    TrackMismatchError,
+    extract_track_label,
+    normalize_label,
+    identify_track,
+)
+
+SONG = "Bryan_Adams_18_til_I_Die"
+
+
+def _cdn(hash_, label=None, song=SONG):
+    """Build a CDN URL, optionally carrying a server track label."""
+    name = f"{song}({label}_Custom_Backing_Track).mp3" if label else f"{song}.mp3"
+    return f"https://c1.recis.io/sl/k/{hash_}/{name}"
+
+
+class TestExtractTrackLabel:
+    def test_simple_name(self):
+        url = _cdn("aaa1", "Lead_Electric_Guitar")
+        assert extract_track_label(url) == "Lead Electric Guitar"
+
+    def test_nested_parens_in_track_name(self):
+        url = _cdn("aaa1", "Rhythm_Electric_Guitar_(muted_left)")
+        assert extract_track_label(url) == "Rhythm Electric Guitar (muted left)"
+
+    def test_parenthesised_song_title_does_not_poison_capture(self):
+        # A leftmost-'(' regex captures "Radio_Edit)(Bass" here.
+        url = _cdn("aaa1", "Bass", song="Ricky_Livin_la_Vida_Loca_(Radio_Edit)")
+        assert extract_track_label(url) == "Bass"
+
+    def test_percent_encoded_filename(self):
+        url = ("https://c1.recis.io/sl/k/aaa1/"
+               "Toto%28Lead_Electric_Guitar_Custom_Backing_Track%29.mp3")
+        assert extract_track_label(url) == "Lead Electric Guitar"
+
+    def test_url_without_label_returns_none(self):
+        assert extract_track_label(CDN_URL_OLD) is None
+
+    def test_malformed_returns_none(self):
+        assert extract_track_label("https://c1.recis.io/sl/k/aaa1/x.mp3") is None
+        assert extract_track_label("") is None
+        assert extract_track_label(None) is None
+
+
+class TestNormalizeLabel:
+    def test_punctuation_and_case_are_irrelevant(self):
+        assert normalize_label("Rhythm Electric Guitar (muted left)") == \
+               normalize_label("rhythm_electric_guitar_(MUTED_LEFT)")
+
+    def test_accents_fold_to_ascii(self):
+        assert normalize_label("Ukulélé") == normalize_label("Ukulele")
+
+
+class TestIdentifyTrack:
+    def test_server_click_label_resolves_to_intro_count_click(self):
+        # Postmortem records the server saying "Click" while the DOM
+        # description is "Intro count Click".
+        assert identify_track("Click", MIXER_TRACKS) == 0
+
+    def test_exact_match_wins_over_longer_containing_name(self):
+        # "Lead Electric Guitar" must NOT resolve to index 9,
+        # "Lead Electric Guitar (left)".
+        assert identify_track("Lead Electric Guitar", MIXER_TRACKS) == 10
+
+    def test_longer_name_resolves_to_itself(self):
+        assert identify_track("Lead Electric Guitar (left)", MIXER_TRACKS) == 9
+
+    def test_ambiguous_label_returns_none(self):
+        assert identify_track("Electric Guitar", MIXER_TRACKS) is None
+
+    def test_unknown_label_returns_none(self):
+        assert identify_track("Kazoo", MIXER_TRACKS) is None
+
+    def test_duplicate_descriptions_return_none(self):
+        dupes = [
+            MixerTrack(index=0, src_id=1, is_click=False, description="Guitar"),
+            MixerTrack(index=1, src_id=2, is_click=False, description="Guitar"),
+        ]
+        assert identify_track("Guitar", dupes) is None
+
+
+class TestTrackIdentityVerification:
+    def test_fresh_render_of_wrong_track_is_rejected(self, tmp_path):
+        """THE REGRESSION. Server returns a fresh hash whose label names a
+        different track — previously accepted and saved under the wrong
+        name."""
+        wrong = _cdn(HASH_NEW, "Drum_Kit")
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(_cdn(HASH_OLD, "Bass"))),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(wrong)),
+            _mock_response(200, "ok"),          # re-issued basket.php
+            _mock_response(200, _begin_download_html(wrong)),
+        ]
+        dl = _make_dl(session)
+        dest = tmp_path / "lead.mp3"
+
+        with pytest.raises(TrackMismatchError) as exc:
+            dl.download_track(target_index=10, dest=dest,
+                              max_wait=0.0, poll_interval=0.0)
+
+        assert "Drum Kit" in str(exc.value)
+        assert not dest.exists(), "wrong-track audio must never reach disk"
+
+    def test_stale_hash_with_matching_label_is_not_accepted(self, tmp_path):
+        """Freshness gate must survive: a matching label on a STALE render
+        (e.g. a resumed re-run) must not short-circuit the hash check."""
+        stale = _cdn(HASH_OLD, "Lead_Electric_Guitar")
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(stale)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(stale)),
+        ]
+        dl = _make_dl(session)
+        dest = tmp_path / "t.mp3"
+
+        with pytest.raises(MixGenTimeout):
+            dl.download_track(target_index=10, dest=dest,
+                              max_wait=0.0, poll_interval=0.0)
+        assert not dest.exists()
+
+    def test_stall_raises_mixgen_timeout_not_mismatch(self, tmp_path):
+        """A server that never renders anything fresh is a stall, not a
+        wrong-track render — the two must stay distinguishable."""
+        stale = _cdn(HASH_OLD, "Drum_Kit")
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(stale)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(stale)),
+        ]
+        dl = _make_dl(session)
+
+        with pytest.raises(MixGenTimeout):
+            dl.download_track(target_index=10, dest=tmp_path / "t.mp3",
+                              max_wait=0.0, poll_interval=0.0)
+
+    def test_correct_label_is_accepted(self, tmp_path):
+        session = MagicMock()
+        good = _cdn(HASH_NEW, "Lead_Electric_Guitar")
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(_cdn(HASH_OLD, "Bass"))),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(good)),
+            _mock_response(200, content=b"mp3-bytes"),
+        ]
+        dl = _make_dl(session)
+        dest = tmp_path / "lead.mp3"
+        result = dl.download_track(target_index=10, dest=dest, poll_interval=0.0)
+
+        assert result.url == good
+        assert dest.read_bytes() == b"mp3-bytes"
+
+    def test_mismatch_reissues_basket_once_then_self_heals(self, tmp_path):
+        """On the first fresh mismatch the cart update is re-sent — if it was
+        lost, that is the actual repair."""
+        wrong = _cdn("ccc111", "Drum_Kit")
+        good = _cdn("ddd222", "Lead_Electric_Guitar")
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(_cdn(HASH_OLD, "Bass"))),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(wrong)),
+            _mock_response(200, "ok"),          # re-issued basket.php
+            _mock_response(200, _begin_download_html(good)),
+            _mock_response(200, content=b"mp3"),
+        ]
+        dl = _make_dl(session)
+        dest = tmp_path / "lead.mp3"
+        result = dl.download_track(target_index=10, dest=dest,
+                                   max_wait=30.0, poll_interval=0.0)
+
+        assert result.url == good
+        basket_calls = [
+            c for c in session.get.call_args_list
+            if "basket.php" in str(c.args[0] if c.args else "")
+        ]
+        assert len(basket_calls) == 2, "basket.php should be re-issued exactly once"
+
+    def test_last_hash_recorded_after_mismatch_failure(self, tmp_path):
+        wrong = _cdn(HASH_NEW, "Drum_Kit")
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(_cdn(HASH_OLD, "Bass"))),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(wrong)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(wrong)),
+        ]
+        dl = _make_dl(session)
+        with pytest.raises(TrackMismatchError):
+            dl.download_track(target_index=10, dest=tmp_path / "t.mp3",
+                              max_wait=0.0, poll_interval=0.0)
+        assert dl._last_hash == HASH_NEW, (
+            "the wrong render's hash must be recorded, or the next track "
+            "will treat it as fresh under the fallback path"
+        )
+
+    def test_unrecognised_label_repeating_filename_is_rejected(self, tmp_path):
+        """Label parses but names no known track (format drift): an
+        identical filename means identical cart content, so keep waiting."""
+        first = _cdn(HASH_OLD, "Zither")
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(200, _begin_download_html(first)),
+            _mock_response(200, "ok"),
+            _mock_response(200, _begin_download_html(first)),
+            _mock_response(200, content=b"mp3"),
+        ]
+        dl = _make_dl(session)
+        dl._last_filename = f"{SONG}(Zither_Custom_Backing_Track).mp3"
+        dl._last_hash = "someotherhash"
+
+        with pytest.raises(MixGenTimeout):
+            dl.download_track(target_index=10, dest=tmp_path / "t.mp3",
+                              max_wait=0.0, poll_interval=0.0)
