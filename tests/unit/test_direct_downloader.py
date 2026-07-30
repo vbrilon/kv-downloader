@@ -420,8 +420,8 @@ class TestStateAcrossCalls:
 from packages.download_management.direct_api.direct_downloader import (  # noqa: E402
     TrackMismatchError,
     extract_track_label,
-    normalize_label,
     identify_track,
+    normalize_label,
 )
 
 SONG = "Bryan_Adams_18_til_I_Die"
