@@ -436,9 +436,13 @@ class KaraokeVersionAutomator:
             result = downloader.download_track(
                 target_index=data_index, dest=dest, max_wait=max_wait,
             )
+            verified = (
+                f"verified '{result.server_label}'" if result.server_label
+                else "UNVERIFIED (no server label)"
+            )
             logging.info(
                 f"✅ direct-API: {track_name} → {result.size_bytes:,} bytes "
-                f"in {result.elapsed_s:.1f}s"
+                f"in {result.elapsed_s:.1f}s [{verified}]"
             )
             if self.progress:
                 self.progress.update_track_status(track['index'], 'completed', progress=100)

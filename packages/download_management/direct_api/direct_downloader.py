@@ -210,6 +210,9 @@ class DownloadResult:
     url: str
     size_bytes: int
     elapsed_s: float
+    # The server's own label for what it rendered, or None when the
+    # filename carried no resolvable label (hash-only fallback).
+    server_label: Optional[str] = None
 
 
 class DirectDownloader:
@@ -283,6 +286,7 @@ class DirectDownloader:
             url=new_url,
             size_bytes=size,
             elapsed_s=time.monotonic() - t0,
+            server_label=extract_track_label(new_url),
         )
 
     # -- internals -----------------------------------------------------
