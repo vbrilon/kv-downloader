@@ -370,6 +370,19 @@ class KaraokeVersionAutomator:
                     abort_remaining = True
             time.sleep(BETWEEN_TRACKS_PAUSE)
 
+        # Surface identity-verification coverage where the success count is
+        # reported. If the server's filename format ever drifts, every track
+        # falls back to the hash-only check that allowed the 2026-07-30
+        # wrong-track bug — that must not be silent.
+        if downloader.label_unverified:
+            logging.warning(
+                f"⚠️  {downloader.label_unverified}/"
+                f"{downloader.label_verified + downloader.label_unverified} "
+                f"tracks could not be identity-verified against the server's "
+                f"own track label (accepted on hash freshness alone). "
+                f"Spot-check these files."
+            )
+
     def _record_skip_due_to_cascade_abort(self, song, track):
         """Mark a track as failed without attempting it — used after the
         direct-API path has hit the consecutive-failure cap for a song."""
@@ -402,7 +415,7 @@ class KaraokeVersionAutomator:
         wasted wait time. The user can re-run.
         """
         from packages.download_management.direct_api.direct_downloader import (
-            BasketUpdateError, MixGenTimeout, MP3FetchError,
+            BasketUpdateError, MixGenTimeout, MP3FetchError, TrackMismatchError,
         )
         from packages.download_management.direct_api.trackslevels import (
             InvalidPositionError,
@@ -423,9 +436,13 @@ class KaraokeVersionAutomator:
             result = downloader.download_track(
                 target_index=data_index, dest=dest, max_wait=max_wait,
             )
+            verified = (
+                f"verified '{result.server_label}'" if result.server_label
+                else "UNVERIFIED (no server label)"
+            )
             logging.info(
                 f"✅ direct-API: {track_name} → {result.size_bytes:,} bytes "
-                f"in {result.elapsed_s:.1f}s"
+                f"in {result.elapsed_s:.1f}s [{verified}]"
             )
             if self.progress:
                 self.progress.update_track_status(track['index'], 'completed', progress=100)
@@ -434,6 +451,20 @@ class KaraokeVersionAutomator:
                 file_size=result.size_bytes,
             )
             return True
+        except TrackMismatchError as e:
+            # The server rendered a different track than we asked for. The
+            # file is deliberately NOT saved — wrong audio under the right
+            # name is worse than a missing file, because it is silent.
+            logging.error(
+                f"❌ direct-API wrong-track render for {track_name}: {e}"
+            )
+            if self.progress:
+                self.progress.update_track_status(track['index'], 'failed')
+            self.stats.record_track_completion(
+                song['name'], track_name, success=False,
+                error_message=f"wrong-track render: {e}",
+            )
+            return False
         except (BasketUpdateError, MixGenTimeout, MP3FetchError, InvalidPositionError) as e:
             logging.error(f"❌ direct-API failed for {track_name}: {e}")
             if self.progress:
