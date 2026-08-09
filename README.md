@@ -4,7 +4,7 @@
 
 Downloads individual instrument tracks (bass, guitar, vocals, drums, etc.) from your purchased songs. Each track is saved as a separate MP3 file, organized by song.
 
----
+Project was inspired by [https://github.com/subdigital/kv-downloader]
 
 ## 🚀 Quick Start
 
