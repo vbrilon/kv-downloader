@@ -66,9 +66,10 @@ rendered.**
 
 ## Repair done
 
-The 24 direct-API files of the three songs were moved to
-`~/kv-suspect-2026-10-13/` (kept as evidence) and re-downloaded via the
-browser path; duplicate scan of all three songs: none.
+The 24 direct-API files of the three songs were moved aside, the songs were
+re-downloaded via the browser path (duplicate scan of all three: none), and
+the old files were then deleted at the user's request. The evidence table
+above is the only record of their content.
 
 ## Diagnostic recipe (when a user reports "track X has instrument Y")
 
