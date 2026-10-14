@@ -16,9 +16,7 @@ from ..utils import js_click_with_scroll, profile_timing, profile_selenium, is_s
 from ..utils.bot_challenge import (
     BotChallengeError,
     HEADLESS_INSTRUCTIONS,
-    CHALLENGE_SOLVE_TIMEOUT_S,
     is_challenge_page,
-    wait_for_clearance,
 )
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
@@ -48,15 +46,17 @@ def _build_indexed_track_selector(track_element_selector, track_index):
 class TrackManager:
     """Handles track discovery, isolation, and mixer controls"""
     
-    def __init__(self, driver, wait, interactive_challenge=False):
+    def __init__(self, driver, wait, challenge_solver=None):
         """Initialize track manager with Selenium driver and wait objects.
 
-        interactive_challenge: True when the browser is visible, so a Fastly
-        CAPTCHA can be handed to the user to solve instead of aborting.
+        challenge_solver: callable that gets a Fastly CAPTCHA solved by the
+        user (the automator swaps in a visible browser for it). It returns
+        once solved or raises BotChallengeError. Without one, a CAPTCHA
+        aborts with instructions.
         """
         self.driver = driver
         self.wait = wait
-        self.interactive_challenge = interactive_challenge
+        self.challenge_solver = challenge_solver
         self.progress_tracker = None
         self.track_complexity = "simple"  # Default to simple complexity
     
@@ -72,7 +72,6 @@ class TrackManager:
 
         if is_challenge_page(self.driver):
             self._handle_bot_challenge()
-            self._wait_for_song_page()
 
         # Check for login redirects
         current_url = self.driver.current_url
@@ -102,18 +101,14 @@ class TrackManager:
             logging.warning("Page load timeout during song access verification")
 
     def _handle_bot_challenge(self):
-        """Hand a Fastly CAPTCHA to the user (visible mode) or abort (headless)."""
-        if not self.interactive_challenge:
+        """Hand a Fastly CAPTCHA to the user via the solver, or abort."""
+        if self.challenge_solver is None:
             raise BotChallengeError(HEADLESS_INSTRUCTIONS)
-        logging.warning(
-            f"🛡️  Fastly bot check — solve the CAPTCHA in the Chrome window "
-            f"(waiting up to {CHALLENGE_SOLVE_TIMEOUT_S}s)..."
-        )
-        if not wait_for_clearance(self.driver):
-            raise BotChallengeError(
-                f"CAPTCHA not solved within {CHALLENGE_SOLVE_TIMEOUT_S}s"
-            )
-        logging.info("✅ Bot check cleared")
+        self.challenge_solver()
+        # The solver may have replaced self.driver (browser swap).
+        self._wait_for_song_page()
+        if is_challenge_page(self.driver):
+            raise BotChallengeError("still challenged after the CAPTCHA was solved")
     
     @profile_timing("discover_tracks", "track_management", "method")
     def discover_tracks(self, song_url):

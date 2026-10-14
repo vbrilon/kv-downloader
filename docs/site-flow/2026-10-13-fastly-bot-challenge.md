@@ -46,10 +46,19 @@ evade the challenge; it is handed to the user.
 
 | Where | Detects via | Headless | Visible (`--debug`) |
 |---|---|---|---|
-| `TrackManager.verify_song_access` (every song) | page title | raise `BotChallengeError` → batch stops with instructions | wait ≤180 s for the user to solve, then continue |
+| `TrackManager.verify_song_access` (every song) | page title | **pop up a visible Chrome window** (same profile) at the challenged page, alert the user (macOS notification + terminal bell), wait ≤180 s for the solve, then swap back to headless | alert, wait ≤180 s in the existing window |
 | `DirectDownloader` (`basket.php`, `begin_download.html`) | `/_fs-ch-` in body | raise `BotChallengeError` | same |
-| Automator, mid-song | catches the above | reload song page via `verify_song_access` (raises if the browser is challenged), cookies re-copied, track retried once | same, but the user solves instead of raising |
+| Automator, mid-song | catches the above | reload song page via `verify_song_access` (pops up the CAPTCHA if the browser is challenged), cookies re-copied, track retried once | same, solved in the existing window |
 | Automator, retry still challenged | browser fine, HTTP not | **switch the rest of the run to legacy Selenium downloads** (`self.direct_api = False`), starting with this track | same |
+
+Unsolved within 180 s → `BotChallengeError`, which stops the run (a headless
+run is swapped back to headless first). Still challenged right after a solve →
+`BotChallengeError` too, so it can't loop. The pop-up lives in
+`KaraokeVersionAutomator._solve_bot_challenge` / `_swap_browser`, passed to
+`TrackManager` as `challenge_solver`; standalone tools that build a
+`TrackManager` without one still get the "re-run with --debug" error. Chrome
+can't open one profile twice, so the swap is quit → relaunch, and the new
+driver is handed to the login, track and download managers.
 
 The switch is sticky for the run: without a fresh solve the fast path can't
 recover, so re-trying it per song would only waste a reload and two
