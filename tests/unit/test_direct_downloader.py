@@ -666,3 +666,38 @@ class TestTrackIdentityVerification:
         with pytest.raises(MixGenTimeout):
             dl.download_track(target_index=10, dest=tmp_path / "t.mp3",
                               max_wait=0.0, poll_interval=0.0)
+
+
+class TestAtomicMp3Write:
+    """A partially-written .mp3 must never appear at `dest`: re-runs skip any
+    track whose .mp3 exists, so a truncated file would never be re-fetched."""
+
+    def _stream_then(self, exc):
+        def iter_content(chunk_size):
+            yield b"partial-bytes"
+            raise exc
+        r = _mock_response(200)
+        r.iter_content = iter_content
+        session = MagicMock()
+        session.get.return_value = r
+        return _make_dl(session)
+
+    def test_success_leaves_only_dest(self, tmp_path):
+        session = MagicMock()
+        session.get.return_value = _mock_response(200, content=b"mp3-bytes")
+        dest = tmp_path / "t.mp3"
+        assert _make_dl(session)._fetch_mp3(CDN_URL_NEW, dest) == 9
+        assert dest.read_bytes() == b"mp3-bytes"
+        assert [p.name for p in tmp_path.iterdir()] == ["t.mp3"]
+
+    def test_network_error_mid_stream_leaves_nothing(self, tmp_path):
+        dl = self._stream_then(ConnectionError("reset"))
+        with pytest.raises(MP3FetchError):
+            dl._fetch_mp3(CDN_URL_NEW, tmp_path / "t.mp3")
+        assert list(tmp_path.iterdir()) == []
+
+    def test_interrupt_mid_stream_leaves_nothing(self, tmp_path):
+        dl = self._stream_then(KeyboardInterrupt())
+        with pytest.raises(KeyboardInterrupt):
+            dl._fetch_mp3(CDN_URL_NEW, tmp_path / "t.mp3")
+        assert list(tmp_path.iterdir()) == []

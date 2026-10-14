@@ -26,6 +26,7 @@ docs/site-flow/trackslevels-format.md.
 """
 
 import logging
+import os
 import re
 import time
 import unicodedata
@@ -488,11 +489,19 @@ class DirectDownloader:
                         f"CDN returned {r.status_code} for {url!r}"
                     )
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                size = 0
-                with open(dest, "wb") as f:
-                    for chunk in r.iter_content(1 << 16):
-                        f.write(chunk)
-                        size += len(chunk)
+                # Write to a sibling .part file and rename only when complete:
+                # re-runs skip any existing .mp3, so a truncated one left by an
+                # interrupted run would never be re-fetched.
+                part = dest.with_name(dest.name + ".part")
+                try:
+                    size = 0
+                    with open(part, "wb") as f:
+                        for chunk in r.iter_content(1 << 16):
+                            f.write(chunk)
+                            size += len(chunk)
+                    os.replace(part, dest)
+                finally:
+                    part.unlink(missing_ok=True)
                 return size
         except MP3FetchError:
             raise
