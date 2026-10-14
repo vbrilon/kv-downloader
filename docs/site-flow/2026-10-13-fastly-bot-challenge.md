@@ -73,8 +73,7 @@ to the download folder's volume — see
 ## Related: `503 first byte timeout` from basket.php
 
 Not a challenge — Fastly gave up waiting (~15 s) for the origin to build the
-mix. Seen live 2026-10-13 as a ~1 min burst that then recovered (ordinary
-pages stayed at ~0.3 s TTFB). `DirectDownloader._call_basket` retries a 503
-once after `BASKET_503_RETRY_DELAY_S` (10 s); a second 503 raises
-`BasketUpdateError` as before. Tracks lost to a longer burst are picked up by
-re-running — existing files are skipped.
+mix. **The origin may still render it late**, which shifted the next one or
+two direct-API tracks' audio by one (label-verified, wrong audio). A 503 now
+moves the rest of that song to browser downloads; see
+`docs/investigations/2026-10-13-basket-503-shifted-audio.md`.
