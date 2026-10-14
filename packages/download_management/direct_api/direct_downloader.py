@@ -219,6 +219,9 @@ class DownloadResult:
 class DirectDownloader:
     BASKET_URL = "https://www.karaoke-version.com/basket.php"
     BEGIN_URL = "https://www.karaoke-version.com/my/begin_download.html"
+    # Fastly answers "503 first byte timeout" when the origin is briefly slow
+    # to build the mix (seen 2026-10-13: a ~1 min burst, then recovery).
+    BASKET_503_RETRY_DELAY_S = 10.0
 
     def __init__(
         self,
@@ -322,6 +325,14 @@ class DirectDownloader:
         url = self.BASKET_URL + "?" + urlencode(params, safe=",.-")
         r = self.session.get(url, timeout=30)
         self._raise_if_challenged(r, "basket.php")
+        if r.status_code == 503:
+            logger.warning(
+                f"basket.php returned 503; retrying once in "
+                f"{self.BASKET_503_RETRY_DELAY_S:.0f}s"
+            )
+            time.sleep(self.BASKET_503_RETRY_DELAY_S)
+            r = self.session.get(url, timeout=30)
+            self._raise_if_challenged(r, "basket.php")
         if r.status_code != 200:
             body = (r.text or "")[:200]
             raise BasketUpdateError(

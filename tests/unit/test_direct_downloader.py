@@ -233,6 +233,37 @@ class TestDirectDownloaderErrors:
         assert "500" in str(exc.value)
         assert "trackslevels" in str(exc.value).lower()
 
+    def test_basket_503_is_retried_once(self, monkeypatch):
+        # Fastly returns "503 first byte timeout" when the origin is briefly
+        # slow (seen live 2026-10-13: a ~1 min burst, then recovery).
+        sleeps = []
+        monkeypatch.setattr(
+            "packages.download_management.direct_api.direct_downloader.time.sleep",
+            sleeps.append,
+        )
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(503, "503 first byte timeout"),
+            _mock_response(200, "ok"),
+        ]
+        _make_dl(session)._call_basket("1,0.2,100.3")
+        assert session.get.call_count == 2
+        assert sleeps == [DirectDownloader.BASKET_503_RETRY_DELAY_S]
+
+    def test_basket_503_twice_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            "packages.download_management.direct_api.direct_downloader.time.sleep",
+            lambda s: None,
+        )
+        session = MagicMock()
+        session.get.side_effect = [
+            _mock_response(503, "503 first byte timeout"),
+            _mock_response(503, "503 first byte timeout"),
+        ]
+        with pytest.raises(BasketUpdateError, match="503"):
+            _make_dl(session)._call_basket("1,0.2,100.3")
+        assert session.get.call_count == 2
+
     def test_basket_non_200_raises(self, tmp_path):
         session = MagicMock()
         session.get.side_effect = [
