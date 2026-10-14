@@ -84,30 +84,29 @@ class TestVerifySongAccess:
         with pytest.raises(BotChallengeError, match="--debug"):
             tm.verify_song_access(SONG_URL)
 
-    def test_interactive_waits_for_solve_then_verifies(self):
+    def test_solver_clears_challenge_then_verifies(self):
         driver = _challenged_driver()
-        tm = TrackManager(driver, Mock(), interactive_challenge=True)
 
-        def solve(*_args, **_kwargs):
+        def solve():
             driver.title = "White Room - Cream"
             driver.find_elements.return_value = [Mock(), Mock()]
-            return True
 
-        with patch(
-            "packages.track_management.track_manager.wait_for_clearance",
-            side_effect=solve,
-        ) as wait:
-            assert tm.verify_song_access(SONG_URL) is True
-        wait.assert_called_once()
+        solver = Mock(side_effect=solve)
+        tm = TrackManager(driver, Mock(), challenge_solver=solver)
+        assert tm.verify_song_access(SONG_URL) is True
+        solver.assert_called_once()
 
-    def test_interactive_raises_when_not_solved_in_time(self):
-        tm = TrackManager(_challenged_driver(), Mock(), interactive_challenge=True)
-        with patch(
-            "packages.track_management.track_manager.wait_for_clearance",
-            return_value=False,
-        ):
-            with pytest.raises(BotChallengeError):
-                tm.verify_song_access(SONG_URL)
+    def test_solver_error_propagates(self):
+        solver = Mock(side_effect=BotChallengeError("not solved in time"))
+        tm = TrackManager(_challenged_driver(), Mock(), challenge_solver=solver)
+        with pytest.raises(BotChallengeError, match="not solved"):
+            tm.verify_song_access(SONG_URL)
+
+    def test_still_challenged_after_solver_raises(self):
+        # Guards against a solve loop if the clearance doesn't carry over.
+        tm = TrackManager(_challenged_driver(), Mock(), challenge_solver=Mock())
+        with pytest.raises(BotChallengeError):
+            tm.verify_song_access(SONG_URL)
 
 
 def _challenge_response():
@@ -172,8 +171,9 @@ class TestAutomatorChallengeHandling:
             max_wait=25.0,
         )
 
-    def test_visible_browser_enables_interactive_challenge(self):
-        assert self.tm_cls.call_args.kwargs["interactive_challenge"] is True
+    def test_track_manager_gets_the_automator_solver(self):
+        assert (self.tm_cls.call_args.kwargs["challenge_solver"]
+                == self.automator._solve_bot_challenge)
 
     def test_mid_song_challenge_reverifies_refreshes_cookies_and_retries(self):
         download = Mock(side_effect=[BotChallengeError("basket.php"), True])
@@ -236,3 +236,61 @@ class TestAutomatorChallengeHandling:
         self.automator._display_failure_summary = Mock()
         assert self.automator.run_automation() is False
         assert self.automator._process_single_song.call_count == 1
+
+
+class TestCaptchaPopup:
+    """Headless runs pop up a visible window for the user to solve the CAPTCHA,
+    then go back to headless; --debug runs solve in the existing window."""
+
+    def _automator(self, headless):
+        with patch('karaoke_automator.ConfigurationManager'), \
+             patch('karaoke_automator.ChromeManager'), \
+             patch('karaoke_automator.LoginManager'), \
+             patch('karaoke_automator.ProgressTracker'), \
+             patch('karaoke_automator.StatsReporter'), \
+             patch('karaoke_automator.FileManager'), \
+             patch('karaoke_automator.TrackManager'), \
+             patch('karaoke_automator.DownloadManager'):
+            from karaoke_automator import KaraokeVersionAutomator
+            a = KaraokeVersionAutomator(headless=headless)
+        a.driver = Mock(current_url=SONG_URL)
+        a.chrome_manager = Mock(headless=headless)
+        modes = []
+
+        def setup_driver():
+            modes.append(a.chrome_manager.headless)
+            a.chrome_manager.driver = Mock(name=f"driver{len(modes)}")
+            a.chrome_manager.wait = Mock()
+        a.chrome_manager.setup_driver.side_effect = setup_driver
+        a.login_handler, a.track_manager, a.download_manager = Mock(), Mock(), Mock()
+        return a, modes
+
+    def test_headless_pops_up_window_then_returns_to_headless(self):
+        a, modes = self._automator(headless=True)
+        with patch("karaoke_automator.wait_for_clearance", return_value=True) as wait, \
+             patch("karaoke_automator.notify_user") as notify:
+            a._solve_bot_challenge()
+        assert modes == [False, True]
+        notify.assert_called_once()
+        wait.assert_called_once()
+        assert a.chrome_manager.quit.call_count == 2
+        for component in (a.login_handler, a.track_manager, a.download_manager):
+            assert component.driver is a.driver
+        a.driver.get.assert_called_once_with(SONG_URL)
+
+    def test_unsolved_still_returns_to_headless_and_raises(self):
+        a, modes = self._automator(headless=True)
+        with patch("karaoke_automator.wait_for_clearance", return_value=False), \
+             patch("karaoke_automator.notify_user"):
+            with pytest.raises(BotChallengeError):
+                a._solve_bot_challenge()
+        assert modes == [False, True]
+
+    def test_visible_run_solves_in_place(self):
+        a, modes = self._automator(headless=False)
+        with patch("karaoke_automator.wait_for_clearance", return_value=True) as wait, \
+             patch("karaoke_automator.notify_user") as notify:
+            a._solve_bot_challenge()
+        assert modes == []
+        notify.assert_called_once()
+        wait.assert_called_once()

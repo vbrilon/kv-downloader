@@ -17,6 +17,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 from packages.utils import setup_logging, initialize_profiler, get_profiler, profile_timing
+from packages.utils.bot_challenge import (
+    BotChallengeError,
+    CHALLENGE_SOLVE_TIMEOUT_S,
+    notify_user,
+    wait_for_clearance,
+)
 from packages.configuration import ConfigurationManager
 from packages.configuration.config import BETWEEN_TRACKS_PAUSE
 from packages.browser import ChromeManager
@@ -75,7 +81,7 @@ class KaraokeVersionAutomator:
         self.login_handler = LoginManager(self.driver, self.wait)
         self.file_manager = FileManager()
         self.track_manager = TrackManager(
-            self.driver, self.wait, interactive_challenge=not headless
+            self.driver, self.wait, challenge_solver=self._solve_bot_challenge
         )
         
         # Set up dependency injection container
@@ -100,6 +106,43 @@ class KaraokeVersionAutomator:
         """Login using centralized login handler with session persistence"""
         return self.login_handler.login_with_session_persistence(force_relogin=force_relogin)
     
+    def _solve_bot_challenge(self):
+        """Get a Fastly CAPTCHA solved by the user.
+
+        Headless runs swap in a visible browser on the same profile at the
+        challenged page, then swap back to headless: the clearance cookie
+        persists in chrome_profile/ (verified 2026-10-13). --debug runs solve
+        in the existing window. Raises BotChallengeError if not solved.
+        """
+        url = self.driver.current_url
+        if self.headless:
+            self._swap_browser(headless=False, url=url)
+        message = (f"Solve the CAPTCHA in the Chrome window "
+                   f"(waiting up to {CHALLENGE_SOLVE_TIMEOUT_S}s)")
+        logging.warning(f"🛡️  Fastly bot check — {message}...")
+        notify_user(message)
+        cleared = wait_for_clearance(self.driver)
+        if self.headless:
+            self._swap_browser(headless=True, url=url)
+        if not cleared:
+            raise BotChallengeError(
+                f"CAPTCHA not solved within {CHALLENGE_SOLVE_TIMEOUT_S}s"
+            )
+        logging.info("✅ Bot check cleared")
+
+    def _swap_browser(self, *, headless, url):
+        """Restart Chrome (same profile) in the given mode, open `url`, and
+        hand the new driver to every component that holds one."""
+        self.chrome_manager.quit()
+        self.chrome_manager.headless = headless
+        self.chrome_manager.setup_driver()
+        self.driver = self.chrome_manager.driver
+        self.wait = self.chrome_manager.wait
+        for component in (self.login_handler, self.track_manager, self.download_manager):
+            component.driver = self.driver
+            component.wait = self.wait
+        self.driver.get(url)
+
     def is_logged_in(self):
         """Check login status using centralized handler"""
         return self.login_handler.is_logged_in()
@@ -408,8 +451,6 @@ class KaraokeVersionAutomator:
         after a solve). The rest of the run switches to browser downloads,
         starting with this track.
         """
-        from packages.utils.bot_challenge import BotChallengeError
-
         try:
             return self._download_single_track_direct_api(
                 song, track, song_key, downloader, song_path, max_wait=max_wait,

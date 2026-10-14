@@ -235,11 +235,10 @@ python karaoke_automator.py --clear-session
 - Purchase the song on Karaoke-Version.com first
 - Script will skip unpurchased songs and continue
 
-**"Fastly bot-check CAPTCHA" error (run stops)**
-- The site's bot protection is challenging the automation's browser
-- Run `python karaoke_automator.py --debug` and solve the CAPTCHA in the Chrome window
-- The clearance is saved in `chrome_profile/`, so later headless runs work until it expires (about an hour)
-- In `--debug` mode a CAPTCHA mid-run pauses (up to 3 min) for you to solve it
+**Fastly bot-check CAPTCHA**
+- When the site's bot protection challenges the browser, a Chrome window pops up on the CAPTCHA and you get a macOS notification (plus a terminal bell) — solve it there within 3 minutes and the run carries on headless
+- If it isn't solved in time, the run stops; just re-run
+- The clearance is saved in `chrome_profile/`, so later runs work until it expires (about an hour)
 - Once the clearance expires, the fast download path is blocked but the browser usually isn't — the run then switches to browser downloads automatically (slower, no action needed)
 
 **Browser downloads never finish (log shows the download modal, then `success=False`)**

@@ -14,7 +14,7 @@ setup, direct-HTTP per-track downloads.
   `songs.yaml`.
 - **Python venv**: project root contains `pyvenv.cfg`; use `bin/python`
   (Python 3.13).
-- **Tests**: `bin/python -m pytest tests/unit/` — 466 tests as of
+- **Tests**: `bin/python -m pytest tests/unit/` — 470 tests as of
   2026-10-13.
 - **Auth**: Chrome profile in `chrome_profile/` + session cache in
   `.cache/session_data.pkl`.

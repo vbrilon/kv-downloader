@@ -10,6 +10,8 @@ cookies in chrome_profile/, which later (headless) runs reuse. We never try
 to solve or evade the challenge — we detect it and hand it to the user.
 """
 
+import subprocess
+
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -28,6 +30,19 @@ HEADLESS_INSTRUCTIONS = (
 
 class BotChallengeError(RuntimeError):
     """The site served a bot challenge that was not (or cannot be) solved."""
+
+
+def notify_user(message: str) -> None:
+    """Get the user's attention: terminal bell plus a macOS notification."""
+    print("\a", end="", flush=True)
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             f'display notification "{message}" with title "kv-downloader" sound name "Glass"'],
+            check=False, timeout=5, capture_output=True,
+        )
+    except Exception:
+        pass  # non-macOS or osascript unavailable: the bell + log line remain
 
 
 def is_challenge_html(text) -> bool:
