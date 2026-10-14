@@ -368,3 +368,37 @@ def test_validate_pre_download_calls_verify_only_once(mocker):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+# Re-runs leave finished, cleanly-renamed tracks in the song folder. The
+# pre-wait check used to accept any long-ish audio filename as "the download
+# started", so a stalled render on a re-run was reported as started
+# (2026-10-13: "Found existing download file: Lead Electric Guitar.mp3").
+def _wait_for_start(tmp_path, monkeypatch, filenames):
+    monkeypatch.setattr(
+        "packages.file_operations.file_manager.FILE_OPERATION_MAX_WAIT", 1
+    )
+    # Force the polling path: the misdetection was in the pre-wait check, and
+    # macOS FSEvents can report files created just before the observer starts.
+    monkeypatch.setitem(sys.modules, "watchdog.observers", None)
+    for name in filenames:
+        (tmp_path / name).write_bytes(b"x" * 1024)
+    return FileManager().wait_for_download_to_start("Timpani", tmp_path)
+
+
+def test_finished_tracks_are_not_a_download_start(tmp_path, monkeypatch):
+    assert not _wait_for_start(
+        tmp_path, monkeypatch, ["Lead Electric Guitar.mp3", "Backing Vocals.mp3"]
+    )
+
+
+def test_unprocessed_server_download_is_a_download_start(tmp_path, monkeypatch):
+    assert _wait_for_start(
+        tmp_path, monkeypatch,
+        ["Lead Electric Guitar.mp3", "Cream_White_Room(Timpani_Custom_Backing_Track).mp3"],
+    )
+
+
+def test_partial_chrome_download_is_a_download_start(tmp_path, monkeypatch):
+    assert _wait_for_start(
+        tmp_path, monkeypatch, ["Lead Electric Guitar.mp3", "abc123.mp3.crdownload"]
+    )

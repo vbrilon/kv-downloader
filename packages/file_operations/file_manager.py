@@ -378,11 +378,14 @@ class FileManager:
                         filename_lower = filename.lower()
                         file_path = file_info['path']
                         
-                        # Check if it looks like a karaoke download
-                        is_audio_or_download = self._is_audio_file(filename_lower) or filename_lower.endswith('.crdownload')
-                        might_be_karaoke = self._matches_karaoke_patterns(filename_lower) or len(filename) > 20
-                        
-                        if is_audio_or_download and might_be_karaoke:
+                        # Only an UNPROCESSED download counts: a Chrome partial or the
+                        # server's raw filename. Finished tracks are renamed to clean
+                        # names, and on a re-run the folder is full of them.
+                        is_partial = filename_lower.endswith('.crdownload')
+                        is_raw_server_file = (self._is_audio_file(filename_lower)
+                                              and 'custom_backing_track' in filename_lower)
+
+                        if is_partial or is_raw_server_file:
                             logging.info(f"✅ Found existing download file: {filename}")
                             logging.info(f"📁 Location: {path}")
                             return True
