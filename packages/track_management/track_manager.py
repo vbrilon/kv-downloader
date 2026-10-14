@@ -13,6 +13,13 @@ from selenium.common.exceptions import (
     TimeoutException,
 )
 from ..utils import js_click_with_scroll, profile_timing, profile_selenium, is_solo_button_active
+from ..utils.bot_challenge import (
+    BotChallengeError,
+    HEADLESS_INSTRUCTIONS,
+    CHALLENGE_SOLVE_TIMEOUT_S,
+    is_challenge_page,
+    wait_for_clearance,
+)
 from ..configuration import SOLO_ACTIVATION_DELAY
 from ..configuration.selectors import (
     TRACK_ELEMENT_SELECTOR,
@@ -41,10 +48,15 @@ def _build_indexed_track_selector(track_element_selector, track_index):
 class TrackManager:
     """Handles track discovery, isolation, and mixer controls"""
     
-    def __init__(self, driver, wait):
-        """Initialize track manager with Selenium driver and wait objects"""
+    def __init__(self, driver, wait, interactive_challenge=False):
+        """Initialize track manager with Selenium driver and wait objects.
+
+        interactive_challenge: True when the browser is visible, so a Fastly
+        CAPTCHA can be handed to the user to solve instead of aborting.
+        """
         self.driver = driver
         self.wait = wait
+        self.interactive_challenge = interactive_challenge
         self.progress_tracker = None
         self.track_complexity = "simple"  # Default to simple complexity
     
@@ -56,17 +68,12 @@ class TrackManager:
         """Verify user has access to song page"""
         logging.info(f"Verifying access to: {song_url}")
         self.driver.get(song_url)
-        
-        # Wait for page to load - either track elements appear or login form appears
-        try:
-            WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
-                lambda driver: driver.find_elements(By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR) or 
-                               "login" in driver.current_url.lower() or
-                               driver.find_elements(By.NAME, "frm_login")
-            )
-        except TimeoutException:
-            logging.warning("Page load timeout during song access verification")
-        
+        self._wait_for_song_page()
+
+        if is_challenge_page(self.driver):
+            self._handle_bot_challenge()
+            self._wait_for_song_page()
+
         # Check for login redirects
         current_url = self.driver.current_url
         if "login" in current_url.lower():
@@ -81,6 +88,32 @@ class TrackManager:
         
         logging.info(f"✅ Access verified - found {len(track_elements)} tracks")
         return True
+
+    def _wait_for_song_page(self):
+        """Wait for track elements, a login redirect, or a bot challenge."""
+        try:
+            WebDriverWait(self.driver, WEBDRIVER_DEFAULT_TIMEOUT).until(
+                lambda driver: driver.find_elements(By.CSS_SELECTOR, TRACK_ELEMENT_SELECTOR) or
+                               "login" in driver.current_url.lower() or
+                               driver.find_elements(By.NAME, "frm_login") or
+                               is_challenge_page(driver)
+            )
+        except TimeoutException:
+            logging.warning("Page load timeout during song access verification")
+
+    def _handle_bot_challenge(self):
+        """Hand a Fastly CAPTCHA to the user (visible mode) or abort (headless)."""
+        if not self.interactive_challenge:
+            raise BotChallengeError(HEADLESS_INSTRUCTIONS)
+        logging.warning(
+            f"🛡️  Fastly bot check — solve the CAPTCHA in the Chrome window "
+            f"(waiting up to {CHALLENGE_SOLVE_TIMEOUT_S}s)..."
+        )
+        if not wait_for_clearance(self.driver):
+            raise BotChallengeError(
+                f"CAPTCHA not solved within {CHALLENGE_SOLVE_TIMEOUT_S}s"
+            )
+        logging.info("✅ Bot check cleared")
     
     @profile_timing("discover_tracks", "track_management", "method")
     def discover_tracks(self, song_url):

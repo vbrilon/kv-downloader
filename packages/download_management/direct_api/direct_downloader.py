@@ -26,6 +26,7 @@ docs/site-flow/trackslevels-format.md.
 """
 
 import logging
+import os
 import re
 import time
 import unicodedata
@@ -34,6 +35,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import unquote, urlencode
 
+from ...utils.bot_challenge import BotChallengeError, is_challenge_html
 from .trackslevels import MixerTrack, build_trackslevels
 
 logger = logging.getLogger(__name__)
@@ -218,6 +220,9 @@ class DownloadResult:
 class DirectDownloader:
     BASKET_URL = "https://www.karaoke-version.com/basket.php"
     BEGIN_URL = "https://www.karaoke-version.com/my/begin_download.html"
+    # Fastly answers "503 first byte timeout" when the origin is briefly slow
+    # to build the mix (seen 2026-10-13: a ~1 min burst, then recovery).
+    BASKET_503_RETRY_DELAY_S = 10.0
 
     def __init__(
         self,
@@ -296,7 +301,16 @@ class DirectDownloader:
         URL (or None if absent)."""
         url = self._build_begin_url()
         r = self.session.get(url, timeout=30)
+        self._raise_if_challenged(r, "begin_download.html")
         return extract_mp3_url(r.text)
+
+    @staticmethod
+    def _raise_if_challenged(response, endpoint: str) -> None:
+        """Fastly answers with an HTTP 200 challenge page, which would
+        otherwise pass the status check and surface as a misleading
+        MixGenTimeout."""
+        if is_challenge_html(response.text):
+            raise BotChallengeError(f"{endpoint} returned a Fastly bot challenge")
 
     def _build_begin_url(self) -> str:
         prodid = self.template_params["prodid"]
@@ -311,6 +325,15 @@ class DirectDownloader:
         params["trackslevels"] = trackslevels
         url = self.BASKET_URL + "?" + urlencode(params, safe=",.-")
         r = self.session.get(url, timeout=30)
+        self._raise_if_challenged(r, "basket.php")
+        if r.status_code == 503:
+            logger.warning(
+                f"basket.php returned 503; retrying once in "
+                f"{self.BASKET_503_RETRY_DELAY_S:.0f}s"
+            )
+            time.sleep(self.BASKET_503_RETRY_DELAY_S)
+            r = self.session.get(url, timeout=30)
+            self._raise_if_challenged(r, "basket.php")
         if r.status_code != 200:
             body = (r.text or "")[:200]
             raise BasketUpdateError(
@@ -466,11 +489,19 @@ class DirectDownloader:
                         f"CDN returned {r.status_code} for {url!r}"
                     )
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                size = 0
-                with open(dest, "wb") as f:
-                    for chunk in r.iter_content(1 << 16):
-                        f.write(chunk)
-                        size += len(chunk)
+                # Write to a sibling .part file and rename only when complete:
+                # re-runs skip any existing .mp3, so a truncated one left by an
+                # interrupted run would never be re-fetched.
+                part = dest.with_name(dest.name + ".part")
+                try:
+                    size = 0
+                    with open(part, "wb") as f:
+                        for chunk in r.iter_content(1 << 16):
+                            f.write(chunk)
+                            size += len(chunk)
+                    os.replace(part, dest)
+                finally:
+                    part.unlink(missing_ok=True)
                 return size
         except MP3FetchError:
             raise
