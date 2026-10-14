@@ -9,12 +9,13 @@ setup, direct-HTTP per-track downloads.
 - **Default download path**: direct-HTTP API (`packages/download_management/direct_api/`).
   ~12 s/track. Fallback: legacy Selenium flow when capture fails, and
   for the **rest of the run** when Fastly blocks the HTTP calls but not
-  the browser (clearance lasts ~1 h).
+  the browser (clearance lasts ~1 h), and for the **rest of the song**
+  after a basket.php 503 (late renders shift audio by one track).
 - **Entry point**: `karaoke_automator.py` (CLI). Songs configured in
   `songs.yaml`.
 - **Python venv**: project root contains `pyvenv.cfg`; use `bin/python`
   (Python 3.13).
-- **Tests**: `bin/python -m pytest tests/unit/` — 470 tests as of
+- **Tests**: `bin/python -m pytest tests/unit/` — 472 tests as of
   2026-10-13.
 - **Auth**: Chrome profile in `chrome_profile/` + session cache in
   `.cache/session_data.pkl`.
@@ -40,6 +41,7 @@ setup, direct-HTTP per-track downloads.
 | Why same-input MP3 renders produce different SHA-256s (don't write equality tests) | [`docs/site-flow/mp3-encoder-nondeterminism.md`](docs/site-flow/mp3-encoder-nondeterminism.md) |
 | Looking for known-but-deferred work / open issues | [`docs/known-issues.md`](docs/known-issues.md) |
 | Investigating a past bug — has someone already chased this? | [`docs/investigations/`](docs/investigations/) |
+| A track contains the wrong instrument (e.g. "Bass has the drums"), basket.php 503s, label-verified but wrong audio | [`docs/investigations/2026-10-13-basket-503-shifted-audio.md`](docs/investigations/2026-10-13-basket-503-shifted-audio.md) — evidence, mechanism, audio diagnostic recipe |
 | About to touch direct-API code (download_management/direct_api/) or debug a download issue | [`docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md`](docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md) — postmortem + diagnostic playbook + known gaps |
 | Research spike before designing a feature | [`docs/spikes/`](docs/spikes/) |
 | Validating a fix end-to-end against the live site | [`docs/validation/`](docs/validation/) |
