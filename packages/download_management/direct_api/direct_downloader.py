@@ -215,6 +215,11 @@ class DownloadResult:
     # The server's own label for what it rendered, or None when the
     # filename carried no resolvable label (hash-only fallback).
     server_label: Optional[str] = None
+    # Per-step wall time, so a slow track shows where the time went.
+    # basket_s includes the first call's baseline begin_download snapshot.
+    basket_s: float = 0.0
+    render_s: float = 0.0
+    transfer_s: float = 0.0
 
 
 class DirectDownloader:
@@ -271,6 +276,7 @@ class DirectDownloader:
             self.mixer_tracks, target_index=target_index, level=level
         )
         self._call_basket(new_levels)
+        t_basket = time.monotonic()
 
         # 3. Poll begin_download.html until the server reports a fresh
         #    render that it identifies as the track we asked for.
@@ -278,11 +284,14 @@ class DirectDownloader:
             max_wait, poll_interval, target_index, new_levels
         )
         new_hash = url_hash(new_url)
+        t_render = time.monotonic()
 
         # 4. Fetch the MP3 to disk (with transient-failure retries).
         size = self._fetch_mp3_with_retry(
             new_url, dest, fetch_max_attempts, fetch_retry_backoff
         )
+
+        t_done = time.monotonic()
 
         self._last_hash = new_hash
         self._last_filename = extract_filename(new_url)
@@ -290,8 +299,11 @@ class DirectDownloader:
             path=dest,
             url=new_url,
             size_bytes=size,
-            elapsed_s=time.monotonic() - t0,
+            elapsed_s=t_done - t0,
             server_label=extract_track_label(new_url),
+            basket_s=t_basket - t0,
+            render_s=t_render - t_basket,
+            transfer_s=t_done - t_render,
         )
 
     # -- internals -----------------------------------------------------
