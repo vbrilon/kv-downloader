@@ -14,11 +14,37 @@ or commit message before deleting.)
 
 ---
 
+## Slow direct-API MP3 transfers (5–8 min)
+
+**Severity:** Low–Medium. Costs time, not data: on 2026-10-13 three of
+~65 tracks took 317 s, 481 s and 353 s, with no retries and complete,
+label-verified files.
+
+**Source:** `docs/investigations/2026-10-13-legacy-download-external-volume.md`
+§ "Also found".
+
+**What we know:** the render wait is capped at 25 s and no retries or 503s
+were logged, so the time was most likely the CDN transfer — `_fetch_mp3`'s
+`timeout=180` is per-read, so a slow trickle never trips it. Not proven:
+step timing (`basket/render/transfer` on each `✅ direct-API` line) was only
+added afterwards (PR #5).
+
+**Fix sketch:** once a slow line confirms `transfer` dominates, add a total
+deadline (e.g. 60 s) to the streaming loop in `_fetch_mp3` that raises
+`MP3FetchError` so `_fetch_mp3_with_retry` reconnects. While there, compare
+the bytes written to the response's `Content-Length` — nothing checks for a
+short read today.
+
+---
+
 ## Legacy Selenium fallback timeouts unbounded
 
-**Severity:** Low (rare path; only triggers on `capture_session`
-failure, which is itself rare). High blast-radius **when** it
-triggers — can hang for many minutes per song.
+**Severity:** Medium (raised 2026-10-13). The legacy path used to be
+rare (only on `capture_session` failure), but the automator now
+switches the **rest of a run** to it whenever Fastly blocks the
+direct-API path (see `docs/site-flow/2026-10-13-fastly-bot-challenge.md`),
+which happens once the ~1 h clearance expires. High blast-radius when
+it triggers — can hang for many minutes per song.
 
 **Source:** `docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md`
 § "Known gap (not fixed in 2026-05-09 commits)".

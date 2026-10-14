@@ -238,8 +238,14 @@ python karaoke_automator.py --clear-session
 **"Fastly bot-check CAPTCHA" error (run stops)**
 - The site's bot protection is challenging the automation's browser
 - Run `python karaoke_automator.py --debug` and solve the CAPTCHA in the Chrome window
-- The clearance is saved in `chrome_profile/`, so later headless runs work until it expires
+- The clearance is saved in `chrome_profile/`, so later headless runs work until it expires (about an hour)
 - In `--debug` mode a CAPTCHA mid-run pauses (up to 3 min) for you to solve it
+- Once the clearance expires, the fast download path is blocked but the browser usually isn't — the run then switches to browser downloads automatically (slower, no action needed)
+
+**Browser downloads never finish (log shows the download modal, then `success=False`)**
+- Chrome can't write to the download folder — common when it's on an external drive
+- Grant Google Chrome access in macOS System Settings → Privacy & Security (Files and Folders / Removable Volumes)
+- Tell-tale sign: full-size hidden `.com.google.Chrome.*` files stuck in `~/Downloads`
 
 **"ChromeDriver issues"**
 - Install/update Chrome browser

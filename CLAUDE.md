@@ -7,18 +7,21 @@ setup, direct-HTTP per-track downloads.
 ## Core facts
 
 - **Default download path**: direct-HTTP API (`packages/download_management/direct_api/`).
-  ~12 s/track. Fallback: legacy Selenium flow when capture fails or a
-  track times out.
+  ~12 s/track. Fallback: legacy Selenium flow when capture fails, and
+  for the **rest of the run** when Fastly blocks the HTTP calls but not
+  the browser (clearance lasts ~1 h).
 - **Entry point**: `karaoke_automator.py` (CLI). Songs configured in
   `songs.yaml`.
 - **Python venv**: project root contains `pyvenv.cfg`; use `bin/python`
   (Python 3.13).
-- **Tests**: `bin/python -m pytest tests/unit/` — 464 tests as of
+- **Tests**: `bin/python -m pytest tests/unit/` — 466 tests as of
   2026-10-13.
 - **Auth**: Chrome profile in `chrome_profile/` + session cache in
   `.cache/session_data.pkl`.
 - **Downloads land in**: `~/Dropbox/New_Song_Tracks/<song folder>/`
   (resolved by `packages/file_operations/file_manager._download_folder`).
+  `~/Dropbox` is a symlink to an external SSD; Chrome (legacy path)
+  needs macOS permission to write there.
 
 ## Doc index — read these when…
 
@@ -31,7 +34,8 @@ setup, direct-HTTP per-track downloads.
 | Site DOM behavior, modal open/close, hidden inputs, mixer init script | [`docs/site-flow/`](docs/site-flow/) |
 | Updating a CSS/XPath selector | [`docs/site-flow/selectors.md`](docs/site-flow/selectors.md) **and** `packages/configuration/selectors.py` |
 | How basket.php params are captured from the page (direct-API foundation) | [`docs/site-flow/2026-05-09-mixer-state-capture.md`](docs/site-flow/2026-05-09-mixer-state-capture.md) |
-| Fastly bot-check CAPTCHA ("Client Challenge"), "No tracks found" on every song | [`docs/site-flow/2026-10-13-fastly-bot-challenge.md`](docs/site-flow/2026-10-13-fastly-bot-challenge.md) |
+| Fastly bot-check CAPTCHA ("Client Challenge"), "No tracks found" on every song, direct-API "Fastly bot challenge", runs switching to browser downloads | [`docs/site-flow/2026-10-13-fastly-bot-challenge.md`](docs/site-flow/2026-10-13-fastly-bot-challenge.md) |
+| Legacy/browser downloads produce no file (modal shows, then `success=False`), Chrome download-folder permissions | [`docs/investigations/2026-10-13-legacy-download-external-volume.md`](docs/investigations/2026-10-13-legacy-download-external-volume.md) |
 | Building or parsing a `trackslevels` query value | [`docs/site-flow/trackslevels-format.md`](docs/site-flow/trackslevels-format.md) |
 | Why same-input MP3 renders produce different SHA-256s (don't write equality tests) | [`docs/site-flow/mp3-encoder-nondeterminism.md`](docs/site-flow/mp3-encoder-nondeterminism.md) |
 | Looking for known-but-deferred work / open issues | [`docs/known-issues.md`](docs/known-issues.md) |
