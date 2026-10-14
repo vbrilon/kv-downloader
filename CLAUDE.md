@@ -13,8 +13,8 @@ setup, direct-HTTP per-track downloads.
   `songs.yaml`.
 - **Python venv**: project root contains `pyvenv.cfg`; use `bin/python`
   (Python 3.13).
-- **Tests**: `bin/python -m pytest tests/unit/` — 418 tests as of
-  2026-05-09.
+- **Tests**: `bin/python -m pytest tests/unit/` — 455 tests as of
+  2026-10-13.
 - **Auth**: Chrome profile in `chrome_profile/` + session cache in
   `.cache/session_data.pkl`.
 - **Downloads land in**: `~/Dropbox/New_Song_Tracks/<song folder>/`
@@ -31,6 +31,7 @@ setup, direct-HTTP per-track downloads.
 | Site DOM behavior, modal open/close, hidden inputs, mixer init script | [`docs/site-flow/`](docs/site-flow/) |
 | Updating a CSS/XPath selector | [`docs/site-flow/selectors.md`](docs/site-flow/selectors.md) **and** `packages/configuration/selectors.py` |
 | How basket.php params are captured from the page (direct-API foundation) | [`docs/site-flow/2026-05-09-mixer-state-capture.md`](docs/site-flow/2026-05-09-mixer-state-capture.md) |
+| Fastly bot-check CAPTCHA ("Client Challenge"), "No tracks found" on every song | [`docs/site-flow/2026-10-13-fastly-bot-challenge.md`](docs/site-flow/2026-10-13-fastly-bot-challenge.md) |
 | Building or parsing a `trackslevels` query value | [`docs/site-flow/trackslevels-format.md`](docs/site-flow/trackslevels-format.md) |
 | Why same-input MP3 renders produce different SHA-256s (don't write equality tests) | [`docs/site-flow/mp3-encoder-nondeterminism.md`](docs/site-flow/mp3-encoder-nondeterminism.md) |
 | Looking for known-but-deferred work / open issues | [`docs/known-issues.md`](docs/known-issues.md) |

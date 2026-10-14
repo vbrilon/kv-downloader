@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import unquote, urlencode
 
+from ...utils.bot_challenge import BotChallengeError, is_challenge_html
 from .trackslevels import MixerTrack, build_trackslevels
 
 logger = logging.getLogger(__name__)
@@ -296,7 +297,16 @@ class DirectDownloader:
         URL (or None if absent)."""
         url = self._build_begin_url()
         r = self.session.get(url, timeout=30)
+        self._raise_if_challenged(r, "begin_download.html")
         return extract_mp3_url(r.text)
+
+    @staticmethod
+    def _raise_if_challenged(response, endpoint: str) -> None:
+        """Fastly answers with an HTTP 200 challenge page, which would
+        otherwise pass the status check and surface as a misleading
+        MixGenTimeout."""
+        if is_challenge_html(response.text):
+            raise BotChallengeError(f"{endpoint} returned a Fastly bot challenge")
 
     def _build_begin_url(self) -> str:
         prodid = self.template_params["prodid"]
@@ -311,6 +321,7 @@ class DirectDownloader:
         params["trackslevels"] = trackslevels
         url = self.BASKET_URL + "?" + urlencode(params, safe=",.-")
         r = self.session.get(url, timeout=30)
+        self._raise_if_challenged(r, "basket.php")
         if r.status_code != 200:
             body = (r.text or "")[:200]
             raise BasketUpdateError(

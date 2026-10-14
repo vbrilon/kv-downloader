@@ -74,7 +74,9 @@ class KaraokeVersionAutomator:
         # Initialize managers
         self.login_handler = LoginManager(self.driver, self.wait)
         self.file_manager = FileManager()
-        self.track_manager = TrackManager(self.driver, self.wait)
+        self.track_manager = TrackManager(
+            self.driver, self.wait, interactive_challenge=not headless
+        )
         
         # Set up dependency injection container
         self.di_container = create_container_with_dependencies(
@@ -352,8 +354,8 @@ class KaraokeVersionAutomator:
                 self._record_skip_due_to_cascade_abort(song, track)
                 continue
 
-            success = self._download_single_track_direct_api(
-                song, track, song_key, downloader, song_path,
+            success = self._download_track_direct_api_clearing_challenge(
+                song, track, song_key, downloader, song_path, session,
                 max_wait=DIRECT_API_MAX_WAIT_S,
             )
             if success:
@@ -381,6 +383,31 @@ class KaraokeVersionAutomator:
                 f"tracks could not be identity-verified against the server's "
                 f"own track label (accepted on hash freshness alone). "
                 f"Spot-check these files."
+            )
+
+    def _download_track_direct_api_clearing_challenge(self, song, track, song_key,
+                                                      downloader, song_path, session,
+                                                      *, max_wait: float):
+        """Direct-API download that survives a mid-song Fastly challenge.
+
+        Reloading the song page routes the challenge through
+        verify_song_access (user solves it in visible mode; headless raises
+        BotChallengeError, stopping the batch). The fresh clearance cookies
+        are copied into the HTTP session and the track is retried once.
+        """
+        from packages.utils.bot_challenge import BotChallengeError
+
+        try:
+            return self._download_single_track_direct_api(
+                song, track, song_key, downloader, song_path, max_wait=max_wait,
+            )
+        except BotChallengeError as e:
+            logging.warning(f"🛡️  Fastly bot check mid-song ({e}) — reloading song page")
+            self.track_manager.verify_song_access(song['url'])
+            for c in self.driver.get_cookies():
+                session.cookies.set(c["name"], c["value"])
+            return self._download_single_track_direct_api(
+                song, track, song_key, downloader, song_path, max_wait=max_wait,
             )
 
     def _record_skip_due_to_cascade_abort(self, song, track):
