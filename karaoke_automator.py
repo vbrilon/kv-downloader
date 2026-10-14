@@ -469,7 +469,9 @@ class KaraokeVersionAutomator:
             )
             logging.info(
                 f"✅ direct-API: {track_name} → {result.size_bytes:,} bytes "
-                f"in {result.elapsed_s:.1f}s [{verified}]"
+                f"in {result.elapsed_s:.1f}s (basket {result.basket_s:.1f}s, "
+                f"render {result.render_s:.1f}s, transfer {result.transfer_s:.1f}s) "
+                f"[{verified}]"
             )
             if self.progress:
                 self.progress.update_track_status(track['index'], 'completed', progress=100)

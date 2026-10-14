@@ -701,3 +701,34 @@ class TestAtomicMp3Write:
         with pytest.raises(KeyboardInterrupt):
             dl._fetch_mp3(CDN_URL_NEW, tmp_path / "t.mp3")
         assert list(tmp_path.iterdir()) == []
+
+
+class TestStepTiming:
+    """Per-step timings, so a slow track shows where the time went
+    (2026-10-13: tracks took 317-481s with no log line explaining why)."""
+
+    def test_result_reports_time_per_step(self, tmp_path, monkeypatch):
+        clock = [1000.0]
+        monkeypatch.setattr(
+            "packages.download_management.direct_api.direct_downloader.time.monotonic",
+            lambda: clock[0],
+        )
+
+        def advance(seconds, value=None):
+            def step(*_args, **_kwargs):
+                clock[0] += seconds
+                return value
+            return step
+
+        dl = _make_dl(MagicMock())
+        dl._last_hash = HASH_OLD  # skip the first-call baseline snapshot
+        monkeypatch.setattr(dl, "_call_basket", advance(0.5))
+        monkeypatch.setattr(dl, "_poll_for_fresh_url", advance(6.0, CDN_URL_NEW))
+        monkeypatch.setattr(dl, "_fetch_mp3_with_retry", advance(300.0, 123))
+
+        result = dl.download_track(target_index=3, dest=tmp_path / "t.mp3")
+
+        assert result.basket_s == pytest.approx(0.5)
+        assert result.render_s == pytest.approx(6.0)
+        assert result.transfer_s == pytest.approx(300.0)
+        assert result.elapsed_s == pytest.approx(306.5)
