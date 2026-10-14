@@ -50,6 +50,18 @@ class BasketUpdateError(RuntimeError):
     """basket.php returned a non-200 response. Includes URL + body excerpt."""
 
 
+class BasketTimeoutError(RuntimeError):
+    """basket.php returned 503 (Fastly "first byte timeout").
+
+    The origin may still process the request and render it late. On
+    2026-10-13 every direct-API track downloaded after such a 503 in the
+    same song held the PREVIOUS track's audio, even though the server's
+    filename label named the requested track. Deliberately not a
+    BasketUpdateError, so it escapes the per-track handler and the
+    orchestrator can move the rest of the song to browser downloads.
+    """
+
+
 class MixGenTimeout(TimeoutError):
     """begin_download.html never reported a fresh CDN URL hash within the
     allotted time. Means server-side mix-gen is stalled or never fired."""
@@ -225,9 +237,6 @@ class DownloadResult:
 class DirectDownloader:
     BASKET_URL = "https://www.karaoke-version.com/basket.php"
     BEGIN_URL = "https://www.karaoke-version.com/my/begin_download.html"
-    # Fastly answers "503 first byte timeout" when the origin is briefly slow
-    # to build the mix (seen 2026-10-13: a ~1 min burst, then recovery).
-    BASKET_503_RETRY_DELAY_S = 10.0
 
     def __init__(
         self,
@@ -339,13 +348,9 @@ class DirectDownloader:
         r = self.session.get(url, timeout=30)
         self._raise_if_challenged(r, "basket.php")
         if r.status_code == 503:
-            logger.warning(
-                f"basket.php returned 503; retrying once in "
-                f"{self.BASKET_503_RETRY_DELAY_S:.0f}s"
+            raise BasketTimeoutError(
+                f"basket.php returned 503 for trackslevels={trackslevels[:80]!r}"
             )
-            time.sleep(self.BASKET_503_RETRY_DELAY_S)
-            r = self.session.get(url, timeout=30)
-            self._raise_if_challenged(r, "basket.php")
         if r.status_code != 200:
             body = (r.text or "")[:200]
             raise BasketUpdateError(

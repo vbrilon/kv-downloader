@@ -130,12 +130,24 @@ _download_all_tracks_direct_api`):
 - Direct-API failures are NOT auto-retried via legacy Selenium —
   the same server-state issue affects both paths, so a retry just
   doubles the wait.
+- **Exception — basket.php 503 (2026-10-13):** a 503 moves the rest of
+  the song to legacy Selenium. Unlike a stall, a 503'd request can be
+  rendered late and shift later direct-API tracks' audio by one while
+  their labels still verify; the browser path (which waits for the
+  site's own ready modal) was correct every time. See
+  `docs/investigations/2026-10-13-basket-503-shifted-audio.md`.
 
 If you see this happen repeatedly for the same song without unusual
 recent activity, the server may have changed its rate-limit thresholds;
 re-investigate.
 
 ## Probing tool
+
+> ⚠️ The probe reads the server's **filename label**. On 2026-10-13 labels
+> named the requested track while the audio was the previous one, so a
+> clean probe does not prove the audio is right. Verify content against
+> browser-path downloads (recipe in
+> `docs/investigations/2026-10-13-basket-503-shifted-audio.md`).
 
 `tools/probe_track_mapping.py` — for a given song, calls `basket.php`
 for each non-edge position in the captured template and reports the

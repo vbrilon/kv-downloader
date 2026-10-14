@@ -23,6 +23,7 @@ import pytest
 
 from packages.download_management.direct_api.direct_downloader import (
     DirectDownloader,
+    BasketTimeoutError,
     BasketUpdateError,
     MixGenTimeout,
     MP3FetchError,
@@ -233,36 +234,27 @@ class TestDirectDownloaderErrors:
         assert "500" in str(exc.value)
         assert "trackslevels" in str(exc.value).lower()
 
-    def test_basket_503_is_retried_once(self, monkeypatch):
-        # Fastly returns "503 first byte timeout" when the origin is briefly
-        # slow (seen live 2026-10-13: a ~1 min burst, then recovery).
+    def test_basket_503_raises_timeout_without_retry(self, monkeypatch):
+        # A 503 here is Fastly's "first byte timeout": the origin may still
+        # process the request and render it late, shifting later tracks'
+        # audio by one (2026-10-13). Re-sending would only add another
+        # in-flight render, so raise for the caller to leave the fast path.
         sleeps = []
         monkeypatch.setattr(
             "packages.download_management.direct_api.direct_downloader.time.sleep",
             sleeps.append,
         )
         session = MagicMock()
-        session.get.side_effect = [
-            _mock_response(503, "503 first byte timeout"),
-            _mock_response(200, "ok"),
-        ]
-        _make_dl(session)._call_basket("1,0.2,100.3")
-        assert session.get.call_count == 2
-        assert sleeps == [DirectDownloader.BASKET_503_RETRY_DELAY_S]
-
-    def test_basket_503_twice_raises(self, monkeypatch):
-        monkeypatch.setattr(
-            "packages.download_management.direct_api.direct_downloader.time.sleep",
-            lambda s: None,
-        )
-        session = MagicMock()
-        session.get.side_effect = [
-            _mock_response(503, "503 first byte timeout"),
-            _mock_response(503, "503 first byte timeout"),
-        ]
-        with pytest.raises(BasketUpdateError, match="503"):
+        session.get.return_value = _mock_response(503, "503 first byte timeout")
+        with pytest.raises(BasketTimeoutError):
             _make_dl(session)._call_basket("1,0.2,100.3")
-        assert session.get.call_count == 2
+        assert session.get.call_count == 1
+        assert sleeps == []
+
+    def test_basket_timeout_is_not_a_basket_update_error(self):
+        # The per-track handler swallows BasketUpdateError; a timeout must
+        # escape it so the orchestrator can switch the song to the browser.
+        assert not issubclass(BasketTimeoutError, BasketUpdateError)
 
     def test_basket_non_200_raises(self, tmp_path):
         session = MagicMock()

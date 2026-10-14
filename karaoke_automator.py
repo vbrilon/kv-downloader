@@ -294,7 +294,7 @@ class KaraokeVersionAutomator:
             capture_session, CaptureError,
         )
         from packages.download_management.direct_api.direct_downloader import (
-            DirectDownloader, BasketUpdateError, MixGenTimeout, MP3FetchError,
+            DirectDownloader, BasketTimeoutError,
         )
         import requests
 
@@ -349,9 +349,10 @@ class KaraokeVersionAutomator:
 
         consecutive_failures = 0
         abort_remaining = False
+        song_on_browser = False
         for track in tracks_to_process:
-            if not self.direct_api:
-                # Fast path blocked earlier in this song: finish via the browser.
+            if song_on_browser or not self.direct_api:
+                # Fast path untrusted or blocked for this song: use the browser.
                 self._download_single_track(song, track, song_key)
                 time.sleep(BETWEEN_TRACKS_PAUSE)
                 continue
@@ -359,10 +360,23 @@ class KaraokeVersionAutomator:
                 self._record_skip_due_to_cascade_abort(song, track)
                 continue
 
-            success = self._download_track_direct_api_clearing_challenge(
-                song, track, song_key, downloader, song_path, session,
-                max_wait=DIRECT_API_MAX_WAIT_S,
-            )
+            try:
+                success = self._download_track_direct_api_clearing_challenge(
+                    song, track, song_key, downloader, song_path, session,
+                    max_wait=DIRECT_API_MAX_WAIT_S,
+                )
+            except BasketTimeoutError as e:
+                # The 503'd request may still render late and shift every
+                # later fast-path track in this song by one (2026-10-13).
+                logging.warning(
+                    f"⚠️  {e} — the site may render it late and shift later "
+                    f"tracks; switching the rest of '{song['name']}' to "
+                    f"browser downloads"
+                )
+                song_on_browser = True
+                self._download_single_track(song, track, song_key)
+                time.sleep(BETWEEN_TRACKS_PAUSE)
+                continue
             if not self.direct_api:
                 time.sleep(BETWEEN_TRACKS_PAUSE)
                 continue
