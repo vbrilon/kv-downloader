@@ -182,10 +182,49 @@ class TestAutomatorChallengeHandling:
         self.session.cookies.set.assert_called_once_with("_fs_ch_st_x", "fresh")
         assert download.call_count == 2
 
-    def test_second_challenge_propagates(self):
+    def test_second_challenge_switches_run_to_browser_downloads(self):
+        # Seen live 2026-10-13: once the ~1h Fastly clearance expired, the
+        # browser was trusted but plain HTTP stayed challenged, with no
+        # CAPTCHA anywhere for the user to solve.
         download = Mock(side_effect=BotChallengeError("basket.php"))
+        self.automator._download_single_track = Mock()
+        self._retry(download)
+        assert download.call_count == 2
+        self.automator._download_single_track.assert_called_once_with(
+            self.song, self.track, 0
+        )
+        assert self.automator.direct_api is False
+
+    def test_challenged_browser_still_stops_instead_of_falling_back(self):
+        download = Mock(side_effect=BotChallengeError("basket.php"))
+        self.automator.track_manager.verify_song_access.side_effect = (
+            BotChallengeError("CAPTCHA not solved")
+        )
+        self.automator._download_single_track = Mock()
         with pytest.raises(BotChallengeError):
             self._retry(download)
+        self.automator._download_single_track.assert_not_called()
+        assert self.automator.direct_api is True
+
+    def test_rest_of_song_uses_browser_after_switch(self):
+        tracks = [{'name': n, 'index': str(i)} for i, n in enumerate(["Click", "Bass", "Drums"])]
+        self.automator._download_single_track_direct_api = Mock(
+            side_effect=BotChallengeError("basket.php")
+        )
+        self.automator._download_single_track = Mock()
+        self.automator.file_manager = Mock()
+        ctx = Mock(template_params={"prodid": "1", "s": "2"}, cookies={}, ua="UA",
+                   mixer_tracks=[])
+        with patch("packages.download_management.direct_api.session_capture.capture_session",
+                   return_value=ctx), \
+             patch("packages.download_management.direct_api.direct_downloader.DirectDownloader") as dl_cls, \
+             patch("karaoke_automator.time.sleep"):
+            dl_cls.return_value.label_unverified = 0
+            self.automator._download_all_tracks_direct_api(self.song, tracks, 0)
+        assert self.automator._download_single_track_direct_api.call_count == 2
+        assert [c.args[1]['name'] for c in self.automator._download_single_track.call_args_list] == [
+            "Click", "Bass", "Drums"
+        ]
 
     def test_challenge_stops_the_batch(self):
         self.automator._setup_automation_session = Mock(return_value=True)

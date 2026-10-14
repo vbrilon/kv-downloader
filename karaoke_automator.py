@@ -350,6 +350,11 @@ class KaraokeVersionAutomator:
         consecutive_failures = 0
         abort_remaining = False
         for track in tracks_to_process:
+            if not self.direct_api:
+                # Fast path blocked earlier in this song: finish via the browser.
+                self._download_single_track(song, track, song_key)
+                time.sleep(BETWEEN_TRACKS_PAUSE)
+                continue
             if abort_remaining:
                 self._record_skip_due_to_cascade_abort(song, track)
                 continue
@@ -358,6 +363,9 @@ class KaraokeVersionAutomator:
                 song, track, song_key, downloader, song_path, session,
                 max_wait=DIRECT_API_MAX_WAIT_S,
             )
+            if not self.direct_api:
+                time.sleep(BETWEEN_TRACKS_PAUSE)
+                continue
             if success:
                 consecutive_failures = 0
             else:
@@ -394,6 +402,11 @@ class KaraokeVersionAutomator:
         verify_song_access (user solves it in visible mode; headless raises
         BotChallengeError, stopping the batch). The fresh clearance cookies
         are copied into the HTTP session and the track is retried once.
+
+        If HTTP is still challenged while the browser is not, the clearance
+        has expired and there is no CAPTCHA to solve (seen 2026-10-13, ~1h
+        after a solve). The rest of the run switches to browser downloads,
+        starting with this track.
         """
         from packages.utils.bot_challenge import BotChallengeError
 
@@ -406,9 +419,18 @@ class KaraokeVersionAutomator:
             self.track_manager.verify_song_access(song['url'])
             for c in self.driver.get_cookies():
                 session.cookies.set(c["name"], c["value"])
-            return self._download_single_track_direct_api(
-                song, track, song_key, downloader, song_path, max_wait=max_wait,
-            )
+            try:
+                return self._download_single_track_direct_api(
+                    song, track, song_key, downloader, song_path, max_wait=max_wait,
+                )
+            except BotChallengeError:
+                logging.warning(
+                    "🛡️  Direct-API still challenged but the browser is not — "
+                    "switching to browser downloads for the rest of this run"
+                )
+                self.direct_api = False
+                self._download_single_track(song, track, song_key)
+                return None
 
     def _record_skip_due_to_cascade_abort(self, song, track):
         """Mark a track as failed without attempting it — used after the
