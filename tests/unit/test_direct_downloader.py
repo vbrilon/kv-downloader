@@ -16,23 +16,21 @@ window.mixer.tracks, and a `requests.Session` carrying the authenticated
 cookies. Every call thereafter is just-HTTP — no Selenium.
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from packages.download_management.direct_api.direct_downloader import (
-    DirectDownloader,
     BasketTimeoutError,
     BasketUpdateError,
+    DirectDownloader,
+    InvalidMP3UrlError,
     MixGenTimeout,
     MP3FetchError,
-    InvalidMP3UrlError,
     extract_mp3_url,
     url_hash,
 )
 from packages.download_management.direct_api.trackslevels import MixerTrack
-
 
 # Real basket-template params captured 2026-05-08 from
 # bryan-adams/18-til-i-die. trackslevels here is the static-script
@@ -393,7 +391,7 @@ class TestRetryBehavior:
             _mock_response(200, content=b"mp3-ok"),
         ]
         dl = _make_dl(session)
-        result = dl.download_track(
+        dl.download_track(
             target_index=3,
             dest=tmp_path / "t.mp3",
             poll_interval=0.0,
