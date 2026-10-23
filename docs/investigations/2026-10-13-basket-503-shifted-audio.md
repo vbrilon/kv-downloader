@@ -46,7 +46,7 @@ reliably mark the bad files: most were fast (3.5–7 s), one took 11 s.
 
 This is also the 2026-07-30 *Hold The Line* bug (congestion; the next file
 held the previous track's audio). That fix
-(`docs/plans/2026-07-30-verify-track-identity.md`) assumed a stale render
+([`2026-07-30-wrong-track-audio.md`](2026-07-30-wrong-track-audio.md)) assumed a stale render
 would carry the stale label; today shows the label can be fresh while the
 audio is stale. **The label proves what was requested, not what was
 rendered.**

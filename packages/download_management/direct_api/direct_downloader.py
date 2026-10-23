@@ -14,7 +14,7 @@ download) AND identified as the requested track by the server's own filename
 label. Hash-freshness alone is not sufficient: under server congestion the
 site can return a NEW hash carrying the PREVIOUS track's audio, which used to
 be saved silently under the requested track's name (2026-07-30; see
-docs/plans/2026-07-30-verify-track-identity.md). When the label cannot be
+docs/investigations/2026-07-30-wrong-track-audio.md). When the label cannot be
 resolved the downloader falls back to hash-only and counts the track in
 `label_unverified` rather than failing.
 

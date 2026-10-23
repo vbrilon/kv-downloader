@@ -14,26 +14,6 @@ or commit message before deleting.)
 
 ---
 
-## Legacy flow: pipeline track N's file delivery with track N+1's solo
-
-**Severity:** Low. An optimization for the **legacy Selenium flow only**,
-which is now the fallback (direct-API is the default path), so it may no
-longer be worth doing. Estimated ~2 s/track, ~30 s on a 15-track song.
-
-**Source:** moved from root `PLAN.md` (2026-05-08) on 2026-10-23; full
-write-up in git history (`git show 5d9a537:PLAN.md`).
-
-**Idea:** once the download modal opens, mix N is already a static file on
-the CDN, so `solo(N+1)` can start while file N is still arriving.
-
-**Fix sketch:** in `download_manager._wait_for_download_readiness()`, emit a
-"ready" signal when the readiness text appears; the orchestrator monitors
-file delivery on a background thread and starts `solo(N+1)` in the
-foreground. If download N fails after modal-open, retry the captured URL's
-GET directly rather than redoing the UI flow (the mixer has moved on).
-
----
-
 ## Slow direct-API MP3 transfers (5–8 min)
 
 **Severity:** Low–Medium. Costs time, not data: on 2026-10-13 three of
