@@ -436,7 +436,7 @@ class TestStateAcrossCalls:
 # Toto_Hold_the_Line(Lead_Electric_Guitar_Custom_Backing_Track).mp3.
 # Accepting a render on "hash changed" alone let a fresh render of the
 # WRONG track be saved under the requested track's name (see
-# docs/plans/2026-07-30-verify-track-identity.md).
+# docs/investigations/2026-07-30-wrong-track-audio.md).
 # ----------------------------------------------------------------------
 
 

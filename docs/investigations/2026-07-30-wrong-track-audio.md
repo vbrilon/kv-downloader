@@ -2,9 +2,9 @@
 
 > Moved here on 2026-10-23 from the untracked `WORKING_NOTES.md` of the session
 > that fixed it (PR #2, squash-merged as `72baf71`). Its "next actions" are
-> historical: the merge happened; `bin/ruff` now exists. The design and
-> adversarial-review corrections are in
-> [`docs/plans/2026-07-30-verify-track-identity.md`](../plans/2026-07-30-verify-track-identity.md).
+> historical: the merge happened; `bin/ruff` now exists. The design plan (with its
+> adversarial-review corrections) landed and was pruned; read it in git history:
+> `git show 72baf71:docs/plans/2026-07-30-verify-track-identity.md`.
 
 ## Task
 
@@ -26,8 +26,7 @@ PR #2 squash-merged as `72baf71`; branch deleted. Verified on `main`:
   identical size, envelope correlation 1.0000. Correlates 0.001 with the
   rhythm guitar that was wrongly in its place.
 - Folder re-swept: 14 files, no duplicates.
-- Plan + adversarial-review corrections:
-  `docs/plans/2026-07-30-verify-track-identity.md`.
+- Plan + adversarial-review corrections: pruned after landing (see the note at the top).
 
 ## What was wrong
 
