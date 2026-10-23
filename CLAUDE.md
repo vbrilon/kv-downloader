@@ -17,8 +17,12 @@ setup, direct-HTTP per-track downloads.
   (Python 3.13).
 - **Tests**: `bin/python -m pytest tests/unit/` — 472 tests as of
   2026-10-13.
-- **Auth**: Chrome profile in `chrome_profile/` + session cache in
-  `.cache/session_data.pkl`.
+- **Lint/format**: `bin/ruff check .` and `bin/ruff format --check .`
+  (`.pre-commit-config.yaml` also lists black, but pre-commit isn't
+  installed in the venv).
+- **Auth**: `KV_USERNAME`/`KV_PASSWORD` in the gitignored `.env`, Chrome
+  profile in `chrome_profile/` + session cache in `.cache/session_data.pkl`.
+  All of these are secrets (global rules): never print, commit or copy them.
 - **Downloads land in**: `~/Dropbox/New_Song_Tracks/<song folder>/`
   (resolved by `packages/file_operations/file_manager._download_folder`).
   `~/Dropbox` is a symlink to an external SSD; Chrome (legacy path)
@@ -41,6 +45,8 @@ setup, direct-HTTP per-track downloads.
 | Why same-input MP3 renders produce different SHA-256s (don't write equality tests) | [`docs/site-flow/mp3-encoder-nondeterminism.md`](docs/site-flow/mp3-encoder-nondeterminism.md) |
 | Looking for known-but-deferred work / open issues | [`docs/known-issues.md`](docs/known-issues.md) |
 | Investigating a past bug — has someone already chased this? | [`docs/investigations/`](docs/investigations/) |
+| A track's audio is a *different* track, comparing MP3 audio (sample-level vs loudness-envelope correlation), parsing the server's track label from the CDN filename | [`docs/investigations/2026-07-30-wrong-track-audio.md`](docs/investigations/2026-07-30-wrong-track-audio.md) |
+| Where the last session left off | `HANDOFF.md` when present (archive: `docs/handoff-*.md`) |
 | A track contains the wrong instrument (e.g. "Bass has the drums"), basket.php 503s, label-verified but wrong audio | [`docs/investigations/2026-10-13-basket-503-shifted-audio.md`](docs/investigations/2026-10-13-basket-503-shifted-audio.md) — evidence, mechanism, audio diagnostic recipe |
 | About to touch direct-API code (download_management/direct_api/) or debug a download issue | [`docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md`](docs/investigations/2026-05-09-direct-api-mapping-precount-cascade.md) — postmortem + diagnostic playbook + known gaps |
 | Research spike before designing a feature | [`docs/spikes/`](docs/spikes/) |
@@ -48,15 +54,10 @@ setup, direct-HTTP per-track downloads.
 
 ## Working agreements (project-specific)
 
-- **Branching**: feature work on `feature/<descriptive-name>`. Merge to
-  `main` only after the user approves. No worktrees.
+- **Git**: the global worktree + PR self-merge flow.
 - **TDD** for direct-API and trackslevels code (pure functions / HTTP
   with mocked `requests.Session`). Smoke against the live site after
   any change touching `direct_api/` or Selenium glue.
-- **Stale info**: when refactoring, update the relevant doc in `docs/`
-  AND this index if a new doc topic appears.
-- **No backwards-compat shims**: delete old code outright; don't leave
-  `// removed` markers or rename-only aliases.
 - **Check `docs/plans/` before brainstorming a new design or feature.**
   Plans that landed are pruned; plans that remain are either active
   or **cancelled with a postmortem explaining why** (e.g. tier2
